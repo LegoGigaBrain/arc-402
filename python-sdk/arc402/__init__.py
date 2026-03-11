@@ -1,5 +1,7 @@
 """ARC-402: Agentic Wallet Standard — governed wallets for autonomous agents."""
 
+from .agent import AgentInfo, AgentRegistryClient
+from .agreement import Agreement, AgreementStatus, ServiceAgreementClient
 from .context import ContextBinding as Context
 from .exceptions import (
     ARC402Error,
@@ -25,6 +27,13 @@ __all__ = [
     "Trust",
     "Intent",
     "Settlement",
+    # Agent Registry
+    "AgentRegistryClient",
+    "AgentInfo",
+    # Service Agreement
+    "ServiceAgreementClient",
+    "Agreement",
+    "AgreementStatus",
     # Types
     "TrustScore",
     "AttestationRecord",

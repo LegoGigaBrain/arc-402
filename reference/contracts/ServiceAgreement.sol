@@ -147,6 +147,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         uint256 deadline,
         bytes32 deliverablesHash
     ) external payable nonReentrant returns (uint256 agreementId) {
+        require(bytes(serviceType).length <= 64,   "ServiceAgreement: serviceType too long");
+        require(bytes(description).length <= 1024, "ServiceAgreement: description too long");
         require(provider != address(0),      "ServiceAgreement: zero provider");
         require(provider != msg.sender,      "ServiceAgreement: client == provider");
         require(price > 0,                   "ServiceAgreement: zero price");
@@ -249,6 +251,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
      *      Escrow remains locked until resolveDispute().
      */
     function dispute(uint256 agreementId, string calldata reason) external {
+        require(bytes(reason).length <= 512, "ServiceAgreement: reason too long");
         Agreement storage ag = _get(agreementId);
         require(
             msg.sender == ag.client || msg.sender == ag.provider,

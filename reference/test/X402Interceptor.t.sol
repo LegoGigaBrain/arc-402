@@ -155,4 +155,103 @@ contract X402InterceptorTest is Test {
         interceptor.executeX402Payment(recipient, uint256(amount), ATTESTATION_ID, REQUEST_URL);
         assertEq(mockWallet.lastAmount(), uint256(amount));
     }
+
+    // ─── Policy enforcement in payment path ───────────────────────────────────
+
+    /**
+     * @notice Deploys a mock wallet that enforces a per-tx spending cap, proving that
+     *         policy enforcement lives in the payment path and is not bypassed by the
+     *         interceptor.
+     *
+     * Architecture note: X402Interceptor is stateless — it routes every call through
+     * arc402Wallet.executeTokenSpend(). Policy validation (spend limits, context checks)
+     * is the wallet's responsibility. This test verifies that when a wallet enforces a
+     * policy limit, the interceptor faithfully propagates the revert rather than
+     * silently succeeding or swallowing the error.
+     */
+    function test_Interceptor_ChecksPolicyBeforePaying() public {
+        // Deploy a policy-enforcing mock wallet with a 0.01 ETH (10_000 USDC-equivalent)
+        // per-transaction spending cap.
+        uint256 policyMaxPerTx = 0.01 ether; // 10_000_000 in 6-decimal USDC terms; use wei here
+        PolicyEnforcingMockWallet policyWallet = new PolicyEnforcingMockWallet(policyMaxPerTx);
+        X402Interceptor policyInterceptor = new X402Interceptor(address(policyWallet), usdcToken);
+
+        // Open context on the wallet (required for executeTokenSpend)
+        policyWallet.openContext();
+
+        // Amount that exceeds the policy cap
+        uint256 overLimit = policyMaxPerTx + 1;
+
+        // The interceptor MUST revert because the wallet rejects the spend
+        vm.expectRevert(bytes("PolicyEngine: spend exceeds per-tx limit"));
+        policyInterceptor.executeX402Payment(recipient, overLimit, ATTESTATION_ID, REQUEST_URL);
+
+        // Confirm no spend was recorded — policy blocked it before any state change
+        assertEq(policyWallet.spendCount(), 0);
+    }
+
+    /**
+     * @notice Verifies that an inflated price (above the policy limit) causes a clean
+     *         revert rather than a partial or silent execution.
+     *
+     *         This guards against scenarios where a malicious 402 response inflates the
+     *         price field. The payment MUST either succeed in full or revert — never
+     *         partially execute.
+     */
+    function test_Interceptor_RejectsInflatedPrice() public {
+        uint256 policyMaxPerTx = 100_000_000; // 100 USDC (6 decimals)
+        PolicyEnforcingMockWallet policyWallet = new PolicyEnforcingMockWallet(policyMaxPerTx);
+        X402Interceptor policyInterceptor = new X402Interceptor(address(policyWallet), usdcToken);
+        policyWallet.openContext();
+
+        // Inflated price: 10× the policy limit
+        uint256 inflatedPrice = policyMaxPerTx * 10;
+
+        vm.expectRevert(bytes("PolicyEngine: spend exceeds per-tx limit"));
+        policyInterceptor.executeX402Payment(recipient, inflatedPrice, ATTESTATION_ID, REQUEST_URL);
+
+        // Wallet untouched — no successful spend recorded
+        assertEq(policyWallet.spendCount(), 0);
+
+        // Confirm a valid (within-limit) payment still works
+        policyInterceptor.executeX402Payment(recipient, policyMaxPerTx, ATTESTATION_ID, REQUEST_URL);
+        assertEq(policyWallet.spendCount(), 1);
+    }
+}
+
+// ─── Policy-Enforcing Mock Wallet ─────────────────────────────────────────────
+
+/**
+ * @notice A mock wallet that mirrors the real ARC402Wallet's policy enforcement
+ *         interface. It rejects any spend that exceeds the configured per-tx limit,
+ *         exactly as the real PolicyEngine would. Using a mock here keeps the test
+ *         isolated from real infrastructure complexity while still proving the
+ *         interceptor routes through the wallet's enforcement layer.
+ */
+contract PolicyEnforcingMockWallet {
+    uint256 public immutable maxSpendPerTx;
+    bool public contextOpen;
+    uint256 public spendCount;
+
+    constructor(uint256 _maxSpendPerTx) {
+        maxSpendPerTx = _maxSpendPerTx;
+    }
+
+    /// @notice Simulates ARC402Wallet.openContext()
+    function openContext() external {
+        contextOpen = true;
+    }
+
+    /// @notice Mirrors ARC402Wallet.executeTokenSpend() with policy enforcement
+    function executeTokenSpend(
+        address, /* token */
+        address, /* recipient */
+        uint256 amount,
+        string calldata, /* category */
+        bytes32  /* attestationId */
+    ) external {
+        require(contextOpen, "ARC402: no active context");
+        require(amount <= maxSpendPerTx, "PolicyEngine: spend exceeds per-tx limit");
+        spendCount++;
+    }
 }

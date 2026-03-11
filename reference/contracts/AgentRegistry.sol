@@ -50,8 +50,14 @@ contract AgentRegistry is IAgentRegistry {
         string calldata metadataURI
     ) external override {
         require(!_registered[msg.sender], "AgentRegistry: already registered");
-        require(bytes(name).length > 0, "AgentRegistry: name required");
-        require(bytes(serviceType).length > 0, "AgentRegistry: serviceType required");
+        require(bytes(name).length > 0 && bytes(name).length <= 64, "AgentRegistry: invalid name length");
+        require(bytes(serviceType).length > 0 && bytes(serviceType).length <= 64, "AgentRegistry: serviceType too long");
+        require(bytes(endpoint).length <= 256, "AgentRegistry: endpoint too long");
+        require(bytes(metadataURI).length <= 256, "AgentRegistry: metadataURI too long");
+        require(capabilities.length <= 20, "AgentRegistry: too many capabilities");
+        for (uint256 i = 0; i < capabilities.length; i++) {
+            require(bytes(capabilities[i]).length <= 64, "AgentRegistry: capability too long");
+        }
 
         _registered[msg.sender] = true;
         _agentList.push(msg.sender);
@@ -85,8 +91,14 @@ contract AgentRegistry is IAgentRegistry {
     ) external override {
         require(_registered[msg.sender], "AgentRegistry: not registered");
         require(_agents[msg.sender].active, "AgentRegistry: agent not active");
-        require(bytes(name).length > 0, "AgentRegistry: name required");
-        require(bytes(serviceType).length > 0, "AgentRegistry: serviceType required");
+        require(bytes(name).length > 0 && bytes(name).length <= 64, "AgentRegistry: invalid name length");
+        require(bytes(serviceType).length > 0 && bytes(serviceType).length <= 64, "AgentRegistry: serviceType too long");
+        require(bytes(endpoint).length <= 256, "AgentRegistry: endpoint too long");
+        require(bytes(metadataURI).length <= 256, "AgentRegistry: metadataURI too long");
+        require(capabilities.length <= 20, "AgentRegistry: too many capabilities");
+        for (uint256 i = 0; i < capabilities.length; i++) {
+            require(bytes(capabilities[i]).length <= 64, "AgentRegistry: capability too long");
+        }
 
         AgentInfo storage info = _agents[msg.sender];
         info.name = name;

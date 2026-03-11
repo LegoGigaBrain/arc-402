@@ -68,7 +68,7 @@ contract SettlementCoordinatorTest is Test {
 
     function test_propose() public {
         bytes32 proposalId = _propose();
-        (address from, address to, uint256 amount,,,, SettlementCoordinator.ProposalStatus status,) = coordinator.getProposal(proposalId);
+        (address from, address to, uint256 amount,,,,, SettlementCoordinator.ProposalStatus status,) = coordinator.getProposal(proposalId);
         assertEq(from, address(fromWallet));
         assertEq(to, toWallet);
         assertEq(amount, 1 ether);
@@ -79,7 +79,7 @@ contract SettlementCoordinatorTest is Test {
         bytes32 proposalId = _propose();
         vm.prank(toWallet);
         coordinator.accept(proposalId);
-        (,,,,,, SettlementCoordinator.ProposalStatus status,) = coordinator.getProposal(proposalId);
+        (,,,,,,, SettlementCoordinator.ProposalStatus status,) = coordinator.getProposal(proposalId);
         assertEq(uint(status), uint(SettlementCoordinator.ProposalStatus.ACCEPTED));
     }
 
@@ -92,7 +92,7 @@ contract SettlementCoordinatorTest is Test {
         fromWallet.callExecute{value: 1 ether}(proposalId, 1 ether);
         assertEq(toWallet.balance - balanceBefore, 1 ether);
 
-        (,,,,,, SettlementCoordinator.ProposalStatus status,) = coordinator.getProposal(proposalId);
+        (,,,,,,, SettlementCoordinator.ProposalStatus status,) = coordinator.getProposal(proposalId);
         assertEq(uint(status), uint(SettlementCoordinator.ProposalStatus.EXECUTED));
     }
 
@@ -114,7 +114,7 @@ contract SettlementCoordinatorTest is Test {
         bytes32 proposalId = _propose();
         vm.prank(toWallet);
         coordinator.reject(proposalId, "not authorized");
-        (,,,,,, SettlementCoordinator.ProposalStatus status, string memory reason) = coordinator.getProposal(proposalId);
+        (,,,,,,, SettlementCoordinator.ProposalStatus status, string memory reason) = coordinator.getProposal(proposalId);
         assertEq(uint(status), uint(SettlementCoordinator.ProposalStatus.REJECTED));
         assertEq(reason, "not authorized");
     }
@@ -136,7 +136,7 @@ contract SettlementCoordinatorTest is Test {
         coordinator.execute(proposalId); // no ETH value — ERC-20 path
         assertEq(token.balanceOf(toWallet) - balanceBefore, amount);
 
-        (,,,,,, SettlementCoordinator.ProposalStatus status,) = coordinator.getProposal(proposalId);
+        (,,,,,,, SettlementCoordinator.ProposalStatus status,) = coordinator.getProposal(proposalId);
         assertEq(uint(status), uint(SettlementCoordinator.ProposalStatus.EXECUTED));
     }
 
@@ -161,5 +161,57 @@ contract SettlementCoordinatorTest is Test {
             INTENT_ID,
             block.timestamp + 1 hours
         );
+    }
+
+    // ─── F-19: ACCEPTED execution deadline ───────────────────────────────────
+
+    function test_ExpireAccepted_AfterWindow() public {
+        bytes32 proposalId = _propose();
+        vm.prank(toWallet);
+        coordinator.accept(proposalId);
+
+        // Cannot expire while window is open
+        vm.expectRevert("SettlementCoordinator: execution window open");
+        coordinator.expireAccepted(proposalId);
+
+        // Warp past execution window
+        vm.warp(block.timestamp + 7 days + 1);
+
+        // Anyone can expire it
+        vm.prank(address(0xCAFE));
+        coordinator.expireAccepted(proposalId);
+
+        (,,,,,,, SettlementCoordinator.ProposalStatus status,) = coordinator.getProposal(proposalId);
+        assertEq(uint(status), uint(SettlementCoordinator.ProposalStatus.EXPIRED));
+    }
+
+    function test_ExpireAccepted_CannotExpireEarly() public {
+        bytes32 proposalId = _propose();
+        vm.prank(toWallet);
+        coordinator.accept(proposalId);
+
+        vm.warp(block.timestamp + 6 days); // 6 days < 7 day window
+        vm.expectRevert("SettlementCoordinator: execution window open");
+        coordinator.expireAccepted(proposalId);
+    }
+
+    function test_Execute_CannotExecuteAfterWindow() public {
+        // Use a long-lived proposal so expiresAt doesn't fire before the execution window check
+        bytes32 proposalId = fromWallet.callPropose(toWallet, 1 ether, address(0), INTENT_ID, block.timestamp + 30 days);
+        vm.prank(toWallet);
+        coordinator.accept(proposalId);
+
+        // Warp past 7-day execution window (but still within 30-day expiresAt)
+        vm.warp(block.timestamp + 7 days + 1);
+
+        vm.expectRevert("SettlementCoordinator: execution window expired");
+        fromWallet.callExecute{value: 1 ether}(proposalId, 1 ether);
+    }
+
+    function test_ExpireAccepted_OnlyOnAccepted() public {
+        bytes32 proposalId = _propose();
+        // Still PENDING — not accepted
+        vm.expectRevert("SettlementCoordinator: not accepted");
+        coordinator.expireAccepted(proposalId);
     }
 }

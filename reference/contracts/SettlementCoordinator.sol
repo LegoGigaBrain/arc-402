@@ -15,6 +15,10 @@ contract SettlementCoordinator {
 
     enum ProposalStatus { PENDING, ACCEPTED, REJECTED, EXECUTED, EXPIRED }
 
+    /// @notice Maximum time a proposal may remain ACCEPTED before execution.
+    ///         After this window, anyone may call expireAccepted() to clean it up.
+    uint256 public constant EXECUTION_WINDOW = 7 days;
+
     struct Proposal {
         bytes32 proposalId;
         address fromWallet;
@@ -23,6 +27,7 @@ contract SettlementCoordinator {
         address token;          // address(0) for ETH, token address for ERC-20
         bytes32 intentId;
         uint256 expiresAt;
+        uint256 acceptedAt;     // set when status moves to ACCEPTED; starts execution window clock
         ProposalStatus status;
         string rejectionReason;
     }
@@ -59,6 +64,7 @@ contract SettlementCoordinator {
             token: token,
             intentId: intentId,
             expiresAt: expiresAt,
+            acceptedAt: 0,
             status: ProposalStatus.PENDING,
             rejectionReason: ""
         });
@@ -76,7 +82,25 @@ contract SettlementCoordinator {
         require(msg.sender == p.toWallet, "SettlementCoordinator: not recipient");
 
         p.status = ProposalStatus.ACCEPTED;
+        p.acceptedAt = block.timestamp;
         emit ProposalAccepted(proposalId);
+    }
+
+    /**
+     * @notice Expire a proposal that has been ACCEPTED but not executed within EXECUTION_WINDOW.
+     *         Anyone may call this to clean up stale accepted proposals.
+     * @param proposalId The proposal to expire.
+     */
+    function expireAccepted(bytes32 proposalId) external {
+        Proposal storage p = proposals[proposalId];
+        require(proposalExists[proposalId], "SettlementCoordinator: not found");
+        require(p.status == ProposalStatus.ACCEPTED, "SettlementCoordinator: not accepted");
+        require(
+            block.timestamp > p.acceptedAt + EXECUTION_WINDOW,
+            "SettlementCoordinator: execution window open"
+        );
+        p.status = ProposalStatus.EXPIRED;
+        emit ProposalExpired(proposalId);
     }
 
     function reject(bytes32 proposalId, string calldata reason) external {
@@ -95,6 +119,10 @@ contract SettlementCoordinator {
         require(proposalExists[proposalId], "SettlementCoordinator: not found");
         require(p.status == ProposalStatus.ACCEPTED, "SettlementCoordinator: not accepted");
         require(block.timestamp <= p.expiresAt, "SettlementCoordinator: expired");
+        require(
+            block.timestamp <= p.acceptedAt + EXECUTION_WINDOW,
+            "SettlementCoordinator: execution window expired"
+        );
         require(msg.sender == p.fromWallet, "SettlementCoordinator: not sender");
 
         p.status = ProposalStatus.EXECUTED;
@@ -121,12 +149,13 @@ contract SettlementCoordinator {
         address token,
         bytes32 intentId,
         uint256 expiresAt,
+        uint256 acceptedAt,
         ProposalStatus status,
         string memory rejectionReason
     ) {
         require(proposalExists[proposalId], "SettlementCoordinator: not found");
         Proposal storage p = proposals[proposalId];
-        return (p.fromWallet, p.toWallet, p.amount, p.token, p.intentId, p.expiresAt, p.status, p.rejectionReason);
+        return (p.fromWallet, p.toWallet, p.amount, p.token, p.intentId, p.expiresAt, p.acceptedAt, p.status, p.rejectionReason);
     }
 
     function checkExpiry(bytes32 proposalId) external {

@@ -43,6 +43,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     // ─── State ───────────────────────────────────────────────────────────────
 
     address public owner;
+    /// @notice Pending owner in a two-step ownership transfer. Zero if none pending.
+    address public pendingOwner;
 
     /// @notice Immutable reference to the TrustRegistry. Set at deploy time.
     ///         Address 0 disables trust-score updates (e.g. in test environments
@@ -98,6 +100,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     event AgreementCancelled(uint256 indexed id, address indexed client);
     event DisputeResolved(uint256 indexed id, bool favorProvider);
     event DisputeTimedOut(uint256 indexed id, address indexed beneficiary);
+    event OwnershipTransferStarted(address indexed currentOwner, address indexed newOwner);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     event TokenAllowed(address indexed token);
     event TokenDisallowed(address indexed token);
@@ -142,11 +145,26 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
 
     // ─── Ownership ───────────────────────────────────────────────────────────
 
+    /**
+     * @notice Initiate a two-step ownership transfer. The new owner must call
+     *         acceptOwnership() to complete the transfer. Until accepted, the
+     *         current owner retains all privileges.
+     */
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "ServiceAgreement: zero address");
+        pendingOwner = newOwner;
+        emit OwnershipTransferStarted(owner, newOwner);
+    }
+
+    /**
+     * @notice Complete the ownership transfer. Must be called by the pending owner.
+     */
+    function acceptOwnership() external {
+        require(msg.sender == pendingOwner, "ServiceAgreement: not pending owner");
         address old = owner;
-        owner = newOwner;
-        emit OwnershipTransferred(old, newOwner);
+        owner = pendingOwner;
+        pendingOwner = address(0);
+        emit OwnershipTransferred(old, owner);
     }
 
     // ─── Token Allowlist (Fix T-03) ──────────────────────────────────────────

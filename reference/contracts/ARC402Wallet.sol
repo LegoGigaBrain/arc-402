@@ -47,13 +47,25 @@ contract ARC402Wallet {
     // ─── Velocity Limit State ─────────────────────────────────────────────────
 
     uint256 public spendingWindowStart;
-    uint256 public spendingInWindow;
+    /// @notice ETH spend accumulator for rolling velocity window. Unit: wei.
+    uint256 public ethSpendingInWindow;
+    /// @notice ERC-20 spend accumulator for rolling velocity window. Unit: token-native (e.g. USDC 1e6).
+    ///         Tracked separately from ETH — units are incommensurable.
+    uint256 public tokenSpendingInWindow;
     uint256 public constant SPEND_WINDOW = 1 days;
-    uint256 public velocityLimit; // 0 = disabled
+    uint256 public velocityLimit; // 0 = disabled; applied independently to ETH and token paths
+
+    // ─── Registry Timelock State ──────────────────────────────────────────────
+
+    uint256 public constant REGISTRY_TIMELOCK = 2 days;
+    address public pendingRegistry;
+    uint256 public registryUpdateUnlockAt;
 
     // ─── Events ──────────────────────────────────────────────────────────────
 
-    event RegistryUpdated(address oldRegistry, address newRegistry);
+    event RegistryUpdateProposed(address indexed newRegistry, uint256 unlockAt);
+    event RegistryUpdateExecuted(address indexed oldRegistry, address indexed newRegistry);
+    event RegistryUpdateCancelled(address indexed cancelledRegistry);
     event ContextOpened(bytes32 indexed contextId, string taskType, uint256 timestamp);
     event ContextClosed(bytes32 indexed contextId, uint256 timestamp);
     event SpendExecuted(address indexed recipient, uint256 amount, string category, bytes32 attestationId);
@@ -100,13 +112,42 @@ contract ARC402Wallet {
         _trustRegistry().initWallet(address(this));
     }
 
-    // ─── Registry Upgrade (owner-controlled) ─────────────────────────────────
+    // ─── Registry Upgrade (timelocked — owner-controlled) ────────────────────
 
-    function setRegistry(address newRegistry) external onlyOwner {
+    /**
+     * @notice Begin a registry upgrade. Starts a 2-day timelock before the new
+     *         registry can be activated. Gives the owner time to cancel if phished.
+     * @param newRegistry The candidate registry address.
+     */
+    function proposeRegistryUpdate(address newRegistry) external onlyOwner {
         require(newRegistry != address(0), "ARC402: zero registry");
+        pendingRegistry = newRegistry;
+        registryUpdateUnlockAt = block.timestamp + REGISTRY_TIMELOCK;
+        emit RegistryUpdateProposed(newRegistry, registryUpdateUnlockAt);
+    }
+
+    /**
+     * @notice Complete a registry upgrade after the timelock has elapsed.
+     */
+    function executeRegistryUpdate() external onlyOwner {
+        require(pendingRegistry != address(0), "ARC402: no pending registry");
+        require(block.timestamp >= registryUpdateUnlockAt, "ARC402: timelock not elapsed");
         address old = address(registry);
-        registry = ARC402Registry(newRegistry);
-        emit RegistryUpdated(old, newRegistry);
+        registry = ARC402Registry(pendingRegistry);
+        pendingRegistry = address(0);
+        registryUpdateUnlockAt = 0;
+        emit RegistryUpdateExecuted(old, address(registry));
+    }
+
+    /**
+     * @notice Cancel a pending registry upgrade.
+     */
+    function cancelRegistryUpdate() external onlyOwner {
+        require(pendingRegistry != address(0), "ARC402: no pending registry");
+        address cancelled = pendingRegistry;
+        pendingRegistry = address(0);
+        registryUpdateUnlockAt = 0;
+        emit RegistryUpdateCancelled(cancelled);
     }
 
     // ─── Interceptor Authorization ────────────────────────────────────────────
@@ -239,13 +280,14 @@ contract ARC402Wallet {
             revert(reason);
         }
 
-        // 3. Rolling window velocity check
+        // 3. Rolling window velocity check (ETH path — unit: wei)
         if (block.timestamp > spendingWindowStart + SPEND_WINDOW) {
             spendingWindowStart = block.timestamp;
-            spendingInWindow = 0;
+            ethSpendingInWindow = 0;
+            tokenSpendingInWindow = 0;
         }
-        spendingInWindow += amount;
-        if (velocityLimit > 0 && spendingInWindow > velocityLimit) {
+        ethSpendingInWindow += amount;
+        if (velocityLimit > 0 && ethSpendingInWindow > velocityLimit) {
             // Freeze persists (no revert here); current spend is silently blocked.
             // All subsequent calls will fail at the notFrozen modifier.
             frozen = true;
@@ -297,13 +339,15 @@ contract ARC402Wallet {
             revert(reason);
         }
 
-        // 3. Rolling window velocity check
+        // 3. Rolling window velocity check (token path — unit: token-native, e.g. USDC 1e6)
+        //    Tracked separately from ethSpendingInWindow — units are incommensurable.
         if (block.timestamp > spendingWindowStart + SPEND_WINDOW) {
             spendingWindowStart = block.timestamp;
-            spendingInWindow = 0;
+            ethSpendingInWindow = 0;
+            tokenSpendingInWindow = 0;
         }
-        spendingInWindow += amount;
-        if (velocityLimit > 0 && spendingInWindow > velocityLimit) {
+        tokenSpendingInWindow += amount;
+        if (velocityLimit > 0 && tokenSpendingInWindow > velocityLimit) {
             // Freeze persists (no revert here); current spend is silently blocked.
             // All subsequent calls will fail at the notFrozen modifier.
             frozen = true;

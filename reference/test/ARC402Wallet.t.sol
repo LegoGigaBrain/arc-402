@@ -176,39 +176,65 @@ contract ARC402WalletTest is Test {
 
     // ─── Registry Upgrade Tests ───────────────────────────────────────────────
 
-    function test_setRegistry_works() public {
-        // Deploy a new registry with fresh infrastructure
+    // ─── Registry Timelock Tests ──────────────────────────────────────────────
+
+    function _deployReg2() internal returns (ARC402Registry) {
         PolicyEngine pe2 = new PolicyEngine();
         TrustRegistry tr2 = new TrustRegistry();
         IntentAttestation ia2 = new IntentAttestation();
         SettlementCoordinator sc2 = new SettlementCoordinator();
-        ARC402Registry reg2 = new ARC402Registry(
-            address(pe2),
-            address(tr2),
-            address(ia2),
-            address(sc2),
-            "v2.0.0"
-        );
+        return new ARC402Registry(address(pe2), address(tr2), address(ia2), address(sc2), "v2.0.0");
+    }
 
+    function test_RegistryTimelock_ProposeAndExecute() public {
+        ARC402Registry reg2 = _deployReg2();
         address oldReg = address(wallet.registry());
-        wallet.setRegistry(address(reg2));
+
+        wallet.proposeRegistryUpdate(address(reg2));
+        assertEq(wallet.pendingRegistry(), address(reg2));
+        // Cannot execute before timelock elapses
+        vm.expectRevert("ARC402: timelock not elapsed");
+        wallet.executeRegistryUpdate();
+
+        // Warp past timelock
+        vm.warp(block.timestamp + 2 days + 1);
+        wallet.executeRegistryUpdate();
 
         assertEq(address(wallet.registry()), address(reg2));
         assertTrue(address(wallet.registry()) != oldReg);
+        assertEq(wallet.pendingRegistry(), address(0));
     }
 
-    function test_setRegistry_notOwner_reverts() public {
-        ARC402Registry reg2 = new ARC402Registry(
-            address(policyEngine),
-            address(trustRegistry),
-            address(intentAttestation),
-            address(settlementCoordinator),
-            "v2.0.0"
-        );
+    function test_RegistryTimelock_CannotExecuteEarly() public {
+        ARC402Registry reg2 = _deployReg2();
+        wallet.proposeRegistryUpdate(address(reg2));
+        vm.warp(block.timestamp + 1 days); // only 1 day, need 2
+        vm.expectRevert("ARC402: timelock not elapsed");
+        wallet.executeRegistryUpdate();
+    }
 
+    function test_RegistryTimelock_CanCancel() public {
+        ARC402Registry reg2 = _deployReg2();
+        wallet.proposeRegistryUpdate(address(reg2));
+        assertEq(wallet.pendingRegistry(), address(reg2));
+        wallet.cancelRegistryUpdate();
+        assertEq(wallet.pendingRegistry(), address(0));
+        // Original registry unchanged
+        assertEq(address(wallet.registry()), address(reg));
+    }
+
+    function test_RegistryTimelock_OnlyOwner() public {
+        ARC402Registry reg2 = _deployReg2();
         vm.prank(address(0xDEAD));
         vm.expectRevert("ARC402: not owner");
-        wallet.setRegistry(address(reg2));
+        wallet.proposeRegistryUpdate(address(reg2));
+    }
+
+    function test_RegistryTimelock_NoPendingReverts() public {
+        vm.expectRevert("ARC402: no pending registry");
+        wallet.executeRegistryUpdate();
+        vm.expectRevert("ARC402: no pending registry");
+        wallet.cancelRegistryUpdate();
     }
 
     // ─── Circuit Breaker Tests ────────────────────────────────────────────────
@@ -362,6 +388,7 @@ contract ARC402WalletTest is Test {
             address token,
             bytes32 intentId,
             ,
+            ,
             SettlementCoordinator.ProposalStatus status,
         ) = settlementCoordinator.getProposal(proposalId);
 
@@ -387,8 +414,10 @@ contract ARC402WalletTest is Test {
             "v2.0.0"
         );
 
-        // Switch wallet to new registry
-        wallet.setRegistry(address(reg2));
+        // Switch wallet to new registry (via timelock)
+        wallet.proposeRegistryUpdate(address(reg2));
+        vm.warp(block.timestamp + 2 days + 1);
+        wallet.executeRegistryUpdate();
 
         // Trust score now reads from tr2 (wallet not initialized there, score = 0)
         assertEq(wallet.getTrustScore(), 0);
@@ -487,5 +516,38 @@ contract ARC402WalletTest is Test {
         // proposeMASSettlement must revert because wallet is frozen
         vm.expectRevert("ARC402: wallet frozen");
         wallet.proposeMASSettlement(recipientWallet, amount, "claims", attestId);
+    }
+
+    // ─── F-21: Split ETH/ERC-20 velocity counters ────────────────────────────
+
+    function test_VelocityLimit_ETHAndTokenSeparate() public {
+        // Velocity limit: 500_000 units (applied independently to ETH wei and USDC 1e6 units)
+        uint256 limit = 500_000;
+        wallet.setVelocityLimit(limit);
+
+        wallet.openContext(CONTEXT_ID, "claims_processing");
+
+        // ETH spend: 400_000 wei — under the ETH limit
+        uint256 ethAmount = 400_000;
+        bytes32 ethAttest = keccak256("eth-spend-1");
+        wallet.attest(ethAttest, "pay_provider", "ETH spend", recipient, ethAmount, address(0), 0);
+        wallet.executeSpend(payable(recipient), ethAmount, "claims", ethAttest);
+        assertEq(wallet.ethSpendingInWindow(), ethAmount);
+
+        // Token spending window is still 0 — counters are independent
+        assertEq(wallet.tokenSpendingInWindow(), 0);
+
+        // USDC spend: 400_000 token units (0.4 USDC at 6 decimals) — under token limit
+        uint256 tokenAmount = 400_000;
+        bytes32 tokenAttest = keccak256("token-spend-1");
+        wallet.attest(tokenAttest, "pay_api", "Token spend", recipient, tokenAmount, address(usdc), 0);
+        usdc.transfer(address(wallet), tokenAmount);
+        wallet.executeTokenSpend(address(usdc), recipient, tokenAmount, "claims", tokenAttest);
+        assertEq(wallet.tokenSpendingInWindow(), tokenAmount);
+
+        // Wallet not frozen — both paths stayed under their independent limits
+        assertFalse(wallet.frozen());
+        // ETH counter unaffected by token spend
+        assertEq(wallet.ethSpendingInWindow(), ethAmount);
     }
 }

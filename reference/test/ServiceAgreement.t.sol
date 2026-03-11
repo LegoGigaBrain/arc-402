@@ -518,4 +518,64 @@ contract ServiceAgreementTrustLivenessTest is Test {
         ag = sa.getAgreement(id);
         assertEq(uint8(ag.status), uint8(IServiceAgreement.Status.CANCELLED));
     }
+
+    // ─── F-24: Ownable2Step ──────────────────────────────────────────────────
+
+    function test_Ownable2Step_PendingOwnerMustAccept() public {
+        address newOwner = address(0xAA01);
+
+        // Current owner initiates transfer
+        sa.transferOwnership(newOwner);
+        assertEq(sa.pendingOwner(), newOwner);
+        // Owner unchanged until accepted
+        assertEq(sa.owner(), address(this));
+
+        // New owner accepts
+        vm.prank(newOwner);
+        sa.acceptOwnership();
+
+        assertEq(sa.owner(), newOwner);
+        assertEq(sa.pendingOwner(), address(0));
+    }
+
+    function test_Ownable2Step_WrongCallerCannotAccept() public {
+        address newOwner = address(0xAA01);
+        sa.transferOwnership(newOwner);
+
+        vm.prank(address(0xBB02));
+        vm.expectRevert("ServiceAgreement: not pending owner");
+        sa.acceptOwnership();
+
+        // Owner unchanged
+        assertEq(sa.owner(), address(this));
+    }
+
+    function test_Ownable2Step_OverwritePending() public {
+        address ownerA = address(0xAA03);
+        address ownerB = address(0xBB04);
+
+        sa.transferOwnership(ownerA);
+        assertEq(sa.pendingOwner(), ownerA);
+
+        // Overwrite with ownerB — ownerA can no longer accept
+        sa.transferOwnership(ownerB);
+        assertEq(sa.pendingOwner(), ownerB);
+
+        vm.prank(ownerA);
+        vm.expectRevert("ServiceAgreement: not pending owner");
+        sa.acceptOwnership();
+
+        vm.prank(ownerB);
+        sa.acceptOwnership();
+        assertEq(sa.owner(), ownerB);
+    }
+
+    function test_Ownable2Step_OldOwnerFunctionsWhilePending() public {
+        address newOwner = address(0xAA01);
+        sa.transferOwnership(newOwner);
+
+        // Old owner still controls the contract until acceptance
+        sa.allowToken(address(0xCC05));
+        assertTrue(sa.allowedTokens(address(0xCC05)));
+    }
 }

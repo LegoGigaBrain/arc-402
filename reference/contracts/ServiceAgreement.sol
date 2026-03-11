@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "./IServiceAgreement.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title ServiceAgreement
@@ -15,7 +16,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
  *      arbiter or a future governance module).
  * STATUS: DRAFT — not audited, do not use in production
  */
-contract ServiceAgreement is IServiceAgreement {
+contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ─── State ───────────────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ contract ServiceAgreement is IServiceAgreement {
         address token,
         uint256 deadline,
         bytes32 deliverablesHash
-    ) external payable returns (uint256 agreementId) {
+    ) external payable nonReentrant returns (uint256 agreementId) {
         require(provider != address(0),      "ServiceAgreement: zero provider");
         require(provider != msg.sender,      "ServiceAgreement: client == provider");
         require(price > 0,                   "ServiceAgreement: zero price");
@@ -142,7 +143,7 @@ contract ServiceAgreement is IServiceAgreement {
     /**
      * @inheritdoc IServiceAgreement
      */
-    function accept(uint256 agreementId) external {
+    function accept(uint256 agreementId) external nonReentrant {
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.provider,   "ServiceAgreement: not provider");
         require(ag.status == Status.PROPOSED, "ServiceAgreement: not PROPOSED");
@@ -158,7 +159,7 @@ contract ServiceAgreement is IServiceAgreement {
      * @inheritdoc IServiceAgreement
      * @dev Releases escrow to provider. Must be called before the deadline.
      */
-    function fulfill(uint256 agreementId, bytes32 actualDeliverablesHash) external {
+    function fulfill(uint256 agreementId, bytes32 actualDeliverablesHash) external nonReentrant {
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.provider,    "ServiceAgreement: not provider");
         require(ag.status == Status.ACCEPTED,  "ServiceAgreement: not ACCEPTED");
@@ -168,9 +169,9 @@ contract ServiceAgreement is IServiceAgreement {
         ag.resolvedAt  = block.timestamp;
         ag.deliverablesHash = actualDeliverablesHash;
 
-        _releaseEscrow(ag.token, ag.provider, ag.price);
-
         emit AgreementFulfilled(agreementId, msg.sender, actualDeliverablesHash);
+
+        _releaseEscrow(ag.token, ag.provider, ag.price);
     }
 
     // ─── Core: Dispute ───────────────────────────────────────────────────────
@@ -199,7 +200,7 @@ contract ServiceAgreement is IServiceAgreement {
      * @inheritdoc IServiceAgreement
      * @dev Only the client may cancel a PROPOSED agreement. Refunds escrow.
      */
-    function cancel(uint256 agreementId) external {
+    function cancel(uint256 agreementId) external nonReentrant {
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.client,      "ServiceAgreement: not client");
         require(ag.status == Status.PROPOSED,  "ServiceAgreement: not PROPOSED");
@@ -207,9 +208,9 @@ contract ServiceAgreement is IServiceAgreement {
         ag.status     = Status.CANCELLED;
         ag.resolvedAt = block.timestamp;
 
-        _releaseEscrow(ag.token, ag.client, ag.price);
-
         emit AgreementCancelled(agreementId, msg.sender);
+
+        _releaseEscrow(ag.token, ag.client, ag.price);
     }
 
     // ─── Core: Expired Cancel ────────────────────────────────────────────────
@@ -219,7 +220,7 @@ contract ServiceAgreement is IServiceAgreement {
      *         Refunds escrow to client.
      * @param agreementId The agreement to cancel
      */
-    function expiredCancel(uint256 agreementId) external {
+    function expiredCancel(uint256 agreementId) external nonReentrant {
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.client,      "ServiceAgreement: not client");
         require(ag.status == Status.ACCEPTED,  "ServiceAgreement: not ACCEPTED");
@@ -228,9 +229,9 @@ contract ServiceAgreement is IServiceAgreement {
         ag.status     = Status.CANCELLED;
         ag.resolvedAt = block.timestamp;
 
-        _releaseEscrow(ag.token, ag.client, ag.price);
-
         emit AgreementCancelled(agreementId, msg.sender);
+
+        _releaseEscrow(ag.token, ag.client, ag.price);
     }
 
     // ─── Core: Resolve Dispute ───────────────────────────────────────────────
@@ -241,11 +242,13 @@ contract ServiceAgreement is IServiceAgreement {
      * @param favorProvider If true, escrow goes to provider (FULFILLED).
      *                      If false, escrow goes to client (CANCELLED).
      */
-    function resolveDispute(uint256 agreementId, bool favorProvider) external onlyOwner {
+    function resolveDispute(uint256 agreementId, bool favorProvider) external onlyOwner nonReentrant {
         Agreement storage ag = _get(agreementId);
         require(ag.status == Status.DISPUTED, "ServiceAgreement: not DISPUTED");
 
         ag.resolvedAt = block.timestamp;
+
+        emit DisputeResolved(agreementId, favorProvider);
 
         if (favorProvider) {
             ag.status = Status.FULFILLED;
@@ -254,8 +257,6 @@ contract ServiceAgreement is IServiceAgreement {
             ag.status = Status.CANCELLED;
             _releaseEscrow(ag.token, ag.client, ag.price);
         }
-
-        emit DisputeResolved(agreementId, favorProvider);
     }
 
     // ─── Getters ─────────────────────────────────────────────────────────────

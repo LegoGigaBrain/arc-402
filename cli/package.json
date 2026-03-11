@@ -1,0 +1,26 @@
+{
+  "name": "arc402-cli",
+  "version": "0.1.0",
+  "description": "ARC-402 agent intelligence exchange CLI",
+  "bin": {
+    "arc402": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.3",
+    "commander": "^12.1.0",
+    "ethers": "^6.13.4",
+    "ora": "^8.1.1",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/prompts": "^2.4.9",
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,158 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "forge-std/Test.sol";
+import "../contracts/X402Interceptor.sol";
+
+// ─── Mock ARC402Wallet ────────────────────────────────────────────────────────
+
+contract MockARC402Wallet {
+    address public lastToken;
+    address public lastRecipient;
+    uint256 public lastAmount;
+    string public lastCategory;
+    bytes32 public lastAttestationId;
+    uint256 public callCount;
+
+    bool public shouldRevert;
+    string public revertMessage;
+
+    function setRevert(bool _shouldRevert, string memory _msg) external {
+        shouldRevert = _shouldRevert;
+        revertMessage = _msg;
+    }
+
+    function executeTokenSpend(
+        address token,
+        address recipient,
+        uint256 amount,
+        string calldata category,
+        bytes32 attestationId
+    ) external {
+        if (shouldRevert) revert(revertMessage);
+        lastToken = token;
+        lastRecipient = recipient;
+        lastAmount = amount;
+        lastCategory = category;
+        lastAttestationId = attestationId;
+        callCount++;
+    }
+}
+
+// ─── Test Suite ───────────────────────────────────────────────────────────────
+
+contract X402InterceptorTest is Test {
+
+    X402Interceptor public interceptor;
+    MockARC402Wallet public mockWallet;
+
+    address public usdcToken  = address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48); // canonical USDC addr (mock)
+    address public recipient  = address(0xBEEF);
+    address public caller     = address(0xCAFE);
+
+    bytes32 constant ATTESTATION_ID = keccak256("intent-001");
+    uint256 constant AMOUNT         = 100_000_000; // 100 USDC (6 decimals)
+    string  constant REQUEST_URL    = "https://api.example.com/data";
+
+    // ─── Setup ────────────────────────────────────────────────────────────────
+
+    function setUp() public {
+        mockWallet  = new MockARC402Wallet();
+        interceptor = new X402Interceptor(address(mockWallet), usdcToken);
+    }
+
+    // ─── Constructor tests ────────────────────────────────────────────────────
+
+    /// @dev Immutable state set correctly
+    function test_constructor_setsImmutables() public view {
+        assertEq(interceptor.arc402Wallet(), address(mockWallet));
+        assertEq(interceptor.usdcToken(), usdcToken);
+    }
+
+    /// @dev Zero wallet address must revert
+    function test_constructor_revert_zeroWallet() public {
+        vm.expectRevert("X402: zero wallet address");
+        new X402Interceptor(address(0), usdcToken);
+    }
+
+    /// @dev Zero token address must revert
+    function test_constructor_revert_zeroToken() public {
+        vm.expectRevert("X402: zero token address");
+        new X402Interceptor(address(mockWallet), address(0));
+    }
+
+    // ─── executeX402Payment — happy path ─────────────────────────────────────
+
+    /// @dev Happy path: payment routed to mock wallet with correct args
+    function test_executeX402Payment_happyPath() public {
+        vm.prank(caller);
+        interceptor.executeX402Payment(recipient, AMOUNT, ATTESTATION_ID, REQUEST_URL);
+
+        assertEq(mockWallet.lastToken(),         usdcToken);
+        assertEq(mockWallet.lastRecipient(),     recipient);
+        assertEq(mockWallet.lastAmount(),        AMOUNT);
+        assertEq(mockWallet.lastCategory(),      "api_call");
+        assertEq(mockWallet.lastAttestationId(), ATTESTATION_ID);
+        assertEq(mockWallet.callCount(),         1);
+    }
+
+    /// @dev Event is emitted with correct indexed and non-indexed fields
+    function test_executeX402Payment_emitsEvent() public {
+        vm.expectEmit(true, false, false, true);
+        emit X402Interceptor.X402PaymentExecuted(recipient, AMOUNT, ATTESTATION_ID, REQUEST_URL);
+
+        interceptor.executeX402Payment(recipient, AMOUNT, ATTESTATION_ID, REQUEST_URL);
+    }
+
+    /// @dev Multiple sequential payments each reach the wallet
+    function test_executeX402Payment_multiplePayments() public {
+        interceptor.executeX402Payment(recipient, AMOUNT, ATTESTATION_ID, REQUEST_URL);
+        interceptor.executeX402Payment(recipient, AMOUNT * 2, keccak256("intent-002"), REQUEST_URL);
+
+        assertEq(mockWallet.callCount(), 2);
+        assertEq(mockWallet.lastAmount(), AMOUNT * 2);
+    }
+
+    /// @dev Any caller can invoke (no access control on X402Interceptor itself)
+    function test_executeX402Payment_anyCallerAllowed() public {
+        address[] memory callers = new address[](3);
+        callers[0] = address(0x1111);
+        callers[1] = address(0x2222);
+        callers[2] = address(0x3333);
+
+        for (uint256 i = 0; i < callers.length; i++) {
+            vm.prank(callers[i]);
+            interceptor.executeX402Payment(recipient, AMOUNT, ATTESTATION_ID, REQUEST_URL);
+        }
+
+        assertEq(mockWallet.callCount(), 3);
+    }
+
+    /// @dev Zero amount is forwarded (validation is wallet's responsibility)
+    function test_executeX402Payment_zeroAmount() public {
+        interceptor.executeX402Payment(recipient, 0, ATTESTATION_ID, REQUEST_URL);
+        assertEq(mockWallet.lastAmount(), 0);
+    }
+
+    /// @dev Empty URL string is valid (audit trail may be empty for direct calls)
+    function test_executeX402Payment_emptyUrl() public {
+        interceptor.executeX402Payment(recipient, AMOUNT, ATTESTATION_ID, "");
+        assertEq(mockWallet.callCount(), 1);
+    }
+
+    // ─── executeX402Payment — revert propagation ──────────────────────────────
+
+    /// @dev If the wallet reverts (e.g. policy denied), the error bubbles up
+    function test_executeX402Payment_revert_walletReverts() public {
+        mockWallet.setRevert(true, "PolicyEngine: spend denied");
+
+        vm.expectRevert(bytes("PolicyEngine: spend denied"));
+        interceptor.executeX402Payment(recipient, AMOUNT, ATTESTATION_ID, REQUEST_URL);
+    }
+
+    /// @dev Fuzz: payment always forwards amount correctly
+    function testFuzz_executeX402Payment_amountForwarded(uint128 amount) public {
+        interceptor.executeX402Payment(recipient, uint256(amount), ATTESTATION_ID, REQUEST_URL);
+        assertEq(mockWallet.lastAmount(), uint256(amount));
+    }
+}

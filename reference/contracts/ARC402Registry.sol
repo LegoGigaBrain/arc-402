@@ -26,6 +26,10 @@ contract ARC402Registry {
         address _settlementCoordinator,
         string memory _version
     ) {
+        require(_policyEngine != address(0), "Registry: zero policyEngine");
+        require(_trustRegistry != address(0), "Registry: zero trustRegistry");
+        require(_intentAttestation != address(0), "Registry: zero intentAttestation");
+        require(_settlementCoordinator != address(0), "Registry: zero settlementCoordinator");
         owner = msg.sender;
         policyEngine = _policyEngine;
         trustRegistry = _trustRegistry;
@@ -46,6 +50,10 @@ contract ARC402Registry {
         address _settlementCoordinator,
         string memory _version
     ) external onlyOwner {
+        require(_policyEngine != address(0), "Registry: zero policyEngine");
+        require(_trustRegistry != address(0), "Registry: zero trustRegistry");
+        require(_intentAttestation != address(0), "Registry: zero intentAttestation");
+        require(_settlementCoordinator != address(0), "Registry: zero settlementCoordinator");
         policyEngine = _policyEngine;
         trustRegistry = _trustRegistry;
         intentAttestation = _intentAttestation;

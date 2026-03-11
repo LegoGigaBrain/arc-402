@@ -19,6 +19,7 @@ contract WalletFactory {
     event WalletCreated(address indexed owner, address indexed walletAddress);
 
     constructor(address _registry) {
+        require(_registry != address(0), "WalletFactory: zero registry");
         registry = _registry;
     }
 

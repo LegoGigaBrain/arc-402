@@ -6,6 +6,7 @@ import "../contracts/ARC402Registry.sol";
 import "../contracts/PolicyEngine.sol";
 import "../contracts/TrustRegistry.sol";
 import "../contracts/IntentAttestation.sol";
+import "../contracts/SettlementCoordinator.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 // Mock USDC for testing (6 decimals like real USDC)
@@ -20,6 +21,7 @@ contract ARC402WalletTest is Test {
     PolicyEngine policyEngine;
     TrustRegistry trustRegistry;
     IntentAttestation intentAttestation;
+    SettlementCoordinator settlementCoordinator;
     ARC402Registry reg;
     ARC402Wallet wallet;
     MockUSDC usdc;
@@ -33,13 +35,14 @@ contract ARC402WalletTest is Test {
         policyEngine = new PolicyEngine();
         trustRegistry = new TrustRegistry();
         intentAttestation = new IntentAttestation();
+        settlementCoordinator = new SettlementCoordinator();
         usdc = new MockUSDC();
 
         reg = new ARC402Registry(
             address(policyEngine),
             address(trustRegistry),
             address(intentAttestation),
-            address(0), // settlementCoordinator not needed for wallet tests
+            address(settlementCoordinator),
             "v1.0.0"
         );
 
@@ -184,11 +187,12 @@ contract ARC402WalletTest is Test {
         PolicyEngine pe2 = new PolicyEngine();
         TrustRegistry tr2 = new TrustRegistry();
         IntentAttestation ia2 = new IntentAttestation();
+        SettlementCoordinator sc2 = new SettlementCoordinator();
         ARC402Registry reg2 = new ARC402Registry(
             address(pe2),
             address(tr2),
             address(ia2),
-            address(0),
+            address(sc2),
             "v2.0.0"
         );
 
@@ -204,7 +208,7 @@ contract ARC402WalletTest is Test {
             address(policyEngine),
             address(trustRegistry),
             address(intentAttestation),
-            address(0),
+            address(settlementCoordinator),
             "v2.0.0"
         );
 
@@ -218,11 +222,12 @@ contract ARC402WalletTest is Test {
         PolicyEngine pe2 = new PolicyEngine();
         TrustRegistry tr2 = new TrustRegistry();
         IntentAttestation ia2 = new IntentAttestation();
+        SettlementCoordinator sc2b = new SettlementCoordinator();
         ARC402Registry reg2 = new ARC402Registry(
             address(pe2),
             address(tr2),
             address(ia2),
-            address(0),
+            address(sc2b),
             "v2.0.0"
         );
 

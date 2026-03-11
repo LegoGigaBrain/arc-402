@@ -1,0 +1,15 @@
+# Environment files — NEVER commit these
+.env
+.env.*
+*.env
+
+# Node
+node_modules/
+
+# Foundry cache
+cache/
+out/
+
+# Coverage
+coverage/
+lcov.info

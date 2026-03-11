@@ -28,6 +28,8 @@ contract AgentRegistry is IAgentRegistry {
     event AgentUpdated(address indexed wallet, string name, string serviceType);
     event AgentDeactivated(address indexed wallet);
     event AgentReactivated(address indexed wallet);
+    /// @notice Emitted whenever an agent changes their endpoint.
+    event EndpointChanged(address indexed wallet, string oldEndpoint, string newEndpoint, uint256 changeCount);
 
     // ─── Constructor ─────────────────────────────────────────────────────────
 
@@ -70,6 +72,8 @@ contract AgentRegistry is IAgentRegistry {
         info.metadataURI = metadataURI;
         info.active = true;
         info.registeredAt = block.timestamp;
+        info.endpointChangedAt = 0;
+        info.endpointChangeCount = 0;
         // copy calldata string[] → storage element by element (compiler limitation)
         for (uint256 i = 0; i < capabilities.length; i++) {
             info.capabilities.push(capabilities[i]);
@@ -103,8 +107,17 @@ contract AgentRegistry is IAgentRegistry {
         AgentInfo storage info = _agents[msg.sender];
         info.name = name;
         info.serviceType = serviceType;
-        info.endpoint = endpoint;
         info.metadataURI = metadataURI;
+
+        // Detect endpoint changes — track for reputation/stability scoring
+        if (keccak256(bytes(endpoint)) != keccak256(bytes(info.endpoint))) {
+            string memory oldEndpoint = info.endpoint;
+            info.endpoint = endpoint;
+            info.endpointChangedAt = block.timestamp;
+            info.endpointChangeCount += 1;
+            emit EndpointChanged(msg.sender, oldEndpoint, endpoint, info.endpointChangeCount);
+        }
+
         // replace capabilities: clear then push
         delete info.capabilities;
         for (uint256 i = 0; i < capabilities.length; i++) {
@@ -178,6 +191,45 @@ contract AgentRegistry is IAgentRegistry {
         } catch {
             return 0;
         }
+    }
+
+    /**
+     * @notice Returns the endpoint stability score for an agent (0–100).
+     *         100 = endpoint stable > 90 days with 0 changes.
+     *         Decays based on recency of changes and total change count.
+     *         Used by off-chain agents to apply trust multipliers during discovery.
+     *
+     *         Formula:
+     *         - Never changed: 100
+     *         - Changed, days since last change ≥ 90: 70 (stable after recovery)
+     *         - Changed, 30 ≤ days < 90: 50
+     *         - Changed, 7 ≤ days < 30: 30
+     *         - Changed < 7 days ago: 10
+     *         - Changed multiple times recently (< 30 days): halved per additional change
+     */
+    function getEndpointStability(address wallet) external view returns (uint256 score) {
+        require(_registered[wallet], "AgentRegistry: not registered");
+        AgentInfo storage info = _agents[wallet];
+        if (info.endpointChangeCount == 0) return 100;
+
+        uint256 daysSinceChange = (block.timestamp - info.endpointChangedAt) / 1 days;
+        if (daysSinceChange >= 90) {
+            score = 70;
+        } else if (daysSinceChange >= 30) {
+            score = 50;
+        } else if (daysSinceChange >= 7) {
+            score = 30;
+        } else {
+            score = 10;
+        }
+
+        // Penalize repeated changes: halve score for each change beyond the first,
+        // but floor at 5 to avoid zero scores from arithmetic.
+        uint256 extra = info.endpointChangeCount > 1 ? info.endpointChangeCount - 1 : 0;
+        for (uint256 i = 0; i < extra && score > 5; i++) {
+            score = score / 2;
+        }
+        if (score < 5) score = 5;
     }
 
     /**

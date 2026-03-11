@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "./IServiceAgreement.sol";
 import "./ITrustRegistry.sol";
+import "./ReputationOracle.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -45,6 +46,10 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     address public owner;
     /// @notice Pending owner in a two-step ownership transfer. Zero if none pending.
     address public pendingOwner;
+
+    /// @notice Optional reference to the ReputationOracle for auto-WARN/auto-ENDORSE signals.
+    ///         address(0) disables auto-publishing (e.g. in test environments).
+    ReputationOracle public reputationOracle;
 
     /// @notice Immutable reference to the TrustRegistry. Set at deploy time.
     ///         Address 0 disables trust-score updates (e.g. in test environments
@@ -112,6 +117,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
 
     /// @notice Emitted when the minimum trust value threshold is updated.
     event MinimumTrustValueUpdated(uint256 newValue);
+    event ReputationOracleUpdated(address indexed oracle);
 
     /// @notice Emitted when a provider commits a deliverable hash (start of verify window).
     event DeliverableCommitted(
@@ -194,6 +200,12 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     function setMinimumTrustValue(uint256 value) external onlyOwner {
         minimumTrustValue = value;
         emit MinimumTrustValueUpdated(value);
+    }
+
+    /// @notice Set or update the ReputationOracle integration. address(0) disables it.
+    function setReputationOracle(address oracle) external onlyOwner {
+        reputationOracle = ReputationOracle(oracle);
+        emit ReputationOracleUpdated(oracle);
     }
 
     // ─── Core: Propose ───────────────────────────────────────────────────────
@@ -565,23 +577,36 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
      * @param success     true = recordSuccess, false = recordAnomaly
      */
     function _updateTrust(uint256 agreementId, Agreement storage ag, bool success) internal {
-        if (trustRegistry == address(0)) return;
+        bytes32 capabilityHash = keccak256(bytes(ag.serviceType));
 
-        if (success) {
-            // Minimum trust value check — skip update for micro-agreements
-            if (minimumTrustValue != 0 && ag.price < minimumTrustValue) return;
-
-            try ITrustRegistry(trustRegistry).recordSuccess(ag.provider) {
-                // trust updated successfully
-            } catch {
-                emit TrustUpdateFailed(agreementId, ag.provider, "fulfill");
+        if (trustRegistry != address(0)) {
+            if (success) {
+                // Minimum trust value check — skip update for micro-agreements
+                if (minimumTrustValue == 0 || ag.price >= minimumTrustValue) {
+                    try ITrustRegistry(trustRegistry).recordSuccess(ag.provider) {
+                        // trust updated successfully
+                    } catch {
+                        emit TrustUpdateFailed(agreementId, ag.provider, "fulfill");
+                    }
+                }
+            } else {
+                // Anomaly always applies regardless of price
+                try ITrustRegistry(trustRegistry).recordAnomaly(ag.provider) {
+                    // trust updated successfully
+                } catch {
+                    emit TrustUpdateFailed(agreementId, ag.provider, "resolveDispute:anomaly");
+                }
             }
-        } else {
-            // Anomaly always applies regardless of price
-            try ITrustRegistry(trustRegistry).recordAnomaly(ag.provider) {
-                // trust updated successfully
-            } catch {
-                emit TrustUpdateFailed(agreementId, ag.provider, "resolveDispute:anomaly");
+        }
+
+        // Reputation oracle signals — best-effort, never block escrow release
+        if (address(reputationOracle) != address(0)) {
+            if (success) {
+                try reputationOracle.autoRecordSuccess(ag.client, ag.provider, capabilityHash) {
+                } catch {} // oracle failure never blocks payment
+            } else {
+                try reputationOracle.autoWarn(ag.client, ag.provider, capabilityHash) {
+                } catch {} // oracle failure never blocks payment
             }
         }
     }

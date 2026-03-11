@@ -16,6 +16,8 @@ interface IAgentRegistry {
         string metadataURI;
         bool active;
         uint256 registeredAt;
+        uint256 endpointChangedAt;   // timestamp of last endpoint change (0 = never changed)
+        uint256 endpointChangeCount; // total number of endpoint changes since registration
     }
 
     function register(

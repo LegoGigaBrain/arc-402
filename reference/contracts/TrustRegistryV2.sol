@@ -148,7 +148,8 @@ contract TrustRegistryV2 is ITrustRegistryV2, Ownable2Step {
         p.globalScore  = newGlobal;
         p.lastUpdated  = block.timestamp;
 
-        emit ScoreUpdated(wallet, newGlobal, capability, int256(gain));
+        // gain is bounded by MAX_SCORE (1000) — safe to cast to int256
+        emit ScoreUpdated(wallet, newGlobal, capability, int256(uint256(gain)));
     }
 
     /// @inheritdoc ITrustRegistryV2
@@ -180,7 +181,8 @@ contract TrustRegistryV2 is ITrustRegistryV2, Ownable2Step {
         p.globalScore  = newGlobal;
         p.lastUpdated  = block.timestamp;
 
-        emit ScoreUpdated(wallet, newGlobal, capability, -int256(ANOMALY_PENALTY));
+        // ANOMALY_PENALTY is a small constant (50) — safe to cast to int256
+        emit ScoreUpdated(wallet, newGlobal, capability, -int256(uint256(ANOMALY_PENALTY)));
     }
 
     // ─── Read ────────────────────────────────────────────────────────────────

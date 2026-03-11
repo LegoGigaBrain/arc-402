@@ -3,7 +3,8 @@ pragma solidity ^0.8.24;
 
 interface ITrustRegistry {
     function getScore(address wallet) external view returns (uint256 score);
-    /// @notice Record a successful delivery. Called by ServiceAgreement on fulfill.
+    /// @notice Record a successful delivery. Called by ServiceAgreement on verified release / auto-release,
+    ///         and only on legacy fulfill when that trusted-only compatibility path is explicitly enabled.
     /// @param wallet The provider who delivered.
     /// @param counterparty The client who paid.
     /// @param capability The service type (e.g. "legal-research").

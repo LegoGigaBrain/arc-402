@@ -153,6 +153,8 @@ contract ServiceAgreementAttackTest is Test {
         trustReg = new TrustRegistry();
         owner = address(this); // test contract is owner (deployed sa)
         sa    = new ServiceAgreement(address(trustReg));
+        sa.setLegacyFulfillMode(true);
+        sa.setLegacyFulfillProvider(provider, true);
         trustReg.addUpdater(address(sa));
         token = new MockERC20();
         // NOTE: MockFeeToken is intentionally NOT added to allowedTokens — the tests
@@ -186,6 +188,7 @@ contract ServiceAgreementAttackTest is Test {
     function test_Attack_ReentrancyOnFulfill() public {
         // Deploy malicious provider
         MaliciousReentrantProvider attacker = new MaliciousReentrantProvider(sa);
+        sa.setLegacyFulfillProvider(address(attacker), true);
         vm.deal(address(attacker), 1 ether);
 
         // Client proposes with malicious provider
@@ -254,6 +257,7 @@ contract ServiceAgreementAttackTest is Test {
      */
     function test_Attack_ReentrancyOnResolveDispute() public {
         MaliciousReentrantProvider attacker = new MaliciousReentrantProvider(sa);
+        sa.setLegacyFulfillProvider(address(attacker), true);
         vm.deal(client, 10 ether);
 
         // Agreement 1: will be disputed → resolved in attacker's favor

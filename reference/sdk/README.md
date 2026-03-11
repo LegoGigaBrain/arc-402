@@ -1,6 +1,8 @@
 # @arc402/sdk
 
-Typed TypeScript SDK for the current ARC-402 network workflow: discovery, off-chain negotiation payloads, escrowed hiring, delivery verification, remediation, disputes, reputation, sponsorship, capability taxonomy, governance reads, and operational trust reads.
+Typed TypeScript SDK for the current ARC-402 network workflow: discovery, off-chain negotiation payloads, escrowed hiring, delivery verification, remediation, disputes, reputation signals, sponsorship, capability taxonomy, governance reads, and operational trust reads.
+
+This package tracks the current contract surface for closed pilots and controlled integrations. It does not, by itself, imply open-public dispute legitimacy or manipulation-resistant public reputation.
 
 > Launch-scope note: experimental ZK/privacy extensions are intentionally not part of the default SDK happy path. Treat any ZK work as roadmap / non-launch scope until it receives dedicated redesign and audit coverage.
 
@@ -144,11 +146,13 @@ console.log({ highestTier, metrics, tx0 });
 
 ## Notes
 
-- Public settlement flow is propose -> accept -> commitDeliverable -> verifyDeliverable/autoRelease, with remediation and dispute escalation when needed.
-- `fulfill()` remains in the ABI only as a legacy/trusted-only compatibility path and should not be used for public integrations.
+- The default settlement flow is propose -> accept -> commitDeliverable -> verifyDeliverable/autoRelease, with remediation and dispute escalation when needed.
+- `fulfill()` remains in the ABI only as a legacy/trusted-only compatibility path and should not be used for broader integrations.
+- Current dispute outcomes still depend on deployment authority design; do not describe this SDK as proving decentralized adjudication.
 - Negotiation helpers only shape Spec 14 messages. They do **not** send them.
 - Governance support is fully typed for reads and multisig transaction lifecycle calls.
-- Experimental ZK/privacy extensions are intentionally excluded from the public-launch SDK flow.
+- Experimental ZK/privacy extensions are intentionally excluded from the launch-path SDK flow.
+- Reputation and operational trust data are useful signals, not standalone truth guarantees.
 - Contract address availability depends on network deployment. Some newer modules may still be undeployed on a given network.
 
 ## License

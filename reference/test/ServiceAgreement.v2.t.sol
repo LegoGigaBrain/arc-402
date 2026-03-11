@@ -46,6 +46,8 @@ contract MinimumTrustValueTest is Test {
     function setUp() public {
         trustReg = new TrustRegistry();
         sa       = new ServiceAgreement(address(trustReg));
+        sa.setLegacyFulfillMode(true);
+        sa.setLegacyFulfillProvider(provider, true);
         trustReg.addUpdater(address(sa));
 
         vm.deal(client,   100 ether);
@@ -210,6 +212,8 @@ contract CommitRevealTest is Test {
     function setUp() public {
         trustReg = new TrustRegistry();
         sa       = new ServiceAgreement(address(trustReg));
+        sa.setLegacyFulfillMode(true);
+        sa.setLegacyFulfillProvider(provider, true);
         trustReg.addUpdater(address(sa));
 
         vm.deal(client,   100 ether);
@@ -526,10 +530,35 @@ contract CommitRevealTest is Test {
     }
 
     /**
-     * @notice Backward compatibility: old fulfill() path still works unmodified.
-     *         Existing integrations using fulfill() continue to function.
+     * @notice Public launch posture: fulfill() is not a normal settlement path.
+     *         A fresh deployment disables it until the owner explicitly opts into legacy mode.
      */
-    function test_CommitReveal_BackwardCompat_FulfillStillWorks() public {
+    function test_CommitReveal_FulfillDisabledByDefaultOnFreshDeployment() public {
+        ServiceAgreement fresh = new ServiceAgreement(address(trustReg));
+        trustReg.addUpdater(address(fresh));
+
+        vm.prank(client);
+        uint256 id = fresh.propose{value: PRICE}(
+            provider,
+            "text-generation",
+            "Generate article",
+            PRICE,
+            address(0),
+            block.timestamp + DEADLINE,
+            SPEC_HASH
+        );
+        vm.prank(provider);
+        fresh.accept(id);
+
+        vm.prank(provider);
+        vm.expectRevert("ServiceAgreement: legacy fulfill disabled");
+        fresh.fulfill(id, DELIVERY_HASH);
+    }
+
+    /**
+     * @notice Backward compatibility remains available only for explicitly trusted legacy providers.
+     */
+    function test_CommitReveal_BackwardCompat_FulfillRequiresLegacyTrust() public {
         uint256 id = _proposeAndAccept();
         uint256 providerBefore = provider.balance;
 

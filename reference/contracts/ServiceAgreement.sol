@@ -23,6 +23,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     uint8 public constant MAX_REMEDIATION_CYCLES = 2;
 
     mapping(address => bool) public allowedTokens;
+    mapping(address => bool) public legacyFulfillProviders;
+    bool public legacyFulfillEnabled;
     uint256 public minimumTrustValue;
     uint256 private _nextId;
 
@@ -49,6 +51,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     event TokenDisallowed(address indexed token);
     event TrustUpdateFailed(uint256 indexed agreementId, address indexed wallet, string context);
     event MinimumTrustValueUpdated(uint256 newValue);
+    event LegacyFulfillModeUpdated(bool enabled);
+    event LegacyFulfillProviderUpdated(address indexed provider, bool allowed);
     event ReputationOracleUpdated(address indexed oracle);
     event DeliverableCommitted(uint256 indexed id, address indexed provider, bytes32 hash, uint256 verifyWindowEnd);
     event AutoReleased(uint256 indexed id, address indexed provider);
@@ -96,6 +100,16 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     function setMinimumTrustValue(uint256 value) external onlyOwner {
         minimumTrustValue = value;
         emit MinimumTrustValueUpdated(value);
+    }
+
+    function setLegacyFulfillMode(bool enabled) external onlyOwner {
+        legacyFulfillEnabled = enabled;
+        emit LegacyFulfillModeUpdated(enabled);
+    }
+
+    function setLegacyFulfillProvider(address provider, bool allowed) external onlyOwner {
+        legacyFulfillProviders[provider] = allowed;
+        emit LegacyFulfillProviderUpdated(provider, allowed);
     }
 
     function setReputationOracle(address oracle) external onlyOwner {
@@ -153,6 +167,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     function fulfill(uint256 agreementId, bytes32 actualDeliverablesHash) external nonReentrant {
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.provider, "ServiceAgreement: not provider");
+        require(legacyFulfillEnabled, "ServiceAgreement: legacy fulfill disabled");
+        require(legacyFulfillProviders[msg.sender], "ServiceAgreement: provider not legacy trusted");
         require(ag.status == Status.ACCEPTED || ag.status == Status.REVISED, "ServiceAgreement: not ACCEPTED");
         require(block.timestamp <= ag.deadline, "ServiceAgreement: past deadline");
         _closeRemediation(agreementId);

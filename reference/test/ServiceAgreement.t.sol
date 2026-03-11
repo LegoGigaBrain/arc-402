@@ -41,6 +41,8 @@ contract ServiceAgreementTest is Test {
         trustReg = new TrustRegistry();
         token    = new MockERC20();
         sa       = new ServiceAgreement(address(trustReg));
+        sa.setLegacyFulfillMode(true);
+        sa.setLegacyFulfillProvider(provider, true);
         // T-02: ServiceAgreement is the authorized trust updater
         trustReg.addUpdater(address(sa));
         // T-03: allowlist the mock ERC-20 token for ERC-20 agreement tests
@@ -383,6 +385,8 @@ contract ServiceAgreementTrustLivenessTest is Test {
     function setUp() public {
         brokenRegistry = new BrokenTrustRegistry();
         sa = new ServiceAgreement(address(brokenRegistry));
+        sa.setLegacyFulfillMode(true);
+        sa.setLegacyFulfillProvider(provider, true);
         // Note: do NOT add ServiceAgreement as updater — the registry always reverts anyway.
         vm.deal(client, 100 ether);
         vm.deal(provider, 10 ether);

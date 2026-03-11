@@ -1,93 +1,28 @@
-import { ethers } from "ethers";
-
-// ─── ABI ────────────────────────────────────────────────────────────────────
-// Extracted directly from ServiceAgreement.sol + IServiceAgreement.sol
-
-const SERVICE_AGREEMENT_ABI = [
-  // Write
-  "function propose(address provider, string calldata serviceType, string calldata description, uint256 price, address token, uint256 deadline, bytes32 deliverablesHash) external payable returns (uint256 agreementId)",
-  "function accept(uint256 agreementId) external",
-  "function fulfill(uint256 agreementId, bytes32 actualDeliverablesHash) external",
-  "function dispute(uint256 agreementId, string calldata reason) external",
-  "function cancel(uint256 agreementId) external",
-  "function expiredCancel(uint256 agreementId) external",
-
-  // Read
-  "function getAgreement(uint256 id) external view returns (tuple(uint256 id, address client, address provider, string serviceType, string description, uint256 price, address token, uint256 deadline, bytes32 deliverablesHash, uint8 status, uint256 createdAt, uint256 resolvedAt) agreement)",
-  "function getAgreementsByClient(address client) external view returns (uint256[])",
-  "function getAgreementsByProvider(address provider) external view returns (uint256[])",
-  "function agreementCount() external view returns (uint256)",
-
-  // Events
-  "event AgreementProposed(uint256 indexed id, address indexed client, address indexed provider, string serviceType, uint256 price, address token, uint256 deadline)",
-  "event AgreementAccepted(uint256 indexed id, address indexed provider)",
-  "event AgreementFulfilled(uint256 indexed id, address indexed provider, bytes32 deliverablesHash)",
-  "event AgreementDisputed(uint256 indexed id, address indexed initiator, string reason)",
-  "event AgreementCancelled(uint256 indexed id, address indexed client)",
-  "event DisputeResolved(uint256 indexed id, bool favorProvider)",
-];
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-/** Mirrors the on-chain Status enum in IServiceAgreement.sol */
-export enum AgreementStatus {
-  PROPOSED  = 0,
-  ACCEPTED  = 1,
-  FULFILLED = 2,
-  DISPUTED  = 3,
-  CANCELLED = 4,
-}
-
-export interface Agreement {
-  id: bigint;
-  client: string;
-  provider: string;
-  serviceType: string;
-  description: string;
-  price: bigint;
-  /** ERC-20 token address, or address(0) for ETH */
-  token: string;
-  deadline: bigint;
-  /** bytes32 hash of deliverables spec (hex string) */
-  deliverablesHash: string;
-  status: AgreementStatus;
-  createdAt: bigint;
-  resolvedAt: bigint;
-}
-
-export interface ProposeParams {
-  provider: string;
-  serviceType: string;
-  description: string;
-  price: bigint;
-  /** address(0) for ETH */
-  token: string;
-  /** Unix timestamp */
-  deadline: number;
-  /** bytes32 as hex string, e.g. ethers.keccak256(...) */
-  deliverablesHash: string;
-}
-
-// ─── Client ──────────────────────────────────────────────────────────────────
+import { ContractRunner, ethers } from "ethers";
+import { SERVICE_AGREEMENT_ABI } from "./contracts";
+import {
+  Agreement,
+  AgreementStatus,
+  DisputeCase,
+  DisputeEvidence,
+  DisputeOutcome,
+  EvidenceType,
+  ProposeParams,
+  ProviderResponseType,
+  RemediationCase,
+  RemediationFeedback,
+  RemediationResponse,
+} from "./types";
 
 export class ServiceAgreementClient {
   private contract: ethers.Contract;
 
-  constructor(address: string, signerOrProvider: ethers.Signer | ethers.Provider) {
-    this.contract = new ethers.Contract(address, SERVICE_AGREEMENT_ABI, signerOrProvider);
+  constructor(address: string, runner: ContractRunner) {
+    this.contract = new ethers.Contract(address, SERVICE_AGREEMENT_ABI, runner);
   }
 
-  // ── Write ─────────────────────────────────────────────────────────────────
-
-  /**
-   * Propose a new service agreement.
-   * For ETH agreements (token == address(0)) the `price` is sent as msg.value automatically.
-   * For ERC-20 agreements the contract must be approved before calling.
-   */
   async propose(params: ProposeParams): Promise<{ agreementId: bigint; receipt: ethers.TransactionReceipt }> {
-    const ETH_ADDRESS = "0x0000000000000000000000000000000000000000";
-    const isEth = params.token === ETH_ADDRESS || params.token === ethers.ZeroAddress;
-
+    const isEth = params.token === ethers.ZeroAddress;
     const tx = await this.contract.propose(
       params.provider,
       params.serviceType,
@@ -96,102 +31,110 @@ export class ServiceAgreementClient {
       params.token,
       params.deadline,
       params.deliverablesHash,
-      { value: isEth ? params.price : 0n }
+      { value: isEth ? params.price : 0n },
     );
-    const receipt: ethers.TransactionReceipt = await tx.wait();
-
-    // Parse AgreementProposed event to retrieve the on-chain agreementId
+    const receipt = await tx.wait();
     const iface = new ethers.Interface(SERVICE_AGREEMENT_ABI);
     for (const log of receipt.logs) {
       try {
         const parsed = iface.parseLog(log);
-        if (parsed && parsed.name === "AgreementProposed") {
-          return { agreementId: BigInt(parsed.args.id), receipt };
-        }
-      } catch {
-        // skip unparseable logs
-      }
+        if (parsed?.name === "AgreementProposed") return { agreementId: BigInt(parsed.args.id), receipt };
+      } catch {}
     }
-
-    throw new Error("ServiceAgreementClient: could not parse AgreementProposed event");
+    throw new Error("Could not parse AgreementProposed event");
   }
 
-  async accept(agreementId: bigint): Promise<ethers.TransactionReceipt> {
-    const tx = await this.contract.accept(agreementId);
+  async accept(id: bigint) { const tx = await this.contract.accept(id); return tx.wait(); }
+  /** @deprecated Legacy/trusted-only immediate release path. Prefer commitDeliverable() + verifyDeliverable()/autoRelease(). */
+  async fulfill(id: bigint, hash: string) { const tx = await this.contract.fulfill(id, hash); return tx.wait(); }
+  async fulfillLegacyTrustedOnly(id: bigint, hash: string) { return this.fulfill(id, hash); }
+  async commitDeliverable(id: bigint, hash: string) { const tx = await this.contract.commitDeliverable(id, hash); return tx.wait(); }
+  async verifyDeliverable(id: bigint) { const tx = await this.contract.verifyDeliverable(id); return tx.wait(); }
+  async autoRelease(id: bigint) { const tx = await this.contract.autoRelease(id); return tx.wait(); }
+  async dispute(id: bigint, reason: string) { const tx = await this.contract.dispute(id, reason); return tx.wait(); }
+  async escalateToDispute(id: bigint, reason: string) { const tx = await this.contract.escalateToDispute(id, reason); return tx.wait(); }
+  async cancel(id: bigint) { const tx = await this.contract.cancel(id); return tx.wait(); }
+  async expiredCancel(id: bigint) { const tx = await this.contract.expiredCancel(id); return tx.wait(); }
+  async resolveDisputeDetailed(id: bigint, outcome: DisputeOutcome, providerAward: bigint, clientAward: bigint) {
+    const tx = await this.contract.resolveDisputeDetailed(id, outcome, providerAward, clientAward); return tx.wait();
+  }
+
+  async requestRevision(agreementId: bigint, feedbackHash: string, feedbackURI = "", previousTranscriptHash = ethers.ZeroHash) {
+    const tx = await this.contract.requestRevision(agreementId, feedbackHash, feedbackURI, previousTranscriptHash);
     return tx.wait();
   }
 
-  async fulfill(agreementId: bigint, actualDeliverablesHash: string): Promise<ethers.TransactionReceipt> {
-    const tx = await this.contract.fulfill(agreementId, actualDeliverablesHash);
+  async respondToRevision(
+    agreementId: bigint,
+    responseType: ProviderResponseType,
+    responseHash: string,
+    responseURI = "",
+    previousTranscriptHash = ethers.ZeroHash,
+    proposedProviderPayout = 0n,
+  ) {
+    const tx = await this.contract.respondToRevision(
+      agreementId,
+      responseType,
+      proposedProviderPayout,
+      responseHash,
+      responseURI,
+      previousTranscriptHash,
+    );
     return tx.wait();
   }
 
-  async dispute(agreementId: bigint, reason: string): Promise<ethers.TransactionReceipt> {
-    const tx = await this.contract.dispute(agreementId, reason);
+  async submitDisputeEvidence(agreementId: bigint, evidenceType: EvidenceType, evidenceHash: string, evidenceURI = "") {
+    const tx = await this.contract.submitDisputeEvidence(agreementId, evidenceType, evidenceHash, evidenceURI);
     return tx.wait();
   }
-
-  async cancel(agreementId: bigint): Promise<ethers.TransactionReceipt> {
-    const tx = await this.contract.cancel(agreementId);
-    return tx.wait();
-  }
-
-  async expiredCancel(agreementId: bigint): Promise<ethers.TransactionReceipt> {
-    const tx = await this.contract.expiredCancel(agreementId);
-    return tx.wait();
-  }
-
-  // ── Read ──────────────────────────────────────────────────────────────────
 
   async getAgreement(id: bigint): Promise<Agreement> {
     const raw = await this.contract.getAgreement(id);
-    return this._toAgreement(raw);
-  }
-
-  async getAgreementsByClient(client: string): Promise<bigint[]> {
-    const ids: bigint[] = await this.contract.getAgreementsByClient(client);
-    return ids.map(BigInt);
-  }
-
-  async getAgreementsByProvider(provider: string): Promise<bigint[]> {
-    const ids: bigint[] = await this.contract.getAgreementsByProvider(provider);
-    return ids.map(BigInt);
-  }
-
-  async agreementCount(): Promise<bigint> {
-    return BigInt(await this.contract.agreementCount());
-  }
-
-  // ── Utility ───────────────────────────────────────────────────────────────
-
-  /** Fetch full Agreement objects for all agreements where `client` is the paying party. */
-  async getClientAgreements(client: string): Promise<Agreement[]> {
-    const ids = await this.getAgreementsByClient(client);
-    return Promise.all(ids.map((id) => this.getAgreement(id)));
-  }
-
-  /** Fetch full Agreement objects for all agreements where `provider` is the delivering party. */
-  async getProviderAgreements(provider: string): Promise<Agreement[]> {
-    const ids = await this.getAgreementsByProvider(provider);
-    return Promise.all(ids.map((id) => this.getAgreement(id)));
-  }
-
-  // ── Internal ─────────────────────────────────────────────────────────────
-
-  private _toAgreement(raw: ethers.Result): Agreement {
     return {
-      id:               BigInt(raw.id),
-      client:           raw.client as string,
-      provider:         raw.provider as string,
-      serviceType:      raw.serviceType as string,
-      description:      raw.description as string,
-      price:            BigInt(raw.price),
-      token:            raw.token as string,
-      deadline:         BigInt(raw.deadline),
-      deliverablesHash: raw.deliverablesHash as string,
-      status:           Number(raw.status) as AgreementStatus,
-      createdAt:        BigInt(raw.createdAt),
-      resolvedAt:       BigInt(raw.resolvedAt),
+      id: BigInt(raw.id), client: raw.client, provider: raw.provider, serviceType: raw.serviceType,
+      description: raw.description, price: BigInt(raw.price), token: raw.token, deadline: BigInt(raw.deadline),
+      deliverablesHash: raw.deliverablesHash, status: Number(raw.status) as AgreementStatus,
+      createdAt: BigInt(raw.createdAt), resolvedAt: BigInt(raw.resolvedAt), verifyWindowEnd: BigInt(raw.verifyWindowEnd), committedHash: raw.committedHash,
     };
+  }
+
+  async getRemediationCase(id: bigint): Promise<RemediationCase> {
+    const raw = await this.contract.getRemediationCase(id);
+    return { cycleCount: Number(raw.cycleCount), openedAt: BigInt(raw.openedAt), deadlineAt: BigInt(raw.deadlineAt), lastActionAt: BigInt(raw.lastActionAt), latestTranscriptHash: raw.latestTranscriptHash, active: raw.active };
+  }
+
+  async getRemediationFeedback(id: bigint, index: bigint): Promise<RemediationFeedback> {
+    const raw = await this.contract.getRemediationFeedback(id, index);
+    return { cycle: Number(raw.cycle), author: raw.author, feedbackHash: raw.feedbackHash, feedbackURI: raw.feedbackURI, previousTranscriptHash: raw.previousTranscriptHash, transcriptHash: raw.transcriptHash, timestamp: BigInt(raw.timestamp) };
+  }
+
+  async getRemediationResponse(id: bigint, index: bigint): Promise<RemediationResponse> {
+    const raw = await this.contract.getRemediationResponse(id, index);
+    return { cycle: Number(raw.cycle), author: raw.author, responseType: Number(raw.responseType) as ProviderResponseType, proposedProviderPayout: BigInt(raw.proposedProviderPayout), responseHash: raw.responseHash, responseURI: raw.responseURI, previousTranscriptHash: raw.previousTranscriptHash, transcriptHash: raw.transcriptHash, timestamp: BigInt(raw.timestamp) };
+  }
+
+  async getDisputeCase(id: bigint): Promise<DisputeCase> {
+    const raw = await this.contract.getDisputeCase(id);
+    return { agreementId: BigInt(raw.agreementId), openedAt: BigInt(raw.openedAt), responseDeadlineAt: BigInt(raw.responseDeadlineAt), outcome: Number(raw.outcome) as DisputeOutcome, providerAward: BigInt(raw.providerAward), clientAward: BigInt(raw.clientAward), humanReviewRequested: raw.humanReviewRequested, evidenceCount: BigInt(raw.evidenceCount) };
+  }
+
+  async getDisputeEvidence(id: bigint, index: bigint): Promise<DisputeEvidence> {
+    const raw = await this.contract.getDisputeEvidence(id, index);
+    return { submitter: raw.submitter, evidenceType: Number(raw.evidenceType) as EvidenceType, evidenceHash: raw.evidenceHash, evidenceURI: raw.evidenceURI, timestamp: BigInt(raw.timestamp) };
+  }
+
+  async getDisputeEvidenceAll(id: bigint): Promise<DisputeEvidence[]> {
+    const dispute = await this.getDisputeCase(id);
+    return Promise.all(Array.from({ length: Number(dispute.evidenceCount) }, (_, i) => this.getDisputeEvidence(id, BigInt(i))));
+  }
+
+  async getClientAgreements(client: string): Promise<Agreement[]> {
+    const ids = await this.contract.getAgreementsByClient(client) as bigint[];
+    return Promise.all(ids.map((id) => this.getAgreement(BigInt(id))));
+  }
+
+  async getProviderAgreements(provider: string): Promise<Agreement[]> {
+    const ids = await this.contract.getAgreementsByProvider(provider) as bigint[];
+    return Promise.all(ids.map((id) => this.getAgreement(BigInt(id))));
   }
 }

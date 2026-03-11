@@ -155,6 +155,8 @@ contract ServiceAgreementEconomicTest is Test {
         // T-02: deploy TrustRegistry first, then wire ServiceAgreement as the only updater
         trust = new TrustRegistry();
         sa    = new ServiceAgreement(address(trust));
+        sa.setLegacyFulfillMode(true);
+        sa.setLegacyFulfillProvider(provider, true);
         trust.addUpdater(address(sa)); // SA is the ONLY authorized trust score updater
         usdc  = new MockERC20();
 
@@ -283,6 +285,7 @@ contract ServiceAgreementEconomicTest is Test {
      */
     function test_Attack1b_ReentrancyOnFulfill() public {
         ReentrancyAttacker attacker = new ReentrancyAttacker(address(sa));
+        sa.setLegacyFulfillProvider(address(attacker), true);
         vm.deal(client, 20 ether);
 
         // Create agreement where the reentrancy attacker is the provider
@@ -641,6 +644,7 @@ contract ServiceAgreementEconomicTest is Test {
 
         vm.deal(attackerWallet, 10 ether);
         vm.deal(attackerSybil,  1 ether);
+        sa.setLegacyFulfillProvider(attackerSybil, true);
 
         // ── Verify T-02: direct recordSuccess() is now blocked for non-SA updaters ──
         vm.prank(attackerWallet); // attacker is NOT an authorized updater

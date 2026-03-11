@@ -154,7 +154,10 @@ interface IServiceAgreement {
     function accept(uint256 agreementId) external;
 
     /**
-     * @notice Provider marks the agreement fulfilled and claims escrow (immediate-release path)
+     * @notice Legacy-only immediate release path.
+     *         Public launch flow MUST use commitDeliverable() -> verifyDeliverable()/autoRelease(),
+     *         with remediation/dispute escalation when needed.
+     *         Implementations may disable this by default and only allow explicitly trusted providers.
      * @param agreementId The agreement to fulfill
      * @param actualDeliverablesHash keccak256 of what was actually delivered
      */

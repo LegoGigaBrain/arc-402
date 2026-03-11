@@ -22,8 +22,17 @@ contract PolicyEngine is IPolicyEngine {
     event PolicySet(address indexed wallet, bytes32 policyHash);
     event CategoryLimitSet(address indexed wallet, string category, uint256 limitPerTx);
 
-    // Called by wallet to register itself
+    /**
+     * @notice Register a wallet and record its owner.
+     * @dev Only the wallet itself may call this (msg.sender == wallet). This prevents
+     *      a third party from hijacking the walletOwners mapping for a wallet they
+     *      don't control. ARC402Wallet calls this indirectly via its constructor.
+     *      Re-registration is blocked once an owner is set — the current owner must
+     *      call setCategoryLimitFor() for any subsequent changes.
+     */
     function registerWallet(address wallet, address owner) external {
+        require(msg.sender == wallet, "PolicyEngine: caller must be wallet");
+        require(walletOwners[wallet] == address(0), "PolicyEngine: already registered");
         walletOwners[wallet] = owner;
     }
 

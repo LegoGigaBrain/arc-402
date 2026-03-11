@@ -44,6 +44,10 @@ contract SettlementCoordinator {
         bytes32 intentId,
         uint256 expiresAt
     ) external returns (bytes32 proposalId) {
+        // SC-AUTH: caller must be the wallet they claim to represent.
+        // ARC402Wallet.proposeMASSettlement() calls this with address(this), so
+        // msg.sender == fromWallet is always satisfied for legitimate wallet calls.
+        require(msg.sender == fromWallet, "SC: caller must be fromWallet");
         proposalId = keccak256(abi.encodePacked(fromWallet, toWallet, amount, token, intentId, block.timestamp));
         require(!proposalExists[proposalId], "SettlementCoordinator: proposal exists");
 

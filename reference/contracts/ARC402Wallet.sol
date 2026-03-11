@@ -173,6 +173,7 @@ contract ARC402Wallet {
      * @param recipient Intended recipient address
      * @param amount Intended spend amount
      * @param token Token address (address(0) for ETH, token address for ERC-20)
+     * @param expiresAt Unix timestamp after which attestation is invalid (0 = no expiry)
      * @return attestationId The ID passed in (for convenience)
      */
     function attest(
@@ -181,9 +182,10 @@ contract ARC402Wallet {
         string calldata reason,
         address recipient,
         uint256 amount,
-        address token
+        address token,
+        uint256 expiresAt
     ) external onlyOwner returns (bytes32) {
-        _intentAttestation().attest(attestationId, action, reason, recipient, amount, token);
+        _intentAttestation().attest(attestationId, action, reason, recipient, amount, token, expiresAt);
         return attestationId;
     }
 
@@ -325,7 +327,7 @@ contract ARC402Wallet {
         uint256 amount,
         string calldata category,
         bytes32 attestationId
-    ) external onlyOwner requireOpenContext {
+    ) external onlyOwner requireOpenContext notFrozen {
         require(
             _intentAttestation().verify(attestationId, address(this), recipientWallet, amount, address(0)),
             "ARC402: invalid intent attestation"

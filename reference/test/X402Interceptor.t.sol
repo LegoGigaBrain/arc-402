@@ -340,7 +340,8 @@ contract X402InterceptorAuthorizationTest is Test {
             "x402 payment for API access",
             paymentRecipient,
             USDC_AMOUNT,
-            address(usdc)
+            address(usdc),
+            0
         );
 
         // Open a context so the wallet allows spending

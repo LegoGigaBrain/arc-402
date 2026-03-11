@@ -43,6 +43,10 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     /// @notice ETH payment sentinel (address(0) means native ETH, not an ERC-20).
     address public constant ETH = address(0);
 
+    /// @notice Duration a dispute may remain unresolved before either party can
+    ///         trigger an auto-refund to the client (conservative default).
+    uint256 public constant DISPUTE_TIMEOUT = 30 days;
+
     /// @notice Allowlist of ERC-20 tokens (and ETH) accepted as payment.
     ///         ETH (address(0)) is allowed by default at construction.
     ///         Only known-safe tokens should be added — fee-on-transfer or
@@ -75,6 +79,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     event AgreementDisputed(uint256 indexed id, address indexed initiator, string reason);
     event AgreementCancelled(uint256 indexed id, address indexed client);
     event DisputeResolved(uint256 indexed id, bool favorProvider);
+    event DisputeTimedOut(uint256 indexed id, address indexed beneficiary);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     event TokenAllowed(address indexed token);
     event TokenDisallowed(address indexed token);
@@ -267,7 +272,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         );
         require(ag.status == Status.ACCEPTED, "ServiceAgreement: not ACCEPTED");
 
-        ag.status = Status.DISPUTED;
+        ag.status     = Status.DISPUTED;
+        ag.resolvedAt = block.timestamp; // records when the dispute was opened (timeout clock starts here)
 
         emit AgreementDisputed(agreementId, msg.sender, reason);
     }
@@ -355,6 +361,30 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
                 }
             }
         }
+    }
+
+    // ─── Core: Expired Dispute Refund ────────────────────────────────────────
+
+    /**
+     * @notice If a dispute has been unresolved for DISPUTE_TIMEOUT, either party can
+     *         trigger an auto-refund to the client.
+     * @dev Prevents funds being locked indefinitely if the owner is offline or compromised.
+     *      The dispute() function sets resolvedAt = block.timestamp when the dispute is
+     *      opened, so the 30-day timeout clock starts from that moment.
+     */
+    function expiredDisputeRefund(uint256 agreementId) external nonReentrant {
+        Agreement storage ag = _get(agreementId);
+        require(ag.status == Status.DISPUTED, "ServiceAgreement: not DISPUTED");
+        require(
+            block.timestamp > ag.resolvedAt + DISPUTE_TIMEOUT,
+            "ServiceAgreement: dispute timeout not reached"
+        );
+        // Default: refund client (conservative — provider had 30 days to resolve)
+        ag.status = Status.CANCELLED;
+        ag.resolvedAt = block.timestamp;
+        emit AgreementCancelled(agreementId, ag.client);
+        emit DisputeTimedOut(agreementId, ag.client);
+        _releaseEscrow(ag.token, ag.client, ag.price);
     }
 
     // ─── Getters ─────────────────────────────────────────────────────────────

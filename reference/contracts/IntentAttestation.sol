@@ -18,6 +18,7 @@ contract IntentAttestation is IIntentAttestation {
         uint256 amount;
         address token;      // address(0) for ETH, token address for ERC-20 (e.g. USDC)
         uint256 timestamp;
+        uint256 expiresAt;  // 0 = no expiry. Otherwise: unix timestamp after which invalid.
     }
 
     mapping(bytes32 => Attestation) private attestations;
@@ -30,7 +31,8 @@ contract IntentAttestation is IIntentAttestation {
         string action,
         address recipient,
         uint256 amount,
-        address token
+        address token,
+        uint256 expiresAt
     );
 
     event AttestationConsumed(bytes32 indexed attestationId, address indexed wallet);
@@ -41,9 +43,11 @@ contract IntentAttestation is IIntentAttestation {
         string calldata reason,
         address recipient,
         uint256 amount,
-        address token
+        address token,
+        uint256 expiresAt
     ) external {
         require(!exists[attestationId], "IntentAttestation: already exists");
+        require(expiresAt == 0 || expiresAt > block.timestamp, "IA: expiry in past");
         attestations[attestationId] = Attestation({
             attestationId: attestationId,
             wallet: msg.sender,
@@ -52,10 +56,11 @@ contract IntentAttestation is IIntentAttestation {
             recipient: recipient,
             amount: amount,
             token: token,
-            timestamp: block.timestamp
+            timestamp: block.timestamp,
+            expiresAt: expiresAt
         });
         exists[attestationId] = true;
-        emit AttestationCreated(attestationId, msg.sender, action, recipient, amount, token);
+        emit AttestationCreated(attestationId, msg.sender, action, recipient, amount, token, expiresAt);
     }
 
     function verify(
@@ -67,6 +72,8 @@ contract IntentAttestation is IIntentAttestation {
     ) external view returns (bool) {
         if (!exists[attestationId]) return false;
         if (used[attestationId]) return false;
+        if (attestations[attestationId].expiresAt != 0 &&
+            block.timestamp > attestations[attestationId].expiresAt) return false;
         Attestation storage a = attestations[attestationId];
         return a.wallet == wallet &&
                a.recipient == recipient &&
@@ -80,6 +87,13 @@ contract IntentAttestation is IIntentAttestation {
         require(attestations[attestationId].wallet == msg.sender, "IA: not wallet");
         used[attestationId] = true;
         emit AttestationConsumed(attestationId, msg.sender);
+    }
+
+    function isExpired(bytes32 attestationId) external view returns (bool) {
+        if (!exists[attestationId]) return false;
+        uint256 exp = attestations[attestationId].expiresAt;
+        if (exp == 0) return false;
+        return block.timestamp > exp;
     }
 
     function getAttestation(bytes32 attestationId) external view returns (

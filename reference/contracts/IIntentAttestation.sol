@@ -8,7 +8,8 @@ interface IIntentAttestation {
         string calldata reason,
         address recipient,
         uint256 amount,
-        address token
+        address token,
+        uint256 expiresAt
     ) external;
 
     function verify(
@@ -20,4 +21,6 @@ interface IIntentAttestation {
     ) external view returns (bool);
 
     function consume(bytes32 attestationId) external;
+
+    function isExpired(bytes32 attestationId) external view returns (bool);
 }

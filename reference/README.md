@@ -36,7 +36,7 @@ This repository is strong enough to support controlled counterparties and audit-
 - **Ownable2Step** — two-step ownership transfer on ServiceAgreement (F-24)
 - **Dispute timeout** — 30-day auto-refund if arbiter is offline
 - **Minimum trust value** — blocks 1-wei sybil farming
-- **Default delivery lifecycle** — provider commits deliverable, client verifies or enters remediation/dispute, auto-release after 3 days if client is silent
+- **Default delivery lifecycle** — provider commits deliverable, client verifies or enters remediation, and only then escalates to dispute unless a narrow direct-dispute hard-fail exception applies (no delivery, hard deadline breach, clearly invalid/fraudulent deliverable, safety-critical violation); auto-release after 3 days if client is silent
 - **Legacy fulfill gated off by default** — immediate release remains ABI-compatible only for explicitly trusted legacy providers, not as the preferred public path
 - **fromWallet auth** — SettlementCoordinator requires caller == fromWallet
 - **PolicyEngine self-registration** — wallets can only register themselves

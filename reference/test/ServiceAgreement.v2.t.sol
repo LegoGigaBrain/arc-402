@@ -312,34 +312,103 @@ contract CommitRevealTest is Test {
     }
 
     /**
-     * @notice Client may dispute within the verify window after commit.
+     * @notice Normal quality disputes must go through remediation first.
      */
-    function test_CommitReveal_ClientDisputes() public {
+    function test_CommitReveal_DisputeRequiresRemediationInNormalCase() public {
         uint256 id = _proposeAndAccept();
         _commit(id);
 
-        // Client disputes while still in verify window
         vm.prank(client);
+        vm.expectRevert("ServiceAgreement: remediation first");
         sa.dispute(id, "Deliverable does not meet spec");
-
-        IServiceAgreement.Agreement memory ag = sa.getAgreement(id);
-        assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.DISPUTED));
-        // Escrow still locked
-        assertEq(address(sa).balance, PRICE);
     }
 
     /**
-     * @notice Provider may also dispute within verify window.
+     * @notice After remediation is opened, explicit escalation can enter dispute.
      */
-    function test_CommitReveal_ProviderDisputes() public {
+    function test_CommitReveal_EscalateToDisputeAfterRemediation() public {
         uint256 id = _proposeAndAccept();
         _commit(id);
 
+        vm.prank(client);
+        sa.requestRevision(id, keccak256("needs-fix"), "ipfs://feedback", bytes32(0));
+
         vm.prank(provider);
-        sa.dispute(id, "Client refusing to verify");
+        sa.escalateToDispute(id, "deadlocked after remediation started");
 
         IServiceAgreement.Agreement memory ag = sa.getAgreement(id);
         assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.DISPUTED));
+        assertEq(address(sa).balance, PRICE);
+    }
+
+
+    /**
+     * @notice Hard non-delivery can bypass remediation once the deadline is actually breached.
+     */
+    function test_DirectDispute_AllowsNoDeliveryAfterDeadline() public {
+        uint256 id = _proposeAndAccept();
+
+        vm.warp(block.timestamp + DEADLINE + 1);
+
+        vm.prank(client);
+        sa.directDispute(id, IServiceAgreement.DirectDisputeReason.NO_DELIVERY, "provider never delivered");
+
+        IServiceAgreement.Agreement memory ag = sa.getAgreement(id);
+        assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.DISPUTED));
+    }
+
+    /**
+     * @notice Hard deadline breach can bypass remediation.
+     */
+    function test_DirectDispute_AllowsHardDeadlineBreach() public {
+        uint256 id = _proposeAndAccept();
+
+        vm.warp(block.timestamp + DEADLINE + 1);
+
+        vm.prank(provider);
+        sa.directDispute(id, IServiceAgreement.DirectDisputeReason.HARD_DEADLINE_BREACH, "deadline was breached");
+
+        IServiceAgreement.Agreement memory ag = sa.getAgreement(id);
+        assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.DISPUTED));
+    }
+
+    /**
+     * @notice Clearly invalid or fraudulent deliverables can be disputed directly during verification.
+     */
+    function test_DirectDispute_AllowsInvalidDeliverable() public {
+        uint256 id = _proposeAndAccept();
+        _commit(id);
+
+        vm.prank(client);
+        sa.directDispute(id, IServiceAgreement.DirectDisputeReason.INVALID_OR_FRAUDULENT_DELIVERABLE, "deliverable is fraudulent");
+
+        IServiceAgreement.Agreement memory ag = sa.getAgreement(id);
+        assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.DISPUTED));
+    }
+
+    /**
+     * @notice Safety-critical violations can bypass remediation immediately.
+     */
+    function test_DirectDispute_AllowsSafetyCriticalViolation() public {
+        uint256 id = _proposeAndAccept();
+
+        vm.prank(client);
+        sa.directDispute(id, IServiceAgreement.DirectDisputeReason.SAFETY_CRITICAL_VIOLATION, "unsafe output");
+
+        IServiceAgreement.Agreement memory ag = sa.getAgreement(id);
+        assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.DISPUTED));
+    }
+
+    /**
+     * @notice Direct-dispute exceptions are narrow and cannot be abused before the condition exists.
+     */
+    function test_DirectDispute_RevertsWhenConditionNotMet() public {
+        uint256 id = _proposeAndAccept();
+        _commit(id);
+
+        vm.prank(client);
+        vm.expectRevert("ServiceAgreement: direct dispute not allowed");
+        sa.directDispute(id, IServiceAgreement.DirectDisputeReason.NO_DELIVERY, "not yet overdue");
     }
 
     /**

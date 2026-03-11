@@ -224,6 +224,14 @@ class EvidenceType(IntEnum):
     OTHER = 6
 
 
+class DirectDisputeReason(IntEnum):
+    NONE = 0
+    NO_DELIVERY = 1
+    HARD_DEADLINE_BREACH = 2
+    INVALID_OR_FRAUDULENT_DELIVERABLE = 3
+    SAFETY_CRITICAL_VIOLATION = 4
+
+
 class Agreement(BaseModel):
     id: int
     client: str

@@ -29,9 +29,11 @@ export const SERVICE_AGREEMENT_ABI = [
   "function accept(uint256 agreementId) external",
   "function fulfill(uint256 agreementId, bytes32 actualDeliverablesHash) external",
   "function dispute(uint256 agreementId, string reason) external",
+  "function directDispute(uint256 agreementId, uint8 directReason, string reason) external",
   "function cancel(uint256 agreementId) external",
   "function expiredCancel(uint256 agreementId) external",
   "function resolveDispute(uint256 agreementId, bool favorProvider) external",
+  "function canDirectDispute(uint256 agreementId, uint8 directReason) external view returns (bool)",
   // Getters
   "function getAgreement(uint256 id) external view returns (tuple(uint256 id, address client, address provider, string serviceType, string description, uint256 price, address token, uint256 deadline, bytes32 deliverablesHash, uint8 status, uint256 createdAt, uint256 resolvedAt))",
   "function getAgreementsByClient(address client) external view returns (uint256[])",

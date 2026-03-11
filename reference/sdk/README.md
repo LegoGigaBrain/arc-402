@@ -152,7 +152,7 @@ console.log({ highestTier, metrics, tx0 });
 
 ## Notes
 
-- The default settlement flow is propose -> accept -> commitDeliverable -> verifyDeliverable/autoRelease, with remediation and dispute escalation when needed.
+- The default settlement flow is propose -> accept -> commitDeliverable -> verifyDeliverable/autoRelease, with remediation required before dispute in normal cases. Direct dispute is reserved for explicit hard-fail cases: no delivery, hard deadline breach, clearly invalid/fraudulent deliverables, or safety-critical violations.
 - `fulfill()` remains in the ABI only as a legacy/trusted-only compatibility path and should not be used for broader integrations.
 - Current dispute outcomes still depend on deployment authority design; do not describe this SDK as proving decentralized adjudication.
 - Negotiation helpers only shape Spec 14 messages. They do **not** send them.

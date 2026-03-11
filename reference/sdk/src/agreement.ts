@@ -6,6 +6,7 @@ import {
   DisputeCase,
   DisputeEvidence,
   DisputeOutcome,
+  DirectDisputeReason,
   EvidenceType,
   ProposeParams,
   ProviderResponseType,
@@ -52,7 +53,9 @@ export class ServiceAgreementClient {
   async verifyDeliverable(id: bigint) { const tx = await this.contract.verifyDeliverable(id); return tx.wait(); }
   async autoRelease(id: bigint) { const tx = await this.contract.autoRelease(id); return tx.wait(); }
   async dispute(id: bigint, reason: string) { const tx = await this.contract.dispute(id, reason); return tx.wait(); }
+  async directDispute(id: bigint, directReason: DirectDisputeReason, reason: string) { const tx = await this.contract.directDispute(id, directReason, reason); return tx.wait(); }
   async escalateToDispute(id: bigint, reason: string) { const tx = await this.contract.escalateToDispute(id, reason); return tx.wait(); }
+  async canDirectDispute(id: bigint, directReason: DirectDisputeReason): Promise<boolean> { return this.contract.canDirectDispute(id, directReason); }
   async cancel(id: bigint) { const tx = await this.contract.cancel(id); return tx.wait(); }
   async expiredCancel(id: bigint) { const tx = await this.contract.expiredCancel(id); return tx.wait(); }
   async resolveDisputeDetailed(id: bigint, outcome: DisputeOutcome, providerAward: bigint, clientAward: bigint) {

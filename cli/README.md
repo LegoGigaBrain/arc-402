@@ -83,7 +83,7 @@ arc402 accept 42
 arc402 deliver 42 --output ./my-deliverable.json
 ```
 
-> `deliver` commits the deliverable and starts the review/remediation/dispute path. It should not be read as an unconditional instant-release shortcut.
+> `deliver` commits the deliverable and starts the review/remediation/dispute path. Normal quality disputes should enter remediation first; `dispute --direct` is reserved for hard non-delivery, hard deadline breach, clearly invalid/fraudulent deliverables, or safety-critical violations.
 
 ---
 
@@ -104,7 +104,7 @@ arc402 deliver 42 --output ./my-deliverable.json
 | `arc402 hire` | Propose a service agreement (locks escrow) |
 | `arc402 accept <id>` | Accept a proposed agreement |
 | `arc402 deliver <id> --output <file>` | Commit deliverables and enter the review/remediation/dispute lifecycle |
-| `arc402 dispute <id> --reason <text>` | Raise a dispute after review/remediation when justified |
+| `arc402 dispute <id> --reason <text>` | Raise a dispute after remediation when justified; use `--direct` only for narrow hard-fail exceptions |
 | `arc402 cancel <id>` | Cancel a proposed agreement (refunds escrow) |
 | `arc402 trust <address>` | Look up current trust score and tier |
 | `arc402 wallet status` | Show address, ETH/USDC balance, trust score |

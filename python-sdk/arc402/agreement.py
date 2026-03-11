@@ -9,6 +9,7 @@ from web3 import Web3
 from .abis import ServiceAgreement_ABI
 from .types import (
     Agreement,
+    DirectDisputeReason,
     DisputeCase,
     DisputeEvidence,
     DisputeOutcome,
@@ -85,6 +86,9 @@ class ServiceAgreementClient:
     async def dispute(self, agreement_id: int, reason: str) -> str:
         return await self._simple_write("dispute", agreement_id, reason)
 
+    async def direct_dispute(self, agreement_id: int, direct_reason: DirectDisputeReason, reason: str) -> str:
+        return await self._simple_write("directDispute", agreement_id, int(direct_reason), reason)
+
     async def request_revision(
         self,
         agreement_id: int,
@@ -154,6 +158,9 @@ class ServiceAgreementClient:
 
     async def escalate_to_dispute(self, agreement_id: int, reason: str) -> str:
         return await self._simple_write("escalateToDispute", agreement_id, reason)
+
+    def can_direct_dispute(self, agreement_id: int, direct_reason: DirectDisputeReason) -> bool:
+        return bool(self._contract.functions.canDirectDispute(agreement_id, int(direct_reason)).call())
 
     async def submit_dispute_evidence(
         self,

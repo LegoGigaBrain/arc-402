@@ -42,6 +42,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     event AgreementAccepted(uint256 indexed id, address indexed provider);
     event AgreementFulfilled(uint256 indexed id, address indexed provider, bytes32 deliverablesHash);
     event AgreementDisputed(uint256 indexed id, address indexed initiator, string reason);
+    event DirectDisputeOpened(uint256 indexed id, address indexed initiator, DirectDisputeReason directReason, string reason);
     event AgreementCancelled(uint256 indexed id, address indexed client);
     event DisputeResolved(uint256 indexed id, bool favorProvider);
     event DisputeTimedOut(uint256 indexed id, address indexed beneficiary);
@@ -219,7 +220,12 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     }
 
     function dispute(uint256 agreementId, string calldata reason) external {
-        _openFormalDispute(agreementId, reason, false);
+        _openFormalDispute(agreementId, reason, true, DirectDisputeReason.NONE);
+    }
+
+    function directDispute(uint256 agreementId, DirectDisputeReason directReason, string calldata reason) external {
+        require(directReason != DirectDisputeReason.NONE, "ServiceAgreement: invalid direct dispute reason");
+        _openFormalDispute(agreementId, reason, false, directReason);
     }
 
     function requestRevision(uint256 agreementId, bytes32 feedbackHash, string calldata feedbackURI, bytes32 previousTranscriptHash) external {
@@ -300,7 +306,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
             ag.status = Status.ESCALATED_TO_HUMAN;
             _ensureDisputeCase(agreementId, true);
         } else if (responseType == ProviderResponseType.ESCALATE) {
-            _openFormalDispute(agreementId, "provider escalation", true);
+            _openFormalDispute(agreementId, "provider escalation", true, DirectDisputeReason.NONE);
             return;
         } else {
             ag.status = Status.REVISED;
@@ -310,7 +316,11 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     }
 
     function escalateToDispute(uint256 agreementId, string calldata reason) external {
-        _openFormalDispute(agreementId, reason, true);
+        _openFormalDispute(agreementId, reason, true, DirectDisputeReason.NONE);
+    }
+
+    function canDirectDispute(uint256 agreementId, DirectDisputeReason directReason) external view returns (bool) {
+        return _canDirectDispute(_get(agreementId), directReason);
     }
 
     function cancel(uint256 agreementId) external nonReentrant {
@@ -445,19 +455,39 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     function getAgreementsByProvider(address provider) external view returns (uint256[] memory) { return _byProvider[provider]; }
     function agreementCount() external view returns (uint256) { return _nextId; }
 
-    function _openFormalDispute(uint256 agreementId, string memory reason, bool requireEligibility) internal {
+    function _openFormalDispute(uint256 agreementId, string memory reason, bool requireEligibility, DirectDisputeReason directReason) internal {
         require(bytes(reason).length <= 512, "ServiceAgreement: reason too long");
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.client || msg.sender == ag.provider, "ServiceAgreement: not a party");
+        require(ag.status == Status.ACCEPTED || ag.status == Status.PENDING_VERIFICATION || ag.status == Status.REVISED || ag.status == Status.REVISION_REQUESTED || ag.status == Status.PARTIAL_SETTLEMENT || ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAgreement: not ACCEPTED");
         if (requireEligibility) {
             require(_eligibleForEscalation(ag, agreementId), "ServiceAgreement: remediation first");
         } else {
-            require(ag.status == Status.ACCEPTED || ag.status == Status.PENDING_VERIFICATION || ag.status == Status.REVISED || ag.status == Status.REVISION_REQUESTED || ag.status == Status.PARTIAL_SETTLEMENT || ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAgreement: not ACCEPTED");
+            require(_canDirectDispute(ag, directReason), "ServiceAgreement: direct dispute not allowed");
         }
         _ensureDisputeCase(agreementId, false);
         ag.status = Status.DISPUTED;
         ag.resolvedAt = block.timestamp;
         emit AgreementDisputed(agreementId, msg.sender, reason);
+        if (directReason != DirectDisputeReason.NONE) {
+            emit DirectDisputeOpened(agreementId, msg.sender, directReason, reason);
+        }
+    }
+
+    function _canDirectDispute(Agreement storage ag, DirectDisputeReason directReason) internal view returns (bool) {
+        if (directReason == DirectDisputeReason.NO_DELIVERY) {
+            return ag.status == Status.ACCEPTED && block.timestamp > ag.deadline;
+        }
+        if (directReason == DirectDisputeReason.HARD_DEADLINE_BREACH) {
+            return block.timestamp > ag.deadline;
+        }
+        if (directReason == DirectDisputeReason.INVALID_OR_FRAUDULENT_DELIVERABLE) {
+            return ag.status == Status.PENDING_VERIFICATION;
+        }
+        if (directReason == DirectDisputeReason.SAFETY_CRITICAL_VIOLATION) {
+            return ag.status == Status.ACCEPTED || ag.status == Status.PENDING_VERIFICATION || ag.status == Status.REVISED || ag.status == Status.REVISION_REQUESTED;
+        }
+        return false;
     }
 
     function _eligibleForEscalation(Agreement storage ag, uint256 agreementId) internal view returns (bool) {

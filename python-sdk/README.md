@@ -56,7 +56,7 @@ async def main():
 asyncio.run(main())
 ```
 
-## Service agreements: remediation support before dispute
+## Service agreements: remediation-first before dispute
 
 ```python
 from arc402 import (
@@ -171,7 +171,7 @@ Discovery guidance for current public integrations:
 - treat heartbeat / operational trust as liveness context, not ranking-grade truth
 
 That means:
-- negotiated remediation is supported through `request_revision`, `respond_to_revision`, transcript-chain helpers, and remediation/dispute read models
+- negotiated remediation is the default path before dispute. Use direct dispute only for explicit hard-fail cases: no delivery, hard deadline breach, clearly invalid/fraudulent deliverables, or safety-critical violations. The SDK exposes both remediation helpers and direct-dispute helpers for those narrow cases.
 - evidence anchoring and partial-resolution outcomes are supported through the current `ServiceAgreement` contract
 - current dispute resolution authority is deployment-defined and should not be described as fully decentralized by this SDK
 - capability taxonomy reads are supported; root governance writes exist on-chain but you should typically drive them through protocol governance

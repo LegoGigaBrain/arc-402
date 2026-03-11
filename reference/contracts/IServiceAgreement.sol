@@ -56,6 +56,14 @@ interface IServiceAgreement {
         OTHER
     }
 
+    enum DirectDisputeReason {
+        NONE,
+        NO_DELIVERY,
+        HARD_DEADLINE_BREACH,
+        INVALID_OR_FRAUDULENT_DELIVERABLE,
+        SAFETY_CRITICAL_VIOLATION
+    }
+
     struct Agreement {
         uint256 id;
         address client;           // paying agent wallet
@@ -186,12 +194,20 @@ interface IServiceAgreement {
     function autoRelease(uint256 agreementId) external;
 
     /**
-     * @notice Client or provider raises a dispute (escrow stays locked).
-     *         Valid from ACCEPTED or PENDING_VERIFICATION status.
+     * @notice Opens a formal dispute only after remediation is exhausted, timed out,
+     *         or otherwise eligible for escalation under the remediation-first policy.
      * @param agreementId The agreement to dispute
      * @param reason Human/agent-readable reason
      */
     function dispute(uint256 agreementId, string calldata reason) external;
+
+    /**
+     * @notice Opens a direct formal dispute only for explicit hard-fail conditions that bypass remediation.
+     * @param agreementId The agreement to dispute
+     * @param directReason Enumerated hard-fail reason allowing direct dispute
+     * @param reason Human/agent-readable case summary
+     */
+    function directDispute(uint256 agreementId, DirectDisputeReason directReason, string calldata reason) external;
 
     /**
      * @notice Client cancels a PROPOSED agreement and retrieves escrow
@@ -217,6 +233,7 @@ interface IServiceAgreement {
     ) external;
 
     function escalateToDispute(uint256 agreementId, string calldata reason) external;
+    function canDirectDispute(uint256 agreementId, DirectDisputeReason directReason) external view returns (bool);
 
     function submitDisputeEvidence(
         uint256 agreementId,

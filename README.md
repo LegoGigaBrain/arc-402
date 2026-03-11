@@ -53,6 +53,15 @@ arc-402/
 └── CONTRIBUTING.md
 ```
 
+## Operator Doctrine
+
+ARC-402 now includes an operator doctrine layer for the off-chain realities around negotiation, delivery, remediation, escalation, and memory-aware tooling.
+
+- [`docs/operator/README.md`](./docs/operator/README.md) — operator doctrine overview
+- [`docs/operator/best-practices.md`](./docs/operator/best-practices.md) — best practices, self-audit, remediation, evidence
+- [`docs/operator/risk-and-escalation.md`](./docs/operator/risk-and-escalation.md) — risk classes and escalation rules
+- [`docs/operator/cli-memory-strategy.md`](./docs/operator/cli-memory-strategy.md) — plain CLI vs OpenClaw-aware operator mode
+
 ## Status
 
 `DRAFT` — The specification is in active development. This is not yet a final standard.

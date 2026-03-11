@@ -12,6 +12,8 @@ export { PolicyClient, PolicyObject, PolicyValidator } from "./policy";
 export { TrustClient, TrustPrimitive } from "./trust";
 export { IntentAttestationClient, IntentAttestation } from "./intent";
 export { SettlementClient, MultiAgentSettlement } from "./settlement";
+export { AgentRegistryClient } from "./agent";
+export { ServiceAgreementClient, AgreementStatus } from "./agreement";
 
 // Contract helpers
 export {
@@ -21,12 +23,16 @@ export {
   getARC402Wallet,
   getSettlementCoordinator,
   getWalletFactory,
+  getAgentRegistry,
+  getServiceAgreement,
   POLICY_ENGINE_ABI,
   TRUST_REGISTRY_ABI,
   INTENT_ATTESTATION_ABI,
   ARC402_WALLET_ABI,
   SETTLEMENT_COORDINATOR_ABI,
   WALLET_FACTORY_ABI,
+  AGENT_REGISTRY_ABI,
+  SERVICE_AGREEMENT_ABI,
 } from "./contracts";
 
 // Types & constants
@@ -47,3 +53,6 @@ export type {
   RejectionCode,
   ContractAddresses,
 } from "./types";
+
+export type { AgentInfo } from "./agent";
+export type { Agreement, ProposeParams } from "./agreement";

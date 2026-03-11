@@ -82,6 +82,57 @@ export function getWalletFactory(address: string, runner: ContractRunner) {
   return new Contract(address, WALLET_FACTORY_ABI, runner)
 }
 
+// ─── AgentRegistry ───────────────────────────────────────────────────────────
+// ABI extracted from AgentRegistry.sol + IAgentRegistry.sol
+
+const AGENT_REGISTRY_ABI = [
+  "function register(string calldata name, string[] calldata capabilities, string calldata serviceType, string calldata endpoint, string calldata metadataURI) external",
+  "function update(string calldata name, string[] calldata capabilities, string calldata serviceType, string calldata endpoint, string calldata metadataURI) external",
+  "function deactivate() external",
+  "function reactivate() external",
+  "function getAgent(address wallet) external view returns (tuple(address wallet, string name, string[] capabilities, string serviceType, string endpoint, string metadataURI, bool active, uint256 registeredAt) info)",
+  "function isRegistered(address wallet) external view returns (bool)",
+  "function isActive(address wallet) external view returns (bool)",
+  "function getCapabilities(address wallet) external view returns (string[])",
+  "function getTrustScore(address wallet) external view returns (uint256)",
+  "function agentCount() external view returns (uint256)",
+  "function getAgentAtIndex(uint256 index) external view returns (address)",
+  "event AgentRegistered(address indexed wallet, string name, string serviceType, uint256 timestamp)",
+  "event AgentUpdated(address indexed wallet, string name, string serviceType)",
+  "event AgentDeactivated(address indexed wallet)",
+  "event AgentReactivated(address indexed wallet)",
+]
+
+// ─── ServiceAgreement ────────────────────────────────────────────────────────
+// ABI extracted from ServiceAgreement.sol + IServiceAgreement.sol
+
+const SERVICE_AGREEMENT_ABI = [
+  "function propose(address provider, string calldata serviceType, string calldata description, uint256 price, address token, uint256 deadline, bytes32 deliverablesHash) external payable returns (uint256 agreementId)",
+  "function accept(uint256 agreementId) external",
+  "function fulfill(uint256 agreementId, bytes32 actualDeliverablesHash) external",
+  "function dispute(uint256 agreementId, string calldata reason) external",
+  "function cancel(uint256 agreementId) external",
+  "function expiredCancel(uint256 agreementId) external",
+  "function getAgreement(uint256 id) external view returns (tuple(uint256 id, address client, address provider, string serviceType, string description, uint256 price, address token, uint256 deadline, bytes32 deliverablesHash, uint8 status, uint256 createdAt, uint256 resolvedAt) agreement)",
+  "function getAgreementsByClient(address client) external view returns (uint256[])",
+  "function getAgreementsByProvider(address provider) external view returns (uint256[])",
+  "function agreementCount() external view returns (uint256)",
+  "event AgreementProposed(uint256 indexed id, address indexed client, address indexed provider, string serviceType, uint256 price, address token, uint256 deadline)",
+  "event AgreementAccepted(uint256 indexed id, address indexed provider)",
+  "event AgreementFulfilled(uint256 indexed id, address indexed provider, bytes32 deliverablesHash)",
+  "event AgreementDisputed(uint256 indexed id, address indexed initiator, string reason)",
+  "event AgreementCancelled(uint256 indexed id, address indexed client)",
+  "event DisputeResolved(uint256 indexed id, bool favorProvider)",
+]
+
+export function getAgentRegistry(address: string, runner: ContractRunner) {
+  return new Contract(address, AGENT_REGISTRY_ABI, runner)
+}
+
+export function getServiceAgreement(address: string, runner: ContractRunner) {
+  return new Contract(address, SERVICE_AGREEMENT_ABI, runner)
+}
+
 export {
   POLICY_ENGINE_ABI,
   TRUST_REGISTRY_ABI,
@@ -89,4 +140,6 @@ export {
   ARC402_WALLET_ABI,
   SETTLEMENT_COORDINATOR_ABI,
   WALLET_FACTORY_ABI,
+  AGENT_REGISTRY_ABI,
+  SERVICE_AGREEMENT_ABI,
 }

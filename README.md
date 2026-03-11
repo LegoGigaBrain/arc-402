@@ -53,14 +53,29 @@ arc-402/
 └── CONTRIBUTING.md
 ```
 
-## Operator Doctrine
+## Operator Doctrine and Standard
 
-ARC-402 now includes an operator doctrine layer for the off-chain realities around negotiation, delivery, remediation, escalation, and memory-aware tooling.
+ARC-402 now includes two related operator layers:
+
+### Internal doctrine
+
+The internal doctrine documents the working operator guidance behind ARC-402's off-chain realities around negotiation, delivery, remediation, escalation, and memory-aware tooling.
 
 - [`docs/operator/README.md`](./docs/operator/README.md) — operator doctrine overview
 - [`docs/operator/best-practices.md`](./docs/operator/best-practices.md) — best practices, self-audit, remediation, evidence
 - [`docs/operator/risk-and-escalation.md`](./docs/operator/risk-and-escalation.md) — risk classes and escalation rules
 - [`docs/operator/cli-memory-strategy.md`](./docs/operator/cli-memory-strategy.md) — plain CLI vs OpenClaw-aware operator mode
+
+### Public operator standard
+
+The public-facing operator standard extracts the portable parts of that doctrine into a platform-agnostic package that can be adopted by OpenClaw, Claude Code, Codex, custom agents, and enterprise systems.
+
+- [`docs/operator-standard/README.md`](./docs/operator-standard/README.md) — ARC-402 Agent Operator Standard overview
+- [`docs/operator-standard/decision-model.md`](./docs/operator-standard/decision-model.md) — risk classification, gates, and decision logic
+- [`docs/operator-standard/remediation-and-dispute.md`](./docs/operator-standard/remediation-and-dispute.md) — bounded remediation and formal escalation posture
+- [`docs/operator-standard/human-escalation.md`](./docs/operator-standard/human-escalation.md) — mandatory human review and approval triggers
+- [`docs/operator-standard/evidence-and-self-audit.md`](./docs/operator-standard/evidence-and-self-audit.md) — evidence handling and pre-delivery self-audit
+- [`docs/operator-standard/integration-patterns.md`](./docs/operator-standard/integration-patterns.md) — SDK, CLI, prompt, and workflow adapter patterns
 
 ## Status
 

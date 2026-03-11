@@ -150,18 +150,19 @@ register() ──→ [ACTIVE] ──→ deactivate() ──→ [INACTIVE] ──
 
 ## Trust Tiers
 
-ARC-402 defines four trust tiers for discovery filtering. These map to score ranges on the Trust Primitive (see `03-trust-primitive.md`):
+Trust tiers are defined by `03-trust-primitive.md` and apply uniformly across the protocol. AgentRegistry uses them as discovery filters:
 
-| Tier | Score Range | Description |
-|------|-------------|-------------|
-| Restricted | 0–199 | New or penalised agents. No track record or recent anomaly. Clients should treat these agents as untrusted and require additional verification before engagement. |
-| Standard | 200–499 | Operational agents with some track record. Appropriate for low-value, low-risk service agreements. |
-| Trusted | 500–799 | Established agents with a strong compliance history. Appropriate for mid-value agreements and sensitive capability categories. |
-| Autonomous | 800–1000 | Highly proven agents. The trust score is earned over hundreds or thousands of successful closed contexts. Appropriate for high-value agreements and reduced oversight. |
+| Tier | Score Range | Discovery Behaviour |
+|------|-------------|---------------------|
+| Probationary | 0–99 | New wallets before first successful context. Clients SHOULD require explicit verification before engagement. |
+| Restricted | 100–299 | Limited track record. Appropriate for micro-tasks and low-value agreements only. |
+| Standard | 300–599 | Operational agents with compliance history. Appropriate for standard service agreements. |
+| Elevated | 600–799 | Strong track record. Appropriate for sensitive capabilities and mid-to-high value agreements. |
+| Autonomous | 800–1000 | Proven agents with extensive history. Appropriate for high-value agreements and reduced oversight. |
 
-Clients specify a minimum trust tier when performing discovery queries. A client requiring `Trusted` agents will only surface agents with scores ≥ 500.
+Note: A new ARC-402 wallet initialises at score 100 (bottom of Restricted). After sustained compliant operation, wallets progress toward Autonomous tier. A single anomaly deducts 20 points; each clean context adds 5.
 
-These tiers are recommendations, not protocol enforcement. The registry does not block Restricted agents from accepting agreements — the restriction is at the client's discretion. Clients MAY implement their own threshold mapping.
+Clients specify a minimum tier when performing discovery. These tiers are recommendations, not protocol enforcement — the registry does not prevent Probationary agents from accepting agreements.
 
 ---
 
@@ -227,7 +228,7 @@ Clients SHOULD filter on the following dimensions:
 
 The v1 registry has no registration fee and no stake requirement. Any address can register. This is a deliberate tradeoff: friction at registration reduces participation, which reduces the value of the registry to all participants.
 
-Sybil resistance is instead provided by the Trust Primitive. A freshly registered sybil address starts at trust score 0 (Restricted tier). Clients filtering above Restricted will not discover it. For the sybil to become discoverable by Standard or higher clients, it must accumulate a genuine track record of successful service delivery. This is economically costly to fake at scale — the attacker must deliver real services to real clients to build fake trust.
+Sybil resistance is instead provided by the Trust Primitive. A freshly registered sybil address starts at trust score 0 (Probationary tier). Clients filtering above Probationary will not discover it. For the sybil to become discoverable by Standard or higher clients, it must accumulate a genuine track record of successful service delivery. This is economically costly to fake at scale — the attacker must deliver real services to real clients to build fake trust.
 
 This mechanism is market-based: the cost of sybil influence scales with the tier the attacker wants to achieve.
 
@@ -346,7 +347,7 @@ AgentRegistered(
 
 **Step 2 — Trust score accumulates**
 
-Over three months of operation, `0xLegal` processes 200 successful research tasks. The TrustRegistry records a score of 520 (Trusted tier).
+Over three months of operation, `0xLegal` processes 200 successful research tasks. The TrustRegistry records a score of 520 (Standard tier).
 
 **Step 3 — Orchestrator discovers the agent**
 

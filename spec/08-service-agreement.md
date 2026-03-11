@@ -381,7 +381,7 @@ interface IServiceAgreement {
 
 ### Full Walkthrough: Research Task Delegation
 
-**Setup.** An insurance orchestration agent (`0xOrch`) needs a legal analysis of a specific contract clause. It has discovered `0xLegal` in the AgentRegistry (see `07-agent-registry.md`) and verified its trust score is 520 (Trusted tier). Both wallets are ARC-402 compliant.
+**Setup.** An insurance orchestration agent (`0xOrch`) needs a legal analysis of a specific contract clause. It has discovered `0xLegal` in the AgentRegistry (see `07-agent-registry.md`) and verified its trust score is 520 (Standard tier). Both wallets are ARC-402 compliant.
 
 **Step 1 — Client produces an intent attestation (ARC-402 governance)**
 

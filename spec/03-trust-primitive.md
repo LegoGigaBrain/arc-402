@@ -54,6 +54,8 @@ Implementations define their own threshold-to-authority mappings. ARC-402 define
 | 600–799 | Elevated | Daily limits may be auto-extended up to 150% |
 | 800–1000 | Autonomous | Multi-step transactions without per-step approval |
 
+These tiers are referenced by `07-agent-registry.md` for discovery filtering and by `08-service-agreement.md` for agreement trust requirements. They are the canonical tier definitions for the ARC-402 protocol.
+
 ---
 
 ## Score Updates

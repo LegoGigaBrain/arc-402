@@ -31,6 +31,12 @@ contract ARC402Wallet {
     bool public contextOpen;
     uint256 public contextOpenedAt;
 
+    // ─── Authorized Interceptor ───────────────────────────────────────────────
+
+    /// @notice Address allowed to call executeTokenSpend on behalf of the owner.
+    ///         Set by owner via setAuthorizedInterceptor(). Used by X402Interceptor.
+    address public authorizedInterceptor;
+
     // ─── Circuit Breaker State ────────────────────────────────────────────────
 
     bool public frozen;
@@ -57,11 +63,20 @@ contract ARC402Wallet {
     event WalletFrozen(address indexed by, string reason, uint256 timestamp);
     event WalletUnfrozen(address indexed by, uint256 timestamp);
     event VelocityLimitUpdated(uint256 newLimit);
+    event InterceptorUpdated(address indexed interceptor);
 
     // ─── Modifiers ───────────────────────────────────────────────────────────
 
     modifier onlyOwner() {
         require(msg.sender == owner, "ARC402: not owner");
+        _;
+    }
+
+    modifier onlyOwnerOrInterceptor() {
+        require(
+            msg.sender == owner || msg.sender == authorizedInterceptor,
+            "ARC402: not authorized"
+        );
         _;
     }
 
@@ -91,6 +106,20 @@ contract ARC402Wallet {
         address old = address(registry);
         registry = ARC402Registry(newRegistry);
         emit RegistryUpdated(old, newRegistry);
+    }
+
+    // ─── Interceptor Authorization ────────────────────────────────────────────
+
+    /**
+     * @notice Authorize an X402Interceptor contract to call executeTokenSpend.
+     * @dev Without this, X402Interceptor.executeX402Payment() would revert because
+     *      msg.sender would be the interceptor, not the owner EOA.
+     * @param interceptor The X402Interceptor contract address to authorize.
+     */
+    function setAuthorizedInterceptor(address interceptor) external onlyOwner {
+        require(interceptor != address(0), "ARC402: zero interceptor");
+        authorizedInterceptor = interceptor;
+        emit InterceptorUpdated(interceptor);
     }
 
     // ─── Circuit Breaker ──────────────────────────────────────────────────────
@@ -216,7 +245,7 @@ contract ARC402Wallet {
         uint256 amount,
         string calldata category,
         bytes32 attestationId
-    ) external onlyOwner requireOpenContext notFrozen {
+    ) external onlyOwnerOrInterceptor requireOpenContext notFrozen {
         require(recipient != address(0), "ARC402: zero address recipient");
         require(token != address(0), "ARC402: zero token address");
 

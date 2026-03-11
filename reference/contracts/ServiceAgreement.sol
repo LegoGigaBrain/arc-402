@@ -78,6 +78,9 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     event TokenAllowed(address indexed token);
     event TokenDisallowed(address indexed token);
+    /// @notice Emitted when a TrustRegistry call fails. Trust update is best-effort;
+    ///         a failing registry must never block escrow release.
+    event TrustUpdateFailed(uint256 indexed agreementId, address indexed wallet, string context);
 
     // ─── Modifiers ───────────────────────────────────────────────────────────
 
@@ -237,9 +240,14 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
 
         _releaseEscrow(ag.token, ag.provider, ag.price);
 
-        // T-02: Trust score auto-update — only ServiceAgreement can call recordSuccess.
+        // T-02: Trust score auto-update — best-effort. A broken TrustRegistry must NOT
+        //       block escrow release. try/catch ensures funds always reach the provider.
         if (trustRegistry != address(0)) {
-            ITrustRegistry(trustRegistry).recordSuccess(ag.provider);
+            try ITrustRegistry(trustRegistry).recordSuccess(ag.provider) {
+                // trust updated successfully
+            } catch {
+                emit TrustUpdateFailed(agreementId, ag.provider, "fulfill");
+            }
         }
     }
 
@@ -327,16 +335,24 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         if (favorProvider) {
             ag.status = Status.FULFILLED;
             _releaseEscrow(ag.token, ag.provider, ag.price);
-            // T-02: provider vindicated — increment trust score
+            // T-02: provider vindicated — increment trust score (best-effort)
             if (trustRegistry != address(0)) {
-                ITrustRegistry(trustRegistry).recordSuccess(ag.provider);
+                try ITrustRegistry(trustRegistry).recordSuccess(ag.provider) {
+                    // trust updated
+                } catch {
+                    emit TrustUpdateFailed(agreementId, ag.provider, "resolveDispute:success");
+                }
             }
         } else {
             ag.status = Status.CANCELLED;
             _releaseEscrow(ag.token, ag.client, ag.price);
-            // T-02: provider failed — decrement trust score
+            // T-02: provider failed — decrement trust score (best-effort)
             if (trustRegistry != address(0)) {
-                ITrustRegistry(trustRegistry).recordAnomaly(ag.provider);
+                try ITrustRegistry(trustRegistry).recordAnomaly(ag.provider) {
+                    // trust updated
+                } catch {
+                    emit TrustUpdateFailed(agreementId, ag.provider, "resolveDispute:anomaly");
+                }
             }
         }
     }

@@ -338,3 +338,143 @@ contract ServiceAgreementTest is Test {
         sa.getAgreement(999);
     }
 }
+
+// ─── Broken TrustRegistry for liveness isolation tests ───────────────────────
+
+/**
+ * @notice A TrustRegistry that always reverts on recordSuccess and recordAnomaly.
+ *         Used to verify that ServiceAgreement.fulfill() never holds escrow hostage
+ *         due to a broken or malicious trust registry.
+ */
+contract BrokenTrustRegistry is ITrustRegistry {
+    function initWallet(address) external pure override {}
+    function recordSuccess(address) external pure override {
+        revert("TrustRegistry: permanent failure");
+    }
+    function recordAnomaly(address) external pure override {
+        revert("TrustRegistry: permanent failure");
+    }
+    function getScore(address) external pure override returns (uint256) {
+        return 0;
+    }
+}
+
+// ─── Liveness isolation tests ─────────────────────────────────────────────────
+
+/**
+ * @notice Verifies Fix 2: a broken TrustRegistry must never block escrow release.
+ *         fulfill(), resolveDispute(true), and resolveDispute(false) must all
+ *         succeed and release escrow even when the TrustRegistry always reverts.
+ */
+contract ServiceAgreementTrustLivenessTest is Test {
+
+    ServiceAgreement public sa;
+    BrokenTrustRegistry public brokenRegistry;
+
+    address public owner    = address(this);
+    address public client   = address(0xC1);
+    address public provider = address(0xA1);
+
+    uint256 constant PRICE    = 1 ether;
+    uint256 constant DEADLINE = 7 days;
+    bytes32 constant SPEC_HASH     = keccak256("spec");
+    bytes32 constant DELIVERY_HASH = keccak256("delivery");
+
+    function setUp() public {
+        brokenRegistry = new BrokenTrustRegistry();
+        sa = new ServiceAgreement(address(brokenRegistry));
+        // Note: do NOT add ServiceAgreement as updater — the registry always reverts anyway.
+        vm.deal(client, 100 ether);
+        vm.deal(provider, 10 ether);
+    }
+
+    function _propose() internal returns (uint256 id) {
+        vm.prank(client);
+        id = sa.propose{value: PRICE}(
+            provider,
+            "text-generation",
+            "Generate a report",
+            PRICE,
+            address(0),
+            block.timestamp + DEADLINE,
+            SPEC_HASH
+        );
+    }
+
+    function _proposeAndAccept() internal returns (uint256 id) {
+        id = _propose();
+        vm.prank(provider);
+        sa.accept(id);
+    }
+
+    /**
+     * @notice CRITICAL LIVENESS TEST: fulfill() releases escrow even when
+     *         TrustRegistry.recordSuccess() always reverts.
+     *
+     *         This is the core guarantee of Fix 2: a broken TrustRegistry can never
+     *         hold the provider's payment hostage.
+     */
+    function test_Fulfill_SucceedsEvenIfTrustRegistryReverts() public {
+        uint256 id = _proposeAndAccept();
+
+        uint256 providerBefore = provider.balance;
+
+        // fulfill() must succeed despite the broken registry
+        vm.prank(provider);
+        sa.fulfill(id, DELIVERY_HASH);
+
+        // Escrow released to provider
+        assertEq(provider.balance, providerBefore + PRICE);
+
+        // Agreement is FULFILLED
+        IServiceAgreement.Agreement memory ag = sa.getAgreement(id);
+        assertEq(uint8(ag.status), uint8(IServiceAgreement.Status.FULFILLED));
+    }
+
+    /**
+     * @notice TrustUpdateFailed event is emitted when the registry reverts.
+     */
+    function test_Fulfill_EmitsTrustUpdateFailed_WhenRegistryReverts() public {
+        uint256 id = _proposeAndAccept();
+
+        vm.expectEmit(true, true, false, true);
+        emit ServiceAgreement.TrustUpdateFailed(id, provider, "fulfill");
+
+        vm.prank(provider);
+        sa.fulfill(id, DELIVERY_HASH);
+    }
+
+    /**
+     * @notice resolveDispute(favorProvider=true) releases escrow even when
+     *         TrustRegistry.recordSuccess() always reverts.
+     */
+    function test_ResolveDispute_FavorProvider_SucceedsEvenIfTrustRegistryReverts() public {
+        uint256 id = _proposeAndAccept();
+        vm.prank(client);
+        sa.dispute(id, "disputed");
+
+        uint256 providerBefore = provider.balance;
+
+        // Owner resolves in favor of provider — must not revert
+        sa.resolveDispute(id, true);
+
+        assertEq(provider.balance, providerBefore + PRICE);
+    }
+
+    /**
+     * @notice resolveDispute(favorProvider=false) releases escrow to client even when
+     *         TrustRegistry.recordAnomaly() always reverts.
+     */
+    function test_ResolveDispute_FavorClient_SucceedsEvenIfTrustRegistryReverts() public {
+        uint256 id = _proposeAndAccept();
+        vm.prank(client);
+        sa.dispute(id, "disputed");
+
+        uint256 clientBefore = client.balance;
+
+        // Owner resolves in favor of client — must not revert
+        sa.resolveDispute(id, false);
+
+        assertEq(client.balance, clientBefore + PRICE);
+    }
+}

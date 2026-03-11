@@ -3,6 +3,13 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/X402Interceptor.sol";
+import "../contracts/ARC402Wallet.sol";
+import "../contracts/ARC402Registry.sol";
+import "../contracts/PolicyEngine.sol";
+import "../contracts/TrustRegistry.sol";
+import "../contracts/IntentAttestation.sol";
+import "../contracts/SettlementCoordinator.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 // ─── Mock ARC402Wallet ────────────────────────────────────────────────────────
 
@@ -253,5 +260,142 @@ contract PolicyEnforcingMockWallet {
         require(contextOpen, "ARC402: no active context");
         require(amount <= maxSpendPerTx, "PolicyEngine: spend exceeds per-tx limit");
         spendCount++;
+    }
+}
+
+// ─── Mock USDC for integration tests ─────────────────────────────────────────
+
+contract MockUSDC is ERC20 {
+    constructor() ERC20("USD Coin", "USDC") {
+        _mint(msg.sender, 1_000_000 * 10**6);
+    }
+    function decimals() public pure override returns (uint8) { return 6; }
+}
+
+// ─── Integration tests: real ARC402Wallet + X402Interceptor authorization ────
+
+/**
+ * @notice Tests that verify Fix 1: X402Interceptor can call executeTokenSpend()
+ *         after owner calls setAuthorizedInterceptor() on ARC402Wallet.
+ *
+ *         These tests use a fully-deployed ARC402Wallet (real contracts) to confirm
+ *         the authorization path works end-to-end.
+ */
+contract X402InterceptorAuthorizationTest is Test {
+    PolicyEngine        policyEngine;
+    TrustRegistry       trustRegistry;
+    IntentAttestation   intentAttestation;
+    SettlementCoordinator settlementCoordinator;
+    ARC402Registry      reg;
+    ARC402Wallet        wallet;
+    MockUSDC            usdc;
+    X402Interceptor     interceptor;
+
+    address walletOwner = address(this);
+    address paymentRecipient = address(0xBEEF);
+    address unauthorized = address(0xDEAD);
+
+    uint256 constant USDC_AMOUNT = 5_000_000; // 5 USDC
+    bytes32 constant CONTEXT_ID  = keccak256("ctx-interceptor-auth");
+    bytes32 constant ATTEST_ID   = keccak256("intent-interceptor-auth");
+    string  constant REQUEST_URL = "https://api.example.com/endpoint";
+
+    function setUp() public {
+        // Deploy full ARC-402 infrastructure
+        policyEngine          = new PolicyEngine();
+        trustRegistry         = new TrustRegistry();
+        intentAttestation     = new IntentAttestation();
+        settlementCoordinator = new SettlementCoordinator();
+        usdc                  = new MockUSDC();
+
+        reg = new ARC402Registry(
+            address(policyEngine),
+            address(trustRegistry),
+            address(intentAttestation),
+            address(settlementCoordinator),
+            "v1.0.0"
+        );
+
+        // wallet owner = address(this) (the test contract)
+        wallet = new ARC402Wallet(address(reg), walletOwner);
+
+        // Allow wallet to update trust registry
+        trustRegistry.addUpdater(address(wallet));
+
+        // Fund wallet with USDC
+        usdc.transfer(address(wallet), 100_000_000); // 100 USDC
+
+        // Set policy for api_call category — must be called from the wallet (msg.sender = wallet)
+        vm.prank(address(wallet));
+        policyEngine.setCategoryLimit("api_call", 10_000_000); // 10 USDC max per spend
+
+        // Deploy the interceptor
+        interceptor = new X402Interceptor(address(wallet), address(usdc));
+
+        // Create an intent attestation — must be called from the wallet (msg.sender = wallet)
+        vm.prank(address(wallet));
+        intentAttestation.attest(
+            ATTEST_ID,
+            "api_call",
+            "x402 payment for API access",
+            paymentRecipient,
+            USDC_AMOUNT,
+            address(usdc)
+        );
+
+        // Open a context so the wallet allows spending
+        wallet.openContext(CONTEXT_ID, "api_access");
+    }
+
+    /**
+     * @notice CRITICAL FIX TEST: After setAuthorizedInterceptor(), the interceptor
+     *         can call executeTokenSpend() and the payment succeeds.
+     */
+    function test_InterceptorAuthorized_CanSpend() public {
+        // Owner authorizes the interceptor
+        wallet.setAuthorizedInterceptor(address(interceptor));
+        assertEq(wallet.authorizedInterceptor(), address(interceptor));
+
+        uint256 recipientBefore = usdc.balanceOf(paymentRecipient);
+
+        // Interceptor executes the payment — must succeed (not revert)
+        interceptor.executeX402Payment(paymentRecipient, USDC_AMOUNT, ATTEST_ID, REQUEST_URL);
+
+        // Verify funds moved to recipient
+        assertEq(usdc.balanceOf(paymentRecipient), recipientBefore + USDC_AMOUNT);
+    }
+
+    /**
+     * @notice Unauthorized callers cannot call executeTokenSpend directly.
+     *         Only owner or the authorized interceptor may call it.
+     */
+    function test_InterceptorUnauthorized_Reverts() public {
+        // Interceptor is NOT yet authorized — any call to executeTokenSpend must revert
+        vm.prank(unauthorized);
+        vm.expectRevert("ARC402: not authorized");
+        wallet.executeTokenSpend(
+            address(usdc),
+            paymentRecipient,
+            USDC_AMOUNT,
+            "api_call",
+            ATTEST_ID
+        );
+    }
+
+    /**
+     * @notice setAuthorizedInterceptor reverts on zero address.
+     */
+    function test_SetAuthorizedInterceptor_RejectsZeroAddress() public {
+        vm.expectRevert("ARC402: zero interceptor");
+        wallet.setAuthorizedInterceptor(address(0));
+    }
+
+    /**
+     * @notice setAuthorizedInterceptor emits InterceptorUpdated event.
+     */
+    function test_SetAuthorizedInterceptor_EmitsEvent() public {
+        vm.expectEmit(true, false, false, false);
+        emit ARC402Wallet.InterceptorUpdated(address(interceptor));
+        wallet.setAuthorizedInterceptor(address(interceptor));
     }
 }

@@ -20,22 +20,17 @@ contract ReputationOracleTest is Test {
         trustRegistry = new TrustRegistry();
         oracle = new ReputationOracle(address(trustRegistry), serviceAgreement);
 
-        // Give publisher some trust
         trustRegistry.initWallet(publisher);
         trustRegistry.addUpdater(address(this));
-        trustRegistry.recordSuccess(publisher);
-        trustRegistry.recordSuccess(publisher);
-        // publisher trust = ~120
+        trustRegistry.recordSuccess(publisher, address(0xA11), "legacy", 1 ether);
+        trustRegistry.recordSuccess(publisher, address(0xA11), "legacy", 1 ether);
     }
-
-    // ─── Manual signals ───────────────────────────────────────────────────────
 
     function test_PublishEndorse() public {
         vm.prank(publisher);
         oracle.publishSignal(subject, ReputationOracle.SignalType.ENDORSE, CAP, "Great work");
 
-        (uint256 endorsements, uint256 warnings, uint256 blocks, uint256 weighted) =
-            oracle.getReputation(subject);
+        (uint256 endorsements, uint256 warnings, uint256 blocks, uint256 weighted) = oracle.getReputation(subject);
 
         assertEq(endorsements, 1);
         assertEq(warnings, 0);
@@ -68,16 +63,15 @@ contract ReputationOracleTest is Test {
     }
 
     function test_WeightedScoreNetOut() public {
-        // One endorser, one warner with higher trust — net score should be 0
         address endorser = address(0xEE01);
         address warner   = address(0xEE02);
 
         trustRegistry.initWallet(endorser);
         trustRegistry.initWallet(warner);
-        trustRegistry.recordSuccess(endorser); // ~110 trust
-        trustRegistry.recordSuccess(warner);
-        trustRegistry.recordSuccess(warner);
-        trustRegistry.recordSuccess(warner); // higher trust
+        trustRegistry.recordSuccess(endorser, address(0xA12), "legacy", 1 ether);
+        trustRegistry.recordSuccess(warner, address(0xA13), "legacy", 1 ether);
+        trustRegistry.recordSuccess(warner, address(0xA13), "legacy", 1 ether);
+        trustRegistry.recordSuccess(warner, address(0xA13), "legacy", 1 ether);
 
         vm.prank(endorser);
         oracle.publishSignal(subject, ReputationOracle.SignalType.ENDORSE, CAP, "Good");
@@ -85,11 +79,8 @@ contract ReputationOracleTest is Test {
         oracle.publishSignal(subject, ReputationOracle.SignalType.WARN, bytes32(0), "Bad general");
 
         (,,, uint256 weighted) = oracle.getReputation(subject);
-        // Warner has more trust — net weighted should be 0 (floored)
         assertEq(weighted, 0);
     }
-
-    // ─── Auto-publishing ──────────────────────────────────────────────────────
 
     function test_AutoWarn_OnlyServiceAgreement() public {
         vm.prank(address(0xBB01));
@@ -107,7 +98,6 @@ contract ReputationOracleTest is Test {
         assertEq(endorsements, 0);
         assertEq(warnings, 1);
 
-        // Auto-warn should be marked autoPublished
         ReputationOracle.Signal memory sig = oracle.getSignal(provider, 0);
         assertTrue(sig.autoPublished);
     }
@@ -118,7 +108,6 @@ contract ReputationOracleTest is Test {
         vm.prank(serviceAgreement);
         oracle.autoWarn(client, provider, CAP);
 
-        // Second call — already signaled, should not add another
         vm.prank(serviceAgreement);
         oracle.autoWarn(client, provider, CAP);
 
@@ -136,17 +125,43 @@ contract ReputationOracleTest is Test {
         assertEq(oracle.successStreak(provider), 0);
     }
 
+    function test_AutoWarn_WindowLimit() public {
+        for (uint160 i = 1; i <= 4; i++) {
+            address nextClient = address(0xD000 + i);
+            trustRegistry.initWallet(nextClient);
+            vm.prank(serviceAgreement);
+            oracle.autoWarn(nextClient, provider, CAP);
+        }
+
+        assertEq(oracle.getSignalCount(provider), 3);
+    }
+
+    function test_AutoWarn_WindowResetsAfterCooldownWindow() public {
+        for (uint160 i = 1; i <= 3; i++) {
+            address nextClient = address(0xE000 + i);
+            trustRegistry.initWallet(nextClient);
+            vm.prank(serviceAgreement);
+            oracle.autoWarn(nextClient, provider, CAP);
+        }
+        assertEq(oracle.getSignalCount(provider), 3);
+
+        vm.warp(block.timestamp + 7 days + 1);
+        trustRegistry.initWallet(address(0xE100));
+        vm.prank(serviceAgreement);
+        oracle.autoWarn(address(0xE100), provider, CAP);
+
+        assertEq(oracle.getSignalCount(provider), 4);
+    }
+
     function test_AutoEndorse_AfterStreak() public {
         trustRegistry.initWallet(client);
 
-        // Need 5 consecutive successes — but hasSignaled prevents multiple from same client
-        // Use different clients for each success
         for (uint256 i = 0; i < 4; i++) {
             vm.prank(serviceAgreement);
             oracle.autoRecordSuccess(address(uint160(0xF000 + i)), provider, CAP);
         }
         assertEq(oracle.successStreak(provider), 4);
-        assertEq(oracle.getSignalCount(provider), 0); // not yet
+        assertEq(oracle.getSignalCount(provider), 0);
 
         vm.prank(serviceAgreement);
         oracle.autoRecordSuccess(client, provider, CAP);
@@ -155,11 +170,8 @@ contract ReputationOracleTest is Test {
         ReputationOracle.Signal memory sig = oracle.getSignal(provider, 0);
         assertEq(uint(sig.signalType), uint(ReputationOracle.SignalType.ENDORSE));
         assertTrue(sig.autoPublished);
-        // Streak reset after endorse
         assertEq(oracle.successStreak(provider), 0);
     }
-
-    // ─── Capability reputation ────────────────────────────────────────────────
 
     function test_CapabilityReputation_FiltersByCapability() public {
         address endorser1 = address(0xFF01);
@@ -177,6 +189,5 @@ contract ReputationOracleTest is Test {
 
         assertGt(legalScore, 0);
         assertGt(codingScore, 0);
-        // General signal (bytes32(0)) would appear in both — no general signal here so they're isolated
     }
 }

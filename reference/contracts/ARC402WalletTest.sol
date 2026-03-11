@@ -75,7 +75,7 @@ contract ARC402WalletTest {
         activeTaskType  = "";
         contextOpen     = false;
         emit ContextClosed(cid, block.timestamp);
-        trustRegistry.recordSuccess(address(this));
+        trustRegistry.recordSuccess(address(this), address(0), activeTaskType, 0);
     }
 
     // ─── Relay: lets owner set category limits in the wallet's name ─────────

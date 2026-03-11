@@ -10,7 +10,51 @@ interface IServiceAgreement {
 
     // ─── Types ───────────────────────────────────────────────────────────────
 
-    enum Status { PROPOSED, ACCEPTED, PENDING_VERIFICATION, FULFILLED, DISPUTED, CANCELLED }
+    enum Status {
+        PROPOSED,
+        ACCEPTED,
+        PENDING_VERIFICATION,
+        FULFILLED,
+        DISPUTED,
+        CANCELLED,
+        REVISION_REQUESTED,
+        REVISED,
+        PARTIAL_SETTLEMENT,
+        MUTUAL_CANCEL,
+        ESCALATED_TO_HUMAN,
+        ESCALATED_TO_ARBITRATION
+    }
+
+    enum ProviderResponseType {
+        NONE,
+        REVISE,
+        DEFEND,
+        COUNTER,
+        PARTIAL_SETTLEMENT,
+        REQUEST_HUMAN_REVIEW,
+        ESCALATE
+    }
+
+    enum DisputeOutcome {
+        NONE,
+        PENDING,
+        PROVIDER_WINS,
+        CLIENT_REFUND,
+        PARTIAL_PROVIDER,
+        PARTIAL_CLIENT,
+        MUTUAL_CANCEL,
+        HUMAN_REVIEW_REQUIRED
+    }
+
+    enum EvidenceType {
+        NONE,
+        TRANSCRIPT,
+        DELIVERABLE,
+        ACCEPTANCE_CRITERIA,
+        COMMUNICATION,
+        EXTERNAL_REFERENCE,
+        OTHER
+    }
 
     struct Agreement {
         uint256 id;
@@ -28,6 +72,56 @@ interface IServiceAgreement {
         // ─── v2 fields ───────────────────────────────────────────────────────
         uint256 verifyWindowEnd;  // nonzero when in PENDING_VERIFICATION; 0 = no verify window
         bytes32 committedHash;    // hash committed by provider via commitDeliverable()
+    }
+
+    struct RemediationCase {
+        uint8 cycleCount;
+        uint256 openedAt;
+        uint256 deadlineAt;
+        uint256 lastActionAt;
+        bytes32 latestTranscriptHash;
+        bool active;
+    }
+
+    struct RemediationFeedback {
+        uint8 cycle;
+        address author;
+        bytes32 feedbackHash;
+        string feedbackURI;
+        bytes32 previousTranscriptHash;
+        bytes32 transcriptHash;
+        uint256 timestamp;
+    }
+
+    struct RemediationResponse {
+        uint8 cycle;
+        address author;
+        ProviderResponseType responseType;
+        uint256 proposedProviderPayout;
+        bytes32 responseHash;
+        string responseURI;
+        bytes32 previousTranscriptHash;
+        bytes32 transcriptHash;
+        uint256 timestamp;
+    }
+
+    struct DisputeEvidence {
+        address submitter;
+        EvidenceType evidenceType;
+        bytes32 evidenceHash;
+        string evidenceURI;
+        uint256 timestamp;
+    }
+
+    struct DisputeCase {
+        uint256 agreementId;
+        uint256 openedAt;
+        uint256 responseDeadlineAt;
+        DisputeOutcome outcome;
+        uint256 providerAward;
+        uint256 clientAward;
+        bool humanReviewRequested;
+        uint256 evidenceCount;
     }
 
     // ─── Core Functions ──────────────────────────────────────────────────────
@@ -101,6 +195,45 @@ interface IServiceAgreement {
      * @param agreementId The agreement to cancel
      */
     function cancel(uint256 agreementId) external;
+
+
+    function requestRevision(
+        uint256 agreementId,
+        bytes32 feedbackHash,
+        string calldata feedbackURI,
+        bytes32 previousTranscriptHash
+    ) external;
+
+    function respondToRevision(
+        uint256 agreementId,
+        ProviderResponseType responseType,
+        uint256 proposedProviderPayout,
+        bytes32 responseHash,
+        string calldata responseURI,
+        bytes32 previousTranscriptHash
+    ) external;
+
+    function escalateToDispute(uint256 agreementId, string calldata reason) external;
+
+    function submitDisputeEvidence(
+        uint256 agreementId,
+        EvidenceType evidenceType,
+        bytes32 evidenceHash,
+        string calldata evidenceURI
+    ) external;
+
+    function resolveDisputeDetailed(
+        uint256 agreementId,
+        DisputeOutcome outcome,
+        uint256 providerAward,
+        uint256 clientAward
+    ) external;
+
+    function getRemediationCase(uint256 agreementId) external view returns (RemediationCase memory);
+    function getRemediationFeedback(uint256 agreementId, uint256 index) external view returns (RemediationFeedback memory);
+    function getRemediationResponse(uint256 agreementId, uint256 index) external view returns (RemediationResponse memory);
+    function getDisputeCase(uint256 agreementId) external view returns (DisputeCase memory);
+    function getDisputeEvidence(uint256 agreementId, uint256 index) external view returns (DisputeEvidence memory);
 
     /**
      * @notice Returns a full agreement struct

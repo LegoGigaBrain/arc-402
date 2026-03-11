@@ -645,7 +645,7 @@ contract ServiceAgreementEconomicTest is Test {
         // ── Verify T-02: direct recordSuccess() is now blocked for non-SA updaters ──
         vm.prank(attackerWallet); // attacker is NOT an authorized updater
         vm.expectRevert("TrustRegistry: not authorized updater");
-        trust.recordSuccess(attackerSybil);
+        trust.recordSuccess(attackerSybil, address(0xBEEF), "legacy", 1 ether);
 
         // ── Verify T-02: only ServiceAgreement can call recordSuccess ──
         // SA calls it automatically on fulfill() — not directly accessible

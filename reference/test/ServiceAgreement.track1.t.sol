@@ -89,12 +89,14 @@ contract ServiceAgreementTrack1Test is Test {
         vm.prank(client);
         sa.requestRevision(id, keccak256("f2"), "uri2", t2);
 
-        vm.prank(client);
+        bytes32 t3 = sa.getRemediationCase(id).latestTranscriptHash;
         vm.expectRevert("ServiceAgreement: max remediation cycles");
-        sa.requestRevision(id, keccak256("f3"), "uri3", sa.getRemediationCase(id).latestTranscriptHash);
+        vm.prank(client);
+        sa.requestRevision(id, keccak256("f3"), "uri3", t3);
 
+        bytes32 t4 = sa.getRemediationCase(id).latestTranscriptHash;
         vm.prank(provider);
-        sa.respondToRevision(id, IServiceAgreement.ProviderResponseType.DEFEND, 0, keccak256("r2"), "uri-r2", sa.getRemediationCase(id).latestTranscriptHash);
+        sa.respondToRevision(id, IServiceAgreement.ProviderResponseType.DEFEND, 0, keccak256("r2"), "uri-r2", t4);
 
         vm.prank(client);
         sa.escalateToDispute(id, "unresolved after two cycles");

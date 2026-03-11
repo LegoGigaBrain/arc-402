@@ -348,10 +348,10 @@ contract ServiceAgreementTest is Test {
  */
 contract BrokenTrustRegistry is ITrustRegistry {
     function initWallet(address) external pure override {}
-    function recordSuccess(address) external pure override {
+    function recordSuccess(address, address, string calldata, uint256) external pure override {
         revert("TrustRegistry: permanent failure");
     }
-    function recordAnomaly(address) external pure override {
+    function recordAnomaly(address, address, string calldata, uint256) external pure override {
         revert("TrustRegistry: permanent failure");
     }
     function getScore(address) external pure override returns (uint256) {

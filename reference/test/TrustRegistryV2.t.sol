@@ -320,7 +320,7 @@ contract TrustRegistryV2Test is Test {
         v1.initWallet(WALLET);
         // Build score to 500: (500-100)/5 = 80 successes
         for (uint256 i = 0; i < 80; i++) {
-            v1.recordSuccess(WALLET);
+            v1.recordSuccess(WALLET, address(uint160(i + 1)), "legacy", REF_VALUE);
         }
         assertEq(v1.getScore(WALLET), 500, "v1 score should be 500");
 

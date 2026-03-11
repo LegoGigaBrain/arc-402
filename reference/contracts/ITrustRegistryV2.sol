@@ -6,6 +6,8 @@ pragma solidity ^0.8.24;
 /// @dev Supersedes ITrustRegistry (v1 global score). Adds: capability scoring,
 ///      counterparty diversity decay, value-weighted gains, time decay, asymmetric penalties.
 interface ITrustRegistryV2 {
+    /// @notice Compatibility alias for v1-style consumers.
+    function getScore(address wallet) external view returns (uint256);
 
     // ─── Structs ────────────────────────────────────────────────────────────
 

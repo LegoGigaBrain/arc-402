@@ -24,11 +24,13 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/ServiceAgreement.sol";
+import "../contracts/TrustRegistry.sol";
 import "../contracts/IServiceAgreement.sol";
 
 contract ServiceAgreementSymbolic is Test {
 
     ServiceAgreement public sa;
+    TrustRegistry    public trustReg;
 
     address payable constant CLIENT   = payable(address(0xC100));
     address payable constant PROVIDER = payable(address(0xA100));
@@ -37,7 +39,9 @@ contract ServiceAgreementSymbolic is Test {
     uint256 constant PRICE = 1 ether;
 
     function setUp() public {
-        sa = new ServiceAgreement();
+        trustReg = new TrustRegistry();
+        sa = new ServiceAgreement(address(trustReg));
+        trustReg.addUpdater(address(sa));
         vm.deal(CLIENT, 100 ether);
         vm.deal(PROVIDER, 10 ether);
     }

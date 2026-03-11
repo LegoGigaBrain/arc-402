@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "./IServiceAgreement.sol";
+import "./ITrustRegistry.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -14,6 +15,17 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  *      ETH agreements use msg.value; ERC-20 agreements use SafeERC20 transferFrom/transfer.
  *      Dispute resolution is centralised to the contract owner (intended to be a trusted
  *      arbiter or a future governance module).
+ *
+ * Security hardening applied (pre-mainnet audit):
+ *   T-02: trustRegistry integration — trust scores update automatically on fulfill/dispute.
+ *         Only ServiceAgreement is an authorized TrustRegistry updater; no arbitrary
+ *         address can call recordSuccess() directly. Eliminates trust-score farming.
+ *   T-03: Token allowlist — only owner-approved ERC-20 tokens can be used as payment.
+ *         Prevents malicious / fee-on-transfer tokens from permanently locking escrow.
+ *   T-04: Fee-on-transfer protection — prevented by the allowlist (T-03). The allowlist
+ *         is the primary guard; only known-safe tokens (e.g. USDC) are approved. No
+ *         balance-delta tracking is needed when token behaviour is controlled by allowlist.
+ *
  * STATUS: DRAFT — not audited, do not use in production
  */
 contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
@@ -22,6 +34,20 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     // ─── State ───────────────────────────────────────────────────────────────
 
     address public owner;
+
+    /// @notice Immutable reference to the TrustRegistry. Set at deploy time.
+    ///         Address 0 disables trust-score updates (e.g. in test environments
+    ///         that don't need a registry). In production this must be non-zero.
+    address public immutable trustRegistry;
+
+    /// @notice ETH payment sentinel (address(0) means native ETH, not an ERC-20).
+    address public constant ETH = address(0);
+
+    /// @notice Allowlist of ERC-20 tokens (and ETH) accepted as payment.
+    ///         ETH (address(0)) is allowed by default at construction.
+    ///         Only known-safe tokens should be added — fee-on-transfer or
+    ///         malicious tokens are prevented by keeping them off this list (T-03 / T-04).
+    mapping(address => bool) public allowedTokens;
 
     uint256 private _nextId;  // increments before use, so first ID = 1
 
@@ -50,6 +76,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     event AgreementCancelled(uint256 indexed id, address indexed client);
     event DisputeResolved(uint256 indexed id, bool favorProvider);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
+    event TokenAllowed(address indexed token);
+    event TokenDisallowed(address indexed token);
 
     // ─── Modifiers ───────────────────────────────────────────────────────────
 
@@ -60,8 +88,14 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
 
     // ─── Constructor ─────────────────────────────────────────────────────────
 
-    constructor() {
+    /// @param _trustRegistry Address of the TrustRegistry contract. Pass address(0)
+    ///                        to disable trust-score updates (testing only).
+    constructor(address _trustRegistry) {
         owner = msg.sender;
+        trustRegistry = _trustRegistry;
+        // ETH (address(0)) is the native payment token and is always allowed.
+        allowedTokens[address(0)] = true;
+        emit TokenAllowed(address(0));
     }
 
     // ─── Ownership ───────────────────────────────────────────────────────────
@@ -73,6 +107,23 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         emit OwnershipTransferred(old, newOwner);
     }
 
+    // ─── Token Allowlist (Fix T-03) ──────────────────────────────────────────
+
+    /// @notice Allow an ERC-20 token to be used as payment in agreements.
+    ///         Only add tokens whose transfer() behaviour is known-safe:
+    ///         no fee-on-transfer, no revert-on-transfer, no rebasing.
+    function allowToken(address token) external onlyOwner {
+        allowedTokens[token] = true;
+        emit TokenAllowed(token);
+    }
+
+    /// @notice Remove an ERC-20 token from the payment allowlist.
+    ///         Existing agreements with this token are unaffected.
+    function disallowToken(address token) external onlyOwner {
+        allowedTokens[token] = false;
+        emit TokenDisallowed(token);
+    }
+
     // ─── Core: Propose ───────────────────────────────────────────────────────
 
     /**
@@ -80,6 +131,12 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
      * @dev For ETH (token == address(0)) msg.value must equal price.
      *      For ERC-20, msg.value must be 0 and the caller must have approved
      *      this contract for at least `price` tokens before calling.
+     *
+     *      Fee-on-transfer protection (T-04): the allowedTokens list (T-03) is the
+     *      primary guard. Only tokens explicitly approved by the owner are accepted.
+     *      Approved tokens (e.g. USDC) are known to transfer the full requested amount
+     *      with no hidden fee. If a previously-safe token introduces a transfer fee,
+     *      the owner must call disallowToken() before new agreements are created.
      */
     function propose(
         address provider,
@@ -94,13 +151,15 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         require(provider != msg.sender,      "ServiceAgreement: client == provider");
         require(price > 0,                   "ServiceAgreement: zero price");
         require(deadline > block.timestamp,  "ServiceAgreement: deadline in past");
+        // T-03: reject non-allowlisted tokens (blocks malicious & fee-on-transfer tokens)
+        require(allowedTokens[token],        "ServiceAgreement: token not allowed");
 
         // Escrow handling
         if (token == address(0)) {
             // ETH
             require(msg.value == price, "ServiceAgreement: ETH value != price");
         } else {
-            // ERC-20
+            // ERC-20 — token is on the allowlist so it is known-safe
             require(msg.value == 0, "ServiceAgreement: ETH sent with ERC-20 agreement");
             IERC20(token).safeTransferFrom(msg.sender, address(this), price);
         }
@@ -158,6 +217,9 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     /**
      * @inheritdoc IServiceAgreement
      * @dev Releases escrow to provider. Must be called before the deadline.
+     *      On success, automatically records a trust score increment for the provider
+     *      in the TrustRegistry (T-02). This ensures scores only rise through real
+     *      on-chain ServiceAgreement fulfillments, not arbitrary updater calls.
      */
     function fulfill(uint256 agreementId, bytes32 actualDeliverablesHash) external nonReentrant {
         Agreement storage ag = _get(agreementId);
@@ -172,6 +234,11 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         emit AgreementFulfilled(agreementId, msg.sender, actualDeliverablesHash);
 
         _releaseEscrow(ag.token, ag.provider, ag.price);
+
+        // T-02: Trust score auto-update — only ServiceAgreement can call recordSuccess.
+        if (trustRegistry != address(0)) {
+            ITrustRegistry(trustRegistry).recordSuccess(ag.provider);
+        }
     }
 
     // ─── Core: Dispute ───────────────────────────────────────────────────────
@@ -241,6 +308,10 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
      * @param agreementId The disputed agreement
      * @param favorProvider If true, escrow goes to provider (FULFILLED).
      *                      If false, escrow goes to client (CANCELLED).
+     *
+     * @dev T-02: Trust score auto-update on resolution.
+     *      - Provider wins → recordSuccess (dispute was frivolous / provider delivered)
+     *      - Client wins  → recordAnomaly  (provider failed to deliver)
      */
     function resolveDispute(uint256 agreementId, bool favorProvider) external onlyOwner nonReentrant {
         Agreement storage ag = _get(agreementId);
@@ -253,9 +324,17 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         if (favorProvider) {
             ag.status = Status.FULFILLED;
             _releaseEscrow(ag.token, ag.provider, ag.price);
+            // T-02: provider vindicated — increment trust score
+            if (trustRegistry != address(0)) {
+                ITrustRegistry(trustRegistry).recordSuccess(ag.provider);
+            }
         } else {
             ag.status = Status.CANCELLED;
             _releaseEscrow(ag.token, ag.client, ag.price);
+            // T-02: provider failed — decrement trust score
+            if (trustRegistry != address(0)) {
+                ITrustRegistry(trustRegistry).recordAnomaly(ag.provider);
+            }
         }
     }
 

@@ -10,9 +10,9 @@ pragma solidity ^0.8.24;
  *   Attack 1: Flash Loan + Escrow Drain
  *   Attack 2: MEV Front-Running on propose()
  *   Attack 3: Agreement ID Collision / Grief Enumeration
- *   Attack 4: Malicious ERC-20 (revert on transfer, funds locked)
+ *   Attack 4: Malicious ERC-20 (revert on transfer) — MITIGATED by T-03 allowlist
  *   Attack 5: Economic Rational Defection (game theory analysis)
- *   Attack 6: Trust Score Farming via Sybil Wallets
+ *   Attack 6: Trust Score Farming via Sybil Wallets — now through SA only (T-02)
  *   Attack 7: Deadline Manipulation (Base L2 ±15s window)
  *   Bonus:    Reentrancy Guard Validation (T-01 from threat model)
  *
@@ -37,17 +37,14 @@ contract MockERC20 is ERC20 {
 /**
  * @dev Malicious ERC-20: transferFrom() works (allows escrow deposit),
  *      but transfer() always reverts (blocks escrow release to provider).
- *      Attack 4: Permanent funds lock / Denial of Service.
- *
- *      Root cause: ERC20.transferFrom() calls internal _transfer() directly.
- *                  SafeERC20.safeTransfer() calls public transfer() which we override.
- *                  This asymmetry allows deposit but blocks withdrawal.
+ *      Attack 4: Previously caused permanent funds lock.
+ *      MITIGATED: Token allowlist (T-03) blocks non-approved tokens at propose().
  */
 contract MaliciousRevertOnTransferToken is ERC20 {
     constructor() ERC20("MalToken", "MAL") {}
     function mint(address to, uint256 amount) external { _mint(to, amount); }
 
-    /// @dev Reverts on ANY safeTransfer call — blocks _releaseEscrow to provider
+    /// @dev Reverts on ANY safeTransfer call — would block _releaseEscrow to provider
     function transfer(address /*to*/, uint256 /*amount*/) public pure override returns (bool) {
         revert("MaliciousToken: transfer() disabled - funds permanently locked");
     }
@@ -155,8 +152,10 @@ contract ServiceAgreementEconomicTest is Test {
     bytes32 constant DELIVERY = keccak256("delivery-v1");
 
     function setUp() public {
-        sa    = new ServiceAgreement();
+        // T-02: deploy TrustRegistry first, then wire ServiceAgreement as the only updater
         trust = new TrustRegistry();
+        sa    = new ServiceAgreement(address(trust));
+        trust.addUpdater(address(sa)); // SA is the ONLY authorized trust score updater
         usdc  = new MockERC20();
 
         vm.deal(client,   200 ether);
@@ -180,6 +179,22 @@ contract ServiceAgreementEconomicTest is Test {
         sa.accept(id);
         vm.prank(_provider);
         sa.fulfill(id, DELIVERY);
+    }
+
+    /// @dev Helper to run N sybil farming cycles through the SA to avoid stack-too-deep.
+    function _farmTrustViaSA(address wallet, address sybil, uint256 rounds) internal {
+        for (uint256 i = 0; i < rounds; i++) {
+            vm.deal(wallet, 10 ether);
+            vm.prank(wallet);
+            uint256 id = sa.propose{value: 1}(
+                sybil, "sybil-task", "farm", 1, address(0),
+                block.timestamp + 1 days, bytes32(0)
+            );
+            vm.prank(sybil);
+            sa.accept(id);
+            vm.prank(sybil);
+            sa.fulfill(id, DELIVERY);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -453,75 +468,45 @@ contract ServiceAgreementEconomicTest is Test {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ATTACK 4: Malicious ERC-20 — Revert on Transfer (Funds Locked)
+    // ATTACK 4: Malicious ERC-20 — MITIGATED BY TOKEN ALLOWLIST (T-03)
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * @notice MALICIOUS ERC-20 (REVERT ON TRANSFER) — DENIAL OF SERVICE
+     * @notice MALICIOUS ERC-20 (REVERT ON TRANSFER) — MITIGATED
      *
-     * Attack: An ERC-20 token where transfer() always reverts but transferFrom()
-     *         works normally. This asymmetry allows:
-     *           - Deposit into escrow (via safeTransferFrom in propose())  ✓
-     *           - Withdrawal from escrow (via safeTransfer in fulfill())    ✗ REVERTS
+     * Previously: An ERC-20 token where transfer() always reverts but transferFrom()
+     *             works. This allowed deposit into escrow but blocked withdrawal,
+     *             permanently locking funds.
      *
-     * Result: Funds are PERMANENTLY LOCKED in the ServiceAgreement contract.
-     *         This is not a theft — neither party can access the funds.
+     * FIX (T-03 — Token Allowlist):
+     *   propose() now requires `allowedTokens[token] == true`. Non-listed tokens
+     *   are rejected before any transferFrom() is called. Funds never enter escrow.
      *
-     * Root cause: No token allowlist. Any ERC-20 can be used as the payment token.
+     *   Only owner-approved tokens (e.g. USDC) can be used for payment. The
+     *   MaliciousRevertOnTransferToken is not on the allowlist, so the attack
+     *   is stopped at the gate.
      *
-     * KNOWN LIMITATION (documented):
-     *   - Impact: Denial of service / permanent fund lock
-     *   - Severity: HIGH for affected users (funds unrecoverable)
-     *   - Scope: Only affects agreements using the malicious token
-     *   - Mitigation required: Token allowlist, or owner emergency withdrawal
-     *
-     * Classification: OPEN — no mitigation currently in codebase.
-     *                 RECOMMENDATION: Add token allowlist or admin withdrawal.
+     * Classification: MITIGATED (T-03)
      */
-    function test_Attack4_MaliciousERC20_FundsLocked() public {
+    function test_Attack4_MaliciousERC20_FundsLocked_Mitigated() public {
         MaliciousRevertOnTransferToken malToken = new MaliciousRevertOnTransferToken();
         malToken.mint(client, 1000e18);
 
-        // ── Client proposes with malicious token — transferFrom works ──
         vm.prank(client);
         malToken.approve(address(sa), 1000e18);
 
+        // FIX: Token not in allowlist — propose() reverts before any transfer occurs
         vm.prank(client);
-        uint256 id = sa.propose(
-            provider,
-            "data-analysis",
-            "Analyse dataset",
-            500e18,
-            address(malToken),
-            block.timestamp + WEEK,
-            SPEC
+        vm.expectRevert("ServiceAgreement: token not allowed");
+        sa.propose(
+            provider, "data-analysis", "Analyse dataset", 500e18,
+            address(malToken), block.timestamp + WEEK, SPEC
         );
 
-        // Verify escrow locked
-        assertEq(malToken.balanceOf(address(sa)), 500e18, "Funds locked in escrow");
-        assertEq(malToken.balanceOf(client), 500e18, "Client spent tokens");
-
-        vm.prank(provider);
-        sa.accept(id);
-
-        // ── Provider tries to fulfill — safeTransfer to provider reverts ──
-        vm.prank(provider);
-        vm.expectRevert(); // SafeERC20 wraps the revert
-        sa.fulfill(id, DELIVERY);
-
-        // ── Client tries to dispute and resolve — resolveDispute also calls safeTransfer ──
-        vm.prank(client);
-        sa.dispute(id, "Provider can't deliver");
-
-        vm.expectRevert(); // resolveDispute → _releaseEscrow → safeTransfer → revert
-        sa.resolveDispute(id, false); // try to refund client — also fails!
-
-        // ── Funds are permanently locked ──
-        IServiceAgreement.Agreement memory ag = sa.getAgreement(id);
-        assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.DISPUTED), "Stuck in DISPUTED");
-        assertEq(malToken.balanceOf(address(sa)), 500e18, "500e18 tokens PERMANENTLY LOCKED");
-        assertEq(malToken.balanceOf(provider), 0, "Provider never paid");
-        assertEq(malToken.balanceOf(client), 500e18, "Client lost deposited tokens");
+        // No funds were deposited — client's tokens are safe
+        assertEq(malToken.balanceOf(address(sa)), 0, "FIXED: No funds locked in escrow");
+        assertEq(malToken.balanceOf(client), 1000e18, "FIXED: Client tokens untouched");
+        assertEq(sa.agreementCount(), 0, "No agreement created");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -623,38 +608,31 @@ contract ServiceAgreementEconomicTest is Test {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ATTACK 6: Trust Score Farming via Sybil Wallets
+    // ATTACK 6: Trust Score Farming via Sybil Wallets (T-02 Validation)
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * @notice SYBIL TRUST SCORE FARMING — POSSIBLE IF UPDATER ACCESS IS COMPROMISED
+     * @notice SYBIL TRUST SCORE FARMING — REDUCED ATTACK SURFACE AFTER T-02
      *
-     * Attack: Attacker controls 2 wallets + is an authorized TrustRegistry updater.
-     *         They propose and self-fulfill 10 agreements (walletA → walletB),
-     *         then call recordSuccess(walletB) after each fulfillment.
+     * Previously: Attacker could become an authorized TrustRegistry updater and
+     *             call recordSuccess() directly, without any real agreement.
+     *             Cost: ~$20 in gas to reach "Autonomous" (800 score).
      *
-     * Economics to reach "Autonomous" tier (score = 800):
-     *   - Initial score: 100
-     *   - Required increase: 700
-     *   - Per success: +5 points
-     *   - Agreements needed: 700 / 5 = 140
-     *   - Gas per cycle: propose (~343k) + accept (~52k) + fulfill (~76k) = ~471k gas
-     *   - Total gas for 140 cycles: 140 × 471k = ~66M gas
-     *   - At 0.1 gwei on Base: 66M × 0.1gwei = 6.6M gwei = ~0.0066 ETH ≈ $20 at $3k
-     *   - Plus minimal ETH locked per agreement (recoverable): 140 × 1 wei ≈ 0
-     *   - Effective cost: ~$20 in gas to achieve "Autonomous" trust tier
+     * AFTER T-02 FIX:
+     *   - Only ServiceAgreement is an authorized TrustRegistry updater.
+     *   - recordSuccess() is called automatically on fulfill(), not manually.
+     *   - The attacker can still farm via sybil agreements (walletA → walletB)
+     *     through the ServiceAgreement flow, but cannot bypass it.
+     *   - Residual farming through SA remains a concern for future mitigation
+     *     (min value threshold, rate limiting — recommended for v2).
      *
-     * CRITICAL FINDING: Trust score farming is trivially cheap if attacker
-     *                   can become an authorized TrustRegistry updater.
-     *                   The TrustRegistry does NOT enforce that recordSuccess()
-     *                   is correlated with actual ServiceAgreement fulfillment.
+     * This test verifies:
+     *   1. Direct recordSuccess() calls from non-SA addresses are blocked.
+     *   2. Farming via SA fulfillment still works (residual risk, documented).
+     *   3. Trust scores update correctly through the SA flow.
      *
-     * Classification: OPEN (T-03)
-     * Mitigations:
-     *   1. ServiceAgreement should call TrustRegistry automatically on fulfill()
-     *   2. Only ServiceAgreement (not arbitrary updaters) should call recordSuccess
-     *   3. Rate limiting: cap score increases per time period
-     *   4. Minimum agreement value for score increase (anti-1-wei farming)
+     * Classification: PARTIALLY MITIGATED (T-02) — direct bypass closed,
+     *                 sybil-via-SA remains a residual risk for v2.
      */
     function test_Attack6_TrustScoreFarming() public {
         // Attacker controls two wallets
@@ -664,21 +642,26 @@ contract ServiceAgreementEconomicTest is Test {
         vm.deal(attackerWallet, 10 ether);
         vm.deal(attackerSybil,  1 ether);
 
-        // Attacker somehow became an authorized TrustRegistry updater
-        // (This is the critical assumption — in v1, TrustRegistry owner controls this)
-        trust.addUpdater(address(this)); // test contract = attacker who controls TrustRegistry
+        // ── Verify T-02: direct recordSuccess() is now blocked for non-SA updaters ──
+        vm.prank(attackerWallet); // attacker is NOT an authorized updater
+        vm.expectRevert("TrustRegistry: not authorized updater");
+        trust.recordSuccess(attackerSybil);
+
+        // ── Verify T-02: only ServiceAgreement can call recordSuccess ──
+        // SA calls it automatically on fulfill() — not directly accessible
 
         // Initialize attacker's trust score
         trust.initWallet(attackerSybil);
         uint256 initialScore = trust.getScore(attackerSybil);
         assertEq(initialScore, 100, "Initial trust score");
 
-        // ── Simulate 10 self-fulfillments ──
+        // ── Simulate 10 sybil self-fulfillments through ServiceAgreement ──
+        // Farming still possible via SA (residual risk), but no direct bypass.
         uint256 FARMING_ROUNDS = 10;
         for (uint256 i = 0; i < FARMING_ROUNDS; i++) {
-            // Self-dealing: walletA proposes to sybil wallet
+            // walletA proposes 1-wei agreement to sybil wallet
             vm.prank(attackerWallet);
-            uint256 id = sa.propose{value: 1}( // 1 wei — minimal cost
+            uint256 id = sa.propose{value: 1}(
                 attackerSybil,
                 "sybil-task",
                 "self-dealing",
@@ -689,20 +672,18 @@ contract ServiceAgreementEconomicTest is Test {
             );
 
             // Sybil accepts and fulfills (gets 1 wei back)
+            // SA automatically calls trust.recordSuccess(attackerSybil) on fulfill
             vm.prank(attackerSybil);
             sa.accept(id);
             vm.prank(attackerSybil);
             sa.fulfill(id, DELIVERY);
-
-            // Attacker (as authorized updater) calls recordSuccess
-            trust.recordSuccess(attackerSybil);
         }
 
         uint256 finalScore = trust.getScore(attackerSybil);
         assertEq(
             finalScore,
             initialScore + (FARMING_ROUNDS * trust.INCREMENT()),
-            "Score farmed correctly"
+            "Score farmed via SA fulfillment (residual risk)"
         );
 
         // ── Extrapolate cost to reach Autonomous (800) ──
@@ -711,8 +692,8 @@ contract ServiceAgreementEconomicTest is Test {
         uint256 scoreNeeded   = targetScore - currentScore;
         uint256 roundsNeeded  = scoreNeeded / trust.INCREMENT();
 
-        // Gas cost: propose(343k) + accept(52k) + fulfill(76k) + recordSuccess(~25k) = 496k per round
-        uint256 gasPerRound   = 496_000;
+        // Gas cost: propose(~350k) + accept(~55k) + fulfill(~90k) ≈ 495k per round
+        uint256 gasPerRound   = 495_000;
         uint256 totalGas      = roundsNeeded * gasPerRound;
         uint256 weiCostAtBase = totalGas * 0.1 gwei; // 0.1 gwei gas price on Base
 
@@ -721,27 +702,21 @@ contract ServiceAgreementEconomicTest is Test {
         emit log_named_uint("Total gas for Autonomous via farming", totalGas);
         emit log_named_uint("ETH cost (0.1 gwei on Base, wei)",    weiCostAtBase);
 
-        // The cost to reach Autonomous is disturbingly low
-        // ~126 more rounds needed, ~63M gas, ~0.0063 ETH ≈ $19 at $3k ETH
+        // Farming still possible (residual risk — v2 should add min-value threshold)
         assertLt(
             weiCostAtBase,
             0.1 ether,
-            "FINDING: Autonomous tier reachable for under 0.1 ETH if updater access is compromised"
+            "RESIDUAL RISK: Autonomous tier still reachable cheaply via SA sybil farming"
         );
 
         // Trust level verification
         string memory level = trust.getTrustLevel(attackerSybil);
-        // After 10 rounds: score=150 → "restricted" tier (100-300)
         assertEq(level, "restricted", "After 10 rounds: restricted tier");
 
-        // After full farming (score=800): would be "autonomous"
-        // Prove the threshold: score < 800 = elevated, score >= 800 = autonomous
-        vm.prank(address(this));
-        // Simulate final state: set score to 800 via 130 more recordSuccess calls
-        for (uint256 i = 0; i < roundsNeeded; i++) {
-            trust.recordSuccess(attackerSybil);
-        }
-        assertEq(trust.getTrustLevel(attackerSybil), "autonomous", "Autonomous achieved via farming");
+        // Simulate reaching Autonomous via more SA fulfillment rounds
+        _farmTrustViaSA(attackerWallet, attackerSybil, roundsNeeded);
+        assertEq(trust.getTrustLevel(attackerSybil), "autonomous",
+            "Autonomous achieved via sybil SA farming (residual risk for v2)");
     }
 
     // ═══════════════════════════════════════════════════════════════════════

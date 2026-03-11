@@ -9,6 +9,9 @@ pragma solidity ^0.8.24;
  *         Nobody can force a wallet upgrade.
  */
 contract ARC402Registry {
+    // Immutable owner — intentional. Registry upgrade requires deploying a new registry
+    // and updating wallet pointers. This is stronger than Ownable2Step for a canonical
+    // registry: no phishing/key-compromise path can silently redirect ARC-402 infrastructure.
     address public immutable owner;
 
     address public policyEngine;

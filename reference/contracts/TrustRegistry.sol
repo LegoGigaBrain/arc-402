@@ -2,13 +2,18 @@
 pragma solidity ^0.8.24;
 
 import "./ITrustRegistry.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /**
  * @title TrustRegistry
  * @notice On-chain trust scores for ARC-402 wallets (0–1000)
  * STATUS: DRAFT — not audited, do not use in production
+ *
+ * @dev Security: inherits Ownable2Step so ownership transfer requires the
+ *      new owner to explicitly accept. Prevents single-step ownership hijack
+ *      via phishing or malicious signed tx. (Fix T-02)
  */
-contract TrustRegistry is ITrustRegistry {
+contract TrustRegistry is ITrustRegistry, Ownable2Step {
     uint256 public constant MAX_SCORE = 1000;
     uint256 public constant INITIAL_SCORE = 100;
     uint256 public constant INCREMENT = 5;
@@ -17,27 +22,23 @@ contract TrustRegistry is ITrustRegistry {
     mapping(address => uint256) private scores;
     mapping(address => bool) private initialized;
     mapping(address => bool) public isAuthorizedUpdater;
-    address public owner;
 
     event WalletInitialized(address indexed wallet, uint256 score);
     event ScoreUpdated(address indexed wallet, uint256 oldScore, uint256 newScore, string reason);
     event UpdaterAdded(address indexed updater);
     event UpdaterRemoved(address indexed updater);
-    event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
 
-    constructor() {
-        owner = msg.sender;
-        isAuthorizedUpdater[msg.sender] = true;
-    }
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "TrustRegistry: not owner");
-        _;
-    }
+    // NOTE: OwnershipTransferred and OwnableUnauthorizedAccount events/errors
+    //       are provided by OpenZeppelin Ownable — no manual redeclaration needed.
 
     modifier onlyUpdater() {
         require(isAuthorizedUpdater[msg.sender], "TrustRegistry: not authorized updater");
         _;
+    }
+
+    /// @dev Ownable(msg.sender) sets the deployer as initial owner via Ownable2Step → Ownable.
+    constructor() Ownable(msg.sender) {
+        isAuthorizedUpdater[msg.sender] = true;
     }
 
     function addUpdater(address updater) external onlyOwner {
@@ -50,18 +51,10 @@ contract TrustRegistry is ITrustRegistry {
         emit UpdaterRemoved(updater);
     }
 
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "TrustRegistry: zero address");
-        address old = owner;
-        owner = newOwner;
-        emit OwnershipTransferred(old, newOwner);
-    }
-
-    function renounceOwnership() external onlyOwner {
-        address old = owner;
-        owner = address(0);
-        emit OwnershipTransferred(old, address(0));
-    }
+    // transferOwnership() and acceptOwnership() are provided by Ownable2Step.
+    // renounceOwnership() is provided by Ownable.
+    // Two-step flow: current owner calls transferOwnership(newOwner),
+    //                new owner calls acceptOwnership() to complete the transfer.
 
     function initWallet(address wallet) external {
         if (!initialized[wallet]) {

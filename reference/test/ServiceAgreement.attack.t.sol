@@ -11,6 +11,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/ServiceAgreement.sol";
+import "../contracts/TrustRegistry.sol";
 import "../contracts/IServiceAgreement.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
@@ -138,6 +139,7 @@ contract MockERC20 is ERC20 {
 contract ServiceAgreementAttackTest is Test {
 
     ServiceAgreement public sa;
+    TrustRegistry    public trustReg;
     MockERC20 public token;
 
     address public owner;
@@ -148,9 +150,13 @@ contract ServiceAgreementAttackTest is Test {
     uint256 constant DEADLINE = 7 days;
 
     function setUp() public {
+        trustReg = new TrustRegistry();
         owner = address(this); // test contract is owner (deployed sa)
-        sa    = new ServiceAgreement();
+        sa    = new ServiceAgreement(address(trustReg));
+        trustReg.addUpdater(address(sa));
         token = new MockERC20();
+        // NOTE: MockFeeToken is intentionally NOT added to allowedTokens — the tests
+        //       verify that the allowlist blocks it before any funds change hands.
 
         vm.deal(client, 100 ether);
         vm.deal(provider, 10 ether);
@@ -426,34 +432,24 @@ contract ServiceAgreementAttackTest is Test {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // ATTACK 8: Fee-on-Transfer Token
+    // ATTACK 8: Fee-on-Transfer Token — MITIGATED BY ALLOWLIST (T-03 / T-04)
     // ─────────────────────────────────────────────────────────────────────────
     /**
-     * @notice Client uses a fee-on-transfer token (10% fee per transfer).
-     *         When proposing 100 tokens, contract only receives 90.
-     *         The contract stores price=100 but holds 90.
+     * @notice Previously: a fee-on-transfer token (10% fee) could permanently lock
+     *         escrow because the contract stored price=100 but held 90 tokens.
      *
-     * @dev ⚠️  REAL VULNERABILITY FOUND:
-     *         The contract stores `ag.price` as the REQUESTED amount (100), not
-     *         the RECEIVED amount (90). When attempting to release escrow, it
-     *         tries to transfer 100 tokens but only holds 90 → REVERT.
+     * @dev FIX VERIFIED (T-03 / T-04):
+     *         The token allowlist in propose() rejects any token not explicitly approved
+     *         by the owner. MockFeeToken is not on the allowlist, so propose() reverts
+     *         with "ServiceAgreement: token not allowed" before any funds change hands.
      *
-     *         Attack vector: A fee-on-transfer token permanently locks escrow:
-     *         - fulfill() reverts (cannot send 100, only has 90)
-     *         - cancel() reverts if in PROPOSED state (same issue)
-     *         - expiredCancel() reverts (same issue)
-     *         - resolveDispute() reverts (same issue)
+     *         Root cause prevention: only owner-approved tokens (e.g. USDC) are accepted.
+     *         Approved tokens are known to have no transfer fee. If a listed token ever
+     *         introduces a fee, the owner calls disallowToken() immediately.
      *
-     *         Mitigation: Record actual received amount, not requested price.
-     *         Use: uint256 before = token.balanceOf(address(this));
-     *              IERC20(token).safeTransferFrom(..., price);
-     *              uint256 actual = token.balanceOf(address(this)) - before;
-     *              ag.price = actual;
-     *
-     *         This test PASSES by asserting that cancel() correctly reverts
-     *         (confirming the vulnerability exists and is deterministic).
+     *         This test verifies the mitigation is active.
      */
-    function test_Attack_FeeOnTransferToken() public {
+    function test_Attack_FeeOnTransferToken_Mitigated() public {
         MockFeeToken feeToken = new MockFeeToken();
         uint256 requested = 100e18;
 
@@ -463,35 +459,19 @@ contract ServiceAgreementAttackTest is Test {
         vm.startPrank(client);
         feeToken.approve(address(sa), requested);
 
-        // Propose: client sends 100 tokens, contract receives 90
-        uint256 id = sa.propose(
+        // FIX: propose() with fee-on-transfer token is rejected at the allowlist check.
+        // No tokens are transferred — the client's balance is untouched.
+        vm.expectRevert("ServiceAgreement: token not allowed");
+        sa.propose(
             provider, "compute", "fee-token task", requested,
             address(feeToken), block.timestamp + DEADLINE, bytes32(0)
         );
         vm.stopPrank();
 
-        // Verify: contract holds 90 tokens but ag.price = 100
-        uint256 contractBalance = feeToken.balanceOf(address(sa));
-        assertEq(contractBalance, 90e18, "Contract received only 90 (10% fee taken)");
-
-        IServiceAgreement.Agreement memory ag = sa.getAgreement(id);
-        assertEq(ag.price, requested, "ag.price stored as 100 (not actual 90)");
-
-        // Now client tries to cancel — contract attempts to send 100 tokens but has 90
-        // This REVERTS → escrow is permanently locked (vulnerability confirmed)
-        vm.prank(client);
-        vm.expectRevert(); // ERC20: transfer amount exceeds balance
-        sa.cancel(id);
-
-        // ⚠️  VULNERABILITY: Funds are now locked in the contract.
-        //     The agreement is still PROPOSED, cancel failed.
-        //     No path exists to recover the 90 tokens without contract upgrade.
-        ag = sa.getAgreement(id);
-        assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.PROPOSED),
-            "VULNERABILITY: agreement stuck, escrow trapped");
-
-        emit log_string("VULNERABILITY: Fee-on-transfer tokens lock escrow permanently.");
-        emit log_string("Mitigation: track actual received amount, not requested price.");
+        // No agreement created, no funds deposited
+        assertEq(sa.agreementCount(), 0, "No agreement created");
+        assertEq(feeToken.balanceOf(client), requested, "FIXED: client tokens untouched");
+        assertEq(feeToken.balanceOf(address(sa)), 0, "FIXED: no tokens locked in contract");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

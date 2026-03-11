@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/ServiceAgreement.sol";
+import "../contracts/TrustRegistry.sol";
 import "../contracts/IServiceAgreement.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
@@ -21,6 +22,7 @@ contract MockERC20 is ERC20 {
 contract ServiceAgreementTest is Test {
 
     ServiceAgreement public sa;
+    TrustRegistry    public trustReg;
     MockERC20 public token;
 
     address public owner   = address(this);
@@ -36,8 +38,13 @@ contract ServiceAgreementTest is Test {
     // ─── Setup ───────────────────────────────────────────────────────────────
 
     function setUp() public {
-        sa    = new ServiceAgreement();
-        token = new MockERC20();
+        trustReg = new TrustRegistry();
+        token    = new MockERC20();
+        sa       = new ServiceAgreement(address(trustReg));
+        // T-02: ServiceAgreement is the authorized trust updater
+        trustReg.addUpdater(address(sa));
+        // T-03: allowlist the mock ERC-20 token for ERC-20 agreement tests
+        sa.allowToken(address(token));
 
         vm.deal(client, 100 ether);
         vm.deal(provider, 10 ether);
@@ -114,6 +121,9 @@ contract ServiceAgreementTest is Test {
         // Provider received escrow
         assertEq(provider.balance, providerBefore + PRICE);
         assertEq(address(sa).balance, 0);
+
+        // T-02: trust score updated automatically on fulfill
+        assertEq(trustReg.getScore(provider), TrustRegistry(address(trustReg)).INITIAL_SCORE() + TrustRegistry(address(trustReg)).INCREMENT());
     }
 
     function test_Cancel() public {
@@ -166,6 +176,9 @@ contract ServiceAgreementTest is Test {
         assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.FULFILLED));
         assertEq(provider.balance, providerBefore + PRICE);
         assertEq(address(sa).balance, 0);
+
+        // T-02: provider vindicated — trust score recorded (provider auto-initialized at 100, then +5 = 105)
+        assertEq(trustReg.getScore(provider), trustReg.INITIAL_SCORE() + trustReg.INCREMENT());
     }
 
     function test_ResolveDisputeFavorClient() public {
@@ -178,6 +191,7 @@ contract ServiceAgreementTest is Test {
         sa.dispute(id, "Nothing was delivered");
 
         uint256 clientBefore = client.balance;
+        uint256 scoreBefore = trustReg.getScore(provider);
 
         // Owner resolves in client's favour
         sa.resolveDispute(id, false);
@@ -186,6 +200,10 @@ contract ServiceAgreementTest is Test {
         assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.CANCELLED));
         assertEq(client.balance, clientBefore + PRICE);
         assertEq(address(sa).balance, 0);
+
+        // T-02: provider failed — trust score decremented
+        // Provider was uninitialized (score 0), after anomaly recorded: initializes at 100 then subtracts 20 → 80
+        assertLt(trustReg.getScore(provider), scoreBefore + trustReg.INITIAL_SCORE());
     }
 
     function test_ExpiredCancel() public {
@@ -229,6 +247,29 @@ contract ServiceAgreementTest is Test {
 
         ag = sa.getAgreement(id);
         assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.FULFILLED));
+    }
+
+    function test_RevertPropose_TokenNotAllowed() public {
+        // T-03: tokens not on the allowlist must be rejected
+        address unlisted = address(0xBAD);
+        vm.prank(client);
+        vm.expectRevert("ServiceAgreement: token not allowed");
+        sa.propose(
+            provider, "compute", "task", PRICE, unlisted,
+            block.timestamp + DEADLINE, SPEC_HASH
+        );
+    }
+
+    function test_AllowAndDisallowToken() public {
+        address newToken = address(0x1234);
+        // Initially not allowed
+        assertFalse(sa.allowedTokens(newToken));
+
+        sa.allowToken(newToken);
+        assertTrue(sa.allowedTokens(newToken));
+
+        sa.disallowToken(newToken);
+        assertFalse(sa.allowedTokens(newToken));
     }
 
     function test_RevertAccept_NotProvider() public {

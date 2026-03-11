@@ -17,9 +17,15 @@ pragma solidity ^0.8.24;
  */
 
 import "../../contracts/ServiceAgreement.sol";
+import "../../contracts/TrustRegistry.sol";
 import "../../contracts/IServiceAgreement.sol";
 
 contract ServiceAgreementInvariants is ServiceAgreement {
+
+    /// @dev Pass address(0) as trustRegistry — invariants don't test trust scores,
+    ///      and Echidna cannot easily pre-deploy a TrustRegistry. Trust integration
+    ///      is tested via Foundry suites (ServiceAgreement.t.sol, .economic.t.sol).
+    constructor() ServiceAgreement(address(0)) {}
 
     // ─── Shadow State for Invariant Tracking ─────────────────────────────────
 

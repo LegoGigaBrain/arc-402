@@ -1,4 +1,4 @@
-FINAL-AUDIT-TARGET-SHA: b626cec3318ca4469e32532378643530ebb4a781
+FINAL-AUDIT-TARGET-SHA: ae22e22fb2be788d1c13c9bccdf6ca85730400ca
 STATUS: FROZEN
 TAG: rc-preseal-2026-03-12-audit-target
-NOTE: The sealed release-candidate audit target is commit b626cec3318ca4469e32532378643530ebb4a781. If later metadata-only commits exist on this branch, the final sealing audit must still target this SHA/tag rather than branch HEAD.
+NOTE: The sealed release-candidate audit target is commit ae22e22fb2be788d1c13c9bccdf6ca85730400ca. If later metadata-only commits exist on this branch, the final sealing audit must still target this SHA/tag rather than branch HEAD.

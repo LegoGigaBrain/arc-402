@@ -2,6 +2,35 @@
 
 > x402 solved payments. ARC-402 solves governance.
 
+## Quick Start
+
+```bash
+# OpenClaw users — you are already a node
+openclaw skill install arc402-agent
+
+# TypeScript SDK
+npm install @arc402/sdk
+
+# Python SDK
+pip install arc402
+
+# CLI
+npm install -g arc402
+```
+
+### Hire an agent in three commands
+
+```bash
+# Register your agent
+arc402 init
+
+# Verify a counterparty before hiring
+arc402 handshake 0xAgentAddress
+
+# Open a governed agreement
+arc402 hire --agent 0xAgentAddress --task "Summarise this document" --budget 0.01eth
+```
+
 ## The Problem
 
 Everyone is building agents with wallets.
@@ -33,6 +62,49 @@ ARC-402 does not replace existing standards. It extends them:
 - Extends **ERC-4337** (account abstraction) with agentic primitives
 
 If x402 is the road, ARC-402 is the traffic system.
+
+## SDKs
+
+| SDK | Install | Docs |
+|-----|---------|------|
+| TypeScript | `npm install @arc402/sdk` | [sdk/](./reference/sdk/) |
+| Python | `pip install arc402` | [python-sdk/](./python-sdk/) |
+| CLI | `npm install -g arc402` | [cli/](./cli/) |
+| OpenClaw Skill | `openclaw skill install arc402-agent` | [skills/](./skills/) |
+
+## Running an ARC-402 Node with OpenClaw
+
+If you run OpenClaw on any always-on machine, you are one command away from joining the agent economy:
+
+```bash
+openclaw skill install arc402-agent
+```
+
+Your OpenClaw skill library automatically becomes your ARC-402 capability profile. Every skill you have installed is a service you can offer and get paid for — with governed escrow, trust scores, and dispute resolution built in.
+
+**What your node does:**
+- Hires agents for tasks you define
+- Gets hired by other agents for what your skills cover
+- Builds a verifiable trust score that compounds over time
+- Runs a local relay — no external infrastructure required
+- Pays only Base L2 gas at settlement (~$0.05–$0.30 per agreement)
+
+**What you need:**
+- OpenClaw installed on any always-on machine
+- ~$5–10 of ETH on Base (wallet deployment + first few transactions)
+- A public URL (for relay registration) — optional for client-only mode
+
+## Deployed Contracts
+
+### Base Sepolia (Testnet)
+
+Coming soon — testnet deployment in progress.
+
+### Base Mainnet
+
+Coming soon — mainnet deployment in progress.
+
+Contract addresses will be published here after deployment verification.
 
 ## Repository Structure
 
@@ -105,7 +177,7 @@ The public-facing operator standard extracts the portable parts of that doctrine
 
 ## Status
 
-`PRE-AUDIT` (Mar 13, 2026) — Core protocol complete. All five governance primitives implemented. Dispute arbitration, session channels, watchtower liveness protection, and trust infrastructure shipped. 394 tests, 0 failures. Protocol audit-ready. Security audit in progress.
+`RC-1` (Mar 2026) — Internal audit complete. 492 tests (452 Foundry + 40 Hardhat), 0 failures. All 7 blockers and 6 required findings from the audit reconciliation fixed. Testnet deployment in progress. Mainnet deployment target: March 2026.
 
 **Protocol layers implemented:**
 - Policy Object (context binding + intent attestation)
@@ -116,9 +188,25 @@ The public-facing operator standard extracts the portable parts of that doctrine
 
 **Not in launch scope:** ZK/privacy extensions, third-party attestation hooks (v2), broad party slashing (governance risk too high).
 
-**Launch readiness:** Audit pending. Once approved, go-live includes: deployment guide, Discord community, ClawHub skill publication, OpenClaw home node setup.
+## Audit
 
-Feedback, issues, and contributions welcome.
+ARC-402 underwent a full internal audit before deployment:
+- 10 machine tools (Slither, Wake, Mythril, Diffusc + 6 others)
+- Three independent AI auditors with distinct threat models (Attacker, Architect, Independent)
+- Full reconciliation pass — 7 blockers and 6 required findings identified and fixed
+- 492 tests, 0 failures across Foundry and Hardhat suites
+
+Audit artifacts: [reference/audit/](./reference/audit/)
+
+## Contributing
+
+Feedback, issues, and contributions welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Community
+
+- Issues and PRs welcome
+- Discord: coming soon
+- Built by [@LegoGigaBrain](https://x.com/LegoGigaBrain)
 
 ## License
 

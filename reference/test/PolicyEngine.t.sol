@@ -33,7 +33,7 @@ contract PolicyEngineTest is Test {
         engine.setCategoryLimit("claims", 0.1 ether);
         (bool valid, string memory reason) = engine.validateSpend(wallet, "claims", 0.5 ether, bytes32(0));
         assertFalse(valid);
-        assertEq(reason, "PolicyEngine: amount exceeds category limit");
+        assertEq(reason, "PolicyEngine: amount exceeds per-tx limit");
     }
 
     function test_validateSpend_categoryNotConfigured() public {

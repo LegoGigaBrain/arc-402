@@ -280,6 +280,7 @@ contract ARC402Wallet {
             // Trust updates via ServiceAgreement.fulfill() only — see spec/03-trust-primitive.md
             revert(reason);
         }
+        _policyEngine().recordSpend(address(this), category, amount, activeContextId);
 
         // 3. Rolling window velocity check (ETH path — unit: wei)
         if (block.timestamp > spendingWindowStart + SPEND_WINDOW) {
@@ -339,6 +340,7 @@ contract ARC402Wallet {
             // Trust updates via ServiceAgreement.fulfill() only — see spec/03-trust-primitive.md
             revert(reason);
         }
+        _policyEngine().recordSpend(address(this), category, amount, activeContextId);
 
         // 3. Rolling window velocity check (token path — unit: token-native, e.g. USDC 1e6)
         //    Tracked separately from ethSpendingInWindow — units are incommensurable.
@@ -384,6 +386,7 @@ contract ARC402Wallet {
             activeContextId
         );
         require(valid, reason);
+        _policyEngine().recordSpend(address(this), category, amount, activeContextId);
         _intentAttestation().consume(attestationId);
         emit SettlementProposed(recipientWallet, amount, attestationId);
         _settlementCoordinator().propose(

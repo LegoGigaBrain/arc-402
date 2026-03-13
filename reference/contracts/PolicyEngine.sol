@@ -19,6 +19,16 @@ contract PolicyEngine is IPolicyEngine {
     mapping(address => mapping(string => uint256)) public categoryLimits;
     mapping(address => address) public walletOwners;
 
+    // Per-day cumulative limits (separate from per-tx limits)
+    mapping(address => mapping(string => uint256)) public dailyCategoryLimit;
+
+    // Cumulative spend tracking
+    mapping(address => mapping(string => uint256)) public dailySpend;
+    mapping(address => mapping(string => uint256)) public periodStart;
+
+    // contextId deduplication — prevents same agreement being validated twice
+    mapping(bytes32 => bool) private _usedContextIds;
+
     // ─── Blocklist ───────────────────────────────────────────────────────────
 
     /// @notice wallet → provider → blocked
@@ -33,6 +43,8 @@ contract PolicyEngine is IPolicyEngine {
 
     event PolicySet(address indexed wallet, bytes32 policyHash);
     event CategoryLimitSet(address indexed wallet, string category, uint256 limitPerTx);
+    event DailyCategoryLimitSet(address indexed wallet, string category, uint256 dailyLimit);
+    event SpendRecorded(address indexed wallet, string category, uint256 amount, bytes32 contextId);
     event ProviderBlocked(address indexed wallet, address indexed provider);
     event ProviderUnblocked(address indexed wallet, address indexed provider);
     event ProviderPreferred(address indexed wallet, address indexed provider, string capability);
@@ -78,20 +90,76 @@ contract PolicyEngine is IPolicyEngine {
         emit CategoryLimitSet(wallet, category, limitPerTx);
     }
 
+    function setDailyLimit(string calldata category, uint256 limit) external {
+        dailyCategoryLimit[msg.sender][category] = limit;
+        emit DailyCategoryLimitSet(msg.sender, category, limit);
+    }
+
+    function setDailyLimitFor(address wallet, string calldata category, uint256 limit) external {
+        require(walletOwners[wallet] == msg.sender || wallet == msg.sender, "PolicyEngine: not authorized");
+        dailyCategoryLimit[wallet][category] = limit;
+        emit DailyCategoryLimitSet(wallet, category, limit);
+    }
+
     function validateSpend(
         address wallet,
         string calldata category,
         uint256 amount,
-        bytes32 /*contextId*/
+        bytes32 contextId
     ) external view returns (bool valid, string memory reason) {
+        // Per-tx limit check
         uint256 limit = categoryLimits[wallet][category];
         if (limit == 0) {
             return (false, "PolicyEngine: category not configured");
         }
         if (amount > limit) {
-            return (false, "PolicyEngine: amount exceeds category limit");
+            return (false, "PolicyEngine: amount exceeds per-tx limit");
         }
+
+        // contextId replay check
+        if (contextId != bytes32(0) && _usedContextIds[contextId]) {
+            return (false, "PolicyEngine: contextId already used");
+        }
+
+        // Daily cumulative check
+        uint256 daily = dailyCategoryLimit[wallet][category];
+        if (daily > 0) {
+            uint256 accumulated = (block.timestamp > periodStart[wallet][category] + 1 days)
+                ? 0
+                : dailySpend[wallet][category];
+            if (accumulated + amount > daily) {
+                return (false, "PolicyEngine: daily limit exceeded");
+            }
+        }
+
         return (true, "");
+    }
+
+    /// @notice Record a validated spend. Only callable by the wallet itself or its registered owner.
+    /// @dev ARC402Wallet MUST call this immediately after validateSpend returns (true, "").
+    function recordSpend(
+        address wallet,
+        string calldata category,
+        uint256 amount,
+        bytes32 contextId
+    ) external {
+        require(msg.sender == wallet || msg.sender == walletOwners[wallet], "PolicyEngine: not authorized");
+
+        // Reset period if expired
+        if (block.timestamp > periodStart[wallet][category] + 1 days) {
+            dailySpend[wallet][category] = 0;
+            periodStart[wallet][category] = block.timestamp;
+        }
+
+        // Accumulate
+        dailySpend[wallet][category] += amount;
+
+        // Mark contextId as used
+        if (contextId != bytes32(0)) {
+            _usedContextIds[contextId] = true;
+        }
+
+        emit SpendRecorded(wallet, category, amount, contextId);
     }
 
     // ─── Blocklist ────────────────────────────────────────────────────────────

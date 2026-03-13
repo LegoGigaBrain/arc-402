@@ -367,6 +367,9 @@ contract BrokenTrustRegistry is ITrustRegistry {
     function getScore(address) external pure override returns (uint256) {
         return 0;
     }
+    function getEffectiveScore(address) external pure override returns (uint256) {
+        return 0;
+    }
 }
 
 // ─── Liveness isolation tests ─────────────────────────────────────────────────

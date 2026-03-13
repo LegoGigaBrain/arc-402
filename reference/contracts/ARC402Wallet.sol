@@ -291,9 +291,8 @@ contract ARC402Wallet is ReentrancyGuard {
             // Trust updates via ServiceAgreement.fulfill() only — see spec/03-trust-primitive.md
             revert(reason);
         }
-        _policyEngine().recordSpend(address(this), category, amount, activeContextId);
 
-        // 3. Rolling window velocity check (ETH path — unit: wei)
+        // 3. Rolling window velocity check BEFORE recording spend (B-02: check first, revert not return)
         if (block.timestamp > spendingWindowStart + SPEND_WINDOW) {
             spendingWindowStart = block.timestamp;
             ethSpendingInWindow = 0;
@@ -301,16 +300,15 @@ contract ARC402Wallet is ReentrancyGuard {
         }
         ethSpendingInWindow += amount;
         if (velocityLimit > 0 && ethSpendingInWindow > velocityLimit) {
-            // Freeze persists (no revert here); current spend is silently blocked.
-            // All subsequent calls will fail at the notFrozen modifier.
             frozen = true;
             frozenAt = block.timestamp;
             emit WalletFrozen(address(this), "velocity limit exceeded", block.timestamp);
-            return;
+            revert("ARC402: velocity limit exceeded");
         }
 
-        // 4. Consume attestation (single-use) then execute transfer (CEI pattern)
+        // 4. Consume attestation (single-use), record spend, then execute transfer (CEI)
         _intentAttestation().consume(attestationId);
+        _policyEngine().recordSpend(address(this), category, amount, activeContextId);
         emit SpendExecuted(recipient, amount, category, attestationId);
         (bool success,) = recipient.call{value: amount}("");
         require(success, "ARC402: transfer failed");
@@ -351,9 +349,8 @@ contract ARC402Wallet is ReentrancyGuard {
             // Trust updates via ServiceAgreement.fulfill() only — see spec/03-trust-primitive.md
             revert(reason);
         }
-        _policyEngine().recordSpend(address(this), category, amount, activeContextId);
 
-        // 3. Rolling window velocity check (token path — unit: token-native, e.g. USDC 1e6)
+        // 3. Rolling window velocity check BEFORE recording spend (B-02: check first, revert not return)
         //    Tracked separately from ethSpendingInWindow — units are incommensurable.
         if (block.timestamp > spendingWindowStart + SPEND_WINDOW) {
             spendingWindowStart = block.timestamp;
@@ -362,16 +359,15 @@ contract ARC402Wallet is ReentrancyGuard {
         }
         tokenSpendingInWindow += amount;
         if (velocityLimit > 0 && tokenSpendingInWindow > velocityLimit) {
-            // Freeze persists (no revert here); current spend is silently blocked.
-            // All subsequent calls will fail at the notFrozen modifier.
             frozen = true;
             frozenAt = block.timestamp;
             emit WalletFrozen(address(this), "velocity limit exceeded", block.timestamp);
-            return;
+            revert("ARC402: velocity limit exceeded");
         }
 
-        // 4. Consume attestation (single-use), emit, then transfer (CEI pattern)
+        // 4. Consume attestation (single-use), record spend, emit, then transfer (CEI)
         _intentAttestation().consume(attestationId);
+        _policyEngine().recordSpend(address(this), category, amount, activeContextId);
         emit TokenSpendExecuted(token, recipient, amount, category, attestationId);
 
         // 5. Execute ERC-20 transfer

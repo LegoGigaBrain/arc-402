@@ -59,6 +59,10 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     mapping(uint256 => mapping(address => bool)) public disputeArbitratorNominated;
     mapping(uint256 => mapping(address => bool)) public disputeArbitratorVoted;
 
+    // R-04: accumulate split votes; compute average when majority reached
+    mapping(uint256 => uint256) private _splitProviderVoteSum;
+    mapping(uint256 => uint256) private _splitClientVoteSum;
+
     enum ChannelStatus { OPEN, CLOSING, CHALLENGED, SETTLED }
     struct Channel {
         address client;
@@ -112,6 +116,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     event ArbitratorApprovalUpdated(address indexed arbitrator, bool approved);
     event DisputeArbitrationUpdated(address indexed da);
     event DisputeFeeResolutionFailed(uint256 indexed agreementId);
+    event DisputeFeeCallFailed(uint256 indexed agreementId, bytes reason);
     event ArbitratorNominated(uint256 indexed id, address indexed nominator, address indexed arbitrator, uint8 panelSize);
     event ArbitrationActivated(uint256 indexed id, uint256 selectionDeadlineAt, uint256 decisionDeadlineAt);
     event ArbitrationVoteCast(uint256 indexed id, address indexed arbitrator, ArbitrationVote vote, uint256 providerAward, uint256 clientAward);
@@ -469,7 +474,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     function expiredCancel(uint256 agreementId) external nonReentrant {
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.client, "ServiceAgreement: not client");
-        require(ag.status == Status.ACCEPTED || ag.status == Status.REVISED || ag.status == Status.REVISION_REQUESTED || ag.status == Status.PARTIAL_SETTLEMENT || ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAgreement: not ACCEPTED");
+        require(ag.status == Status.ACCEPTED || ag.status == Status.REVISED || ag.status == Status.REVISION_REQUESTED || ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAgreement: not ACCEPTED"); // B-03: removed PARTIAL_SETTLEMENT — it is no longer a reachable non-terminal state
         // slither-disable-next-line timestamp
         require(block.timestamp > ag.deadline, "ServiceAgreement: not past deadline");
         _closeRemediation(agreementId);
@@ -525,8 +530,9 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         disputeArbitratorVoted[agreementId][msg.sender] = true;
 
         // Notify DisputeArbitration so it can track vote for bond/fee settlement
+        // R-02: no try/catch — if this reverts, the whole vote reverts so arbitrator knows immediately
         if (disputeArbitration != address(0)) {
-            try IDisputeArbitration(disputeArbitration).recordArbitratorVote(agreementId, msg.sender) {} catch {}
+            IDisputeArbitration(disputeArbitration).recordArbitratorVote(agreementId, msg.sender);
         }
 
         if (vote == ArbitrationVote.PROVIDER_WINS) {
@@ -537,12 +543,9 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
             ac.clientVotes += 1;
         } else if (vote == ArbitrationVote.SPLIT) {
             require(providerAward + clientAward == ag.price, "ServiceAgreement: invalid split");
-            if (ac.splitVotes == 0) {
-                ac.splitProviderAward = providerAward;
-                ac.splitClientAward = clientAward;
-            } else {
-                require(ac.splitProviderAward == providerAward && ac.splitClientAward == clientAward, "ServiceAgreement: split mismatch");
-            }
+            // R-04: collect all split votes; compute average at threshold (no exact-match requirement)
+            _splitProviderVoteSum[agreementId] += providerAward;
+            _splitClientVoteSum[agreementId] += clientAward;
             ac.splitVotes += 1;
         } else if (vote == ArbitrationVote.HUMAN_REVIEW_REQUIRED) {
             require(providerAward == 0 && clientAward == 0, "ServiceAgreement: human review vote requires zero awards");
@@ -556,7 +559,12 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {
             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_REFUND, 0, ag.price, false);
         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {
-            _finalizeDispute(agreementId, DisputeOutcome.PARTIAL_PROVIDER, ac.splitProviderAward, ac.splitClientAward, false);
+            // R-04: average the submitted split amounts; ensure they sum to ag.price
+            uint256 avgProvider = _splitProviderVoteSum[agreementId] / ac.splitVotes;
+            uint256 avgClient = ag.price - avgProvider; // ensures exact sum = ag.price
+            ac.splitProviderAward = avgProvider;
+            ac.splitClientAward = avgClient;
+            _finalizeDispute(agreementId, DisputeOutcome.PARTIAL_PROVIDER, avgProvider, avgClient, false);
         } else if (ac.humanVotes >= ARBITRATOR_MAJORITY) {
             _markHumanEscalation(agreementId);
         }
@@ -580,6 +588,26 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
             favorProvider ? DisputeOutcome.PROVIDER_WINS : DisputeOutcome.CLIENT_REFUND,
             favorProvider ? _get(agreementId).price : 0,
             favorProvider ? 0 : _get(agreementId).price
+        );
+        emit DisputeResolved(agreementId, favorProvider);
+    }
+
+    /// @notice R-06: Owner can resolve a basic DISPUTED or ESCALATED_TO_HUMAN agreement.
+    ///         resolveDisputeDetailed requires humanReviewRequested + evidence; this bypasses
+    ///         those gates for owner-driven resolution of any active dispute state.
+    function ownerResolveDispute(uint256 agreementId, bool favorProvider) external nonReentrant onlyOwner {
+        Agreement storage ag = _get(agreementId);
+        require(
+            ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_HUMAN || ag.status == Status.ESCALATED_TO_ARBITRATION,
+            "ServiceAgreement: must be in dispute"
+        );
+        DisputeOutcome outcome = favorProvider ? DisputeOutcome.PROVIDER_WINS : DisputeOutcome.CLIENT_REFUND;
+        _finalizeDispute(
+            agreementId,
+            outcome,
+            favorProvider ? ag.price : 0,
+            favorProvider ? 0 : ag.price,
+            false
         );
         emit DisputeResolved(agreementId, favorProvider);
     }
@@ -618,6 +646,16 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         emit AgreementCancelled(agreementId, ag.client);
         emit DisputeTimedOut(agreementId, ag.client);
         _releaseEscrow(ag.token, ag.client, ag.price);
+
+        // R-01: release arbitrator bonds and fees so they are not permanently locked
+        if (disputeArbitration != address(0)) {
+            try IDisputeArbitration(disputeArbitration).resolveDisputeFee(
+                agreementId,
+                uint8(DisputeOutcome.CLIENT_REFUND) // timeout = client wins
+            ) {} catch {
+                // Catch is acceptable here — escrow release is primary; bonds are secondary
+            }
+        }
     }
 
     /// @notice Protocol version tag (Spec 20).
@@ -678,7 +716,9 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         _ensureDisputeCase(agreementId, false);
         _disputeCases[agreementId].opener = msg.sender;
         ag.status = Status.DISPUTED;
-        ag.resolvedAt = block.timestamp;
+        if (ag.resolvedAt == 0) {
+            ag.resolvedAt = block.timestamp; // B-06: only set once — never reset on re-entry
+        }
         emit AgreementDisputed(agreementId, msg.sender, reason);
         if (directReason != DirectDisputeReason.NONE) {
             emit DirectDisputeOpened(agreementId, msg.sender, directReason, reason);
@@ -694,9 +734,14 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
                 ag.provider,
                 ag.price,
                 ag.token
-            ) {} catch {
-                // Fee hook failure does not revert the dispute — dispute proceeds without fee layer
-                // This preserves backwards compatibility if DisputeArbitration is misconfigured
+            ) {} catch (bytes memory feeRevertData) {
+                // B-05: refund msg.value to caller before reverting — never swallow ETH
+                if (msg.value > 0) {
+                    (bool refunded, ) = msg.sender.call{value: msg.value}("");
+                    require(refunded, "ServiceAgreement: ETH refund failed");
+                }
+                emit DisputeFeeCallFailed(agreementId, feeRevertData);
+                revert("ServiceAgreement: dispute fee call failed");
             }
         }
     }
@@ -776,8 +821,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
             if (clientAward > 0) _releaseEscrow(ag.token, ag.client, clientAward);
             _updateTrust(agreementId, ag, false);
         } else if (outcome == DisputeOutcome.PARTIAL_PROVIDER || outcome == DisputeOutcome.PARTIAL_CLIENT) {
-            ag.status = Status.PARTIAL_SETTLEMENT;
-            if (providerAward > 0) _releaseEscrow(ag.token, ag.provider, providerAward);
+            ag.status = Status.FULFILLED; // terminal — all funds disbursed (B-03: was PARTIAL_SETTLEMENT, a non-terminal trap)
+            if (providerAward > 0) _releaseEscrowWithFee(ag.token, ag.provider, providerAward);
             if (clientAward > 0) _releaseEscrow(ag.token, ag.client, clientAward);
         } else if (outcome == DisputeOutcome.MUTUAL_CANCEL) {
             ag.status = Status.MUTUAL_CANCEL;
@@ -876,18 +921,36 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
 
     // ─── DisputeArbitration resolution callback ───────────────────────────────
 
-    function resolveFromArbitration(uint256 agreementId, address recipient, uint256 amount) external nonReentrant {
+    /// @notice Called by DisputeArbitration to disburse escrow with a split between provider and client.
+    /// @dev providerAmount + clientAmount must equal ag.price to prevent stranded escrow (B-01).
+    function resolveFromArbitration(
+        uint256 agreementId,
+        address recipient,
+        uint256 providerAmount,
+        uint256 clientAmount
+    ) external nonReentrant {
         require(msg.sender == disputeArbitration, "ServiceAgreement: not DisputeArbitration");
         require(disputeArbitration != address(0), "ServiceAgreement: DA not set");
         Agreement storage ag = _get(agreementId);
         require(ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_HUMAN || ag.status == Status.ESCALATED_TO_ARBITRATION, "ServiceAgreement: not in dispute");
-        require(recipient == ag.client || recipient == ag.provider, "ServiceAgreement: invalid recipient");
-        require(amount <= ag.price, "ServiceAgreement: amount exceeds escrow");
-        ag.status = Status.FULFILLED;
+        require(providerAmount + clientAmount == ag.price, "ServiceAgreement: amounts must equal escrow");
+
+        ag.status = providerAmount >= clientAmount ? Status.FULFILLED : Status.CANCELLED;
         ag.resolvedAt = block.timestamp;
-        emit DetailedDisputeResolved(agreementId, DisputeOutcome.PROVIDER_WINS, recipient == ag.provider ? amount : 0, recipient == ag.client ? amount : 0);
-        _releaseEscrow(ag.token, recipient, amount);
-        _updateTrust(agreementId, ag, recipient == ag.provider);
+
+        DisputeOutcome outcome = providerAmount >= clientAmount
+            ? DisputeOutcome.PROVIDER_WINS
+            : DisputeOutcome.CLIENT_REFUND;
+        emit DetailedDisputeResolved(agreementId, outcome, providerAmount, clientAmount);
+
+        if (providerAmount > 0) {
+            _releaseEscrowWithFee(ag.token, ag.provider, providerAmount);
+        }
+        if (clientAmount > 0) {
+            _releaseEscrow(ag.token, ag.client, clientAmount);
+        }
+
+        _updateTrust(agreementId, ag, providerAmount >= clientAmount);
     }
 
     // ─── Session Channels ─────────────────────────────────────────────────────
@@ -1034,7 +1097,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         uint256 providerAmount = ch.settledAmount;
         uint256 clientRefund = ch.depositAmount - ch.settledAmount;
         emit ChannelSettled(channelId, ch.provider, providerAmount, clientRefund);
-        if (providerAmount > 0) _releaseEscrow(ch.token, ch.provider, providerAmount);
+        if (providerAmount > 0) _releaseEscrowWithFee(ch.token, ch.provider, providerAmount); // B-04: was _releaseEscrow, bypassed protocol fee
         if (clientRefund > 0) _releaseEscrow(ch.token, ch.client, clientRefund);
     }
 

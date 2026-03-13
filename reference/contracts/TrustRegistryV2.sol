@@ -213,7 +213,7 @@ contract TrustRegistryV2 is ITrustRegistryV2, ITrustRegistry, Ownable2Step {
     /// @inheritdoc ITrustRegistryV2
     /// @dev Applies half-life time decay toward DECAY_FLOOR at read time.
     ///      Decay is NEVER stored — only computed on each read.
-    function getEffectiveScore(address wallet) external view returns (uint256) {
+    function getEffectiveScore(address wallet) external view override(ITrustRegistry, ITrustRegistryV2) returns (uint256) {
         TrustProfile storage p = profiles[wallet];
         if (p.lastUpdated == 0) return 0;
 

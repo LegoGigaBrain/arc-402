@@ -49,6 +49,7 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
     // ─── State ───────────────────────────────────────────────────────────────
 
     address public owner;
+    address public pendingOwner; // R-03: Ownable2Step
     address public serviceAgreement;
     address public trustRegistry;
     address public treasury;
@@ -76,6 +77,8 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
 
     // ─── Admin events ────────────────────────────────────────────────────────
 
+    event OwnershipTransferProposed(address indexed proposed);
+    event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     event ArbitratorSeedCommitted(uint256 indexed agreementId, bytes32 commit);
     event FeeFloorUpdated(uint256 newFloor);
     event FeeCapUpdated(uint256 newCap);
@@ -146,9 +149,20 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
         emit TreasuryUpdated(_treasury);
     }
 
+    /// @notice Step 1 — propose a new owner. R-03: Ownable2Step prevents single-tx ownership hijack.
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "DisputeArbitration: zero address");
-        owner = newOwner;
+        pendingOwner = newOwner;
+        emit OwnershipTransferProposed(newOwner);
+    }
+
+    /// @notice Step 2 — new owner must call this to complete the transfer.
+    function acceptOwnership() external {
+        require(msg.sender == pendingOwner, "DisputeArbitration: not pending owner");
+        address old = owner;
+        owner = pendingOwner;
+        pendingOwner = address(0);
+        emit OwnershipTransferred(old, owner);
     }
 
     // ─── ServiceAgreement integration ────────────────────────────────────────
@@ -252,9 +266,10 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
         // Base check: non-zero address, not zero trust (if registry configured)
         if (arbitrator == address(0)) return false;
         if (trustRegistry != address(0)) {
-            uint256 score = ITrustRegistry(trustRegistry).getScore(arbitrator);
+            // B-07: use getEffectiveScore (time-decayed) not getScore (raw)
+            uint256 score = ITrustRegistry(trustRegistry).getEffectiveScore(arbitrator);
             // score == 0 means uninitialized (no trust history) — ineligible.
-            // Scores 1–49 indicate post-slash penalty — also ineligible.
+            // Scores 1–49 indicate post-slash or heavy decay — also ineligible.
             if (score < 50) return false;
         }
         return true;
@@ -589,6 +604,34 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
         require(amount > 0, "DisputeArbitration: nothing to withdraw");
         pendingWithdrawals[token][msg.sender] = 0;
         _releasePayment(token, msg.sender, amount);
+    }
+
+    // ─── R-05: Arbitrator bond griefing recovery ──────────────────────────────
+
+    uint256 public constant BOND_RECOVERY_TIMEOUT = 45 days; // 15 days after 30-day dispute timeout
+
+    event BondReclaimed(uint256 indexed agreementId, address indexed arbitrator, uint256 amount);
+
+    /// @notice Arbitrators can reclaim their bond if a dispute expires without resolution.
+    ///         Prevents permanent bond lock if ServiceAgreement never calls resolveDisputeFee.
+    function reclaimExpiredBond(uint256 agreementId) external nonReentrant {
+        DisputeFeeState storage fs = _fees[agreementId];
+        require(fs.active, "DisputeArbitration: dispute not active");
+        require(!fs.resolved, "DisputeArbitration: already resolved");
+        // slither-disable-next-line timestamp
+        require(
+            block.timestamp > fs.openedAt + BOND_RECOVERY_TIMEOUT,
+            "DisputeArbitration: timeout not reached"
+        );
+
+        ArbitratorBondState storage bond = _bonds[agreementId][msg.sender];
+        require(bond.locked && !bond.slashed && !bond.returned, "DisputeArbitration: no reclaimable bond");
+
+        bond.returned = true;
+        uint256 amount = bond.bondAmount;
+
+        emit BondReclaimed(agreementId, msg.sender, amount);
+        _releasePayment(_fees[agreementId].token, msg.sender, amount);
     }
 
     receive() external payable {}

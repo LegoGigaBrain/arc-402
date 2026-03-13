@@ -262,7 +262,8 @@ contract ARC402WalletTest is Test {
     }
 
     function test_VelocityLimit_AutoFreeze() public {
-        // Raise policy limit to allow 0.6 ETH transactions
+        // B-02 fix: velocity limit now causes a hard revert (not a silent freeze+return).
+        // This ensures recordSpend is never committed without a corresponding transfer.
         vm.prank(address(wallet));
         policyEngine.setCategoryLimit("claims", 2 ether);
 
@@ -283,13 +284,13 @@ contract ARC402WalletTest is Test {
         wallet.openContext(CONTEXT_ID_2, "claims_processing");
 
         // Second spend: 0.6 ETH — total 1.2 ETH > 1 ETH limit.
-        // EVM note: auto-freeze sets frozen=true and returns (no revert) so the state
-        // change persists. The transfer is silently blocked; wallet is now frozen.
+        // B-02: now reverts hard instead of silently returning. Since revert undoes all state
+        // changes, recordSpend is NOT committed and no ETH is transferred.
         wallet.attest(attest2, "pay", "Payment 2", recipient, 0.6 ether, address(0), 0);
-        uint256 balBefore = recipient.balance;
-        wallet.executeSpend(payable(recipient), 0.6 ether, "claims", attest2); // no revert, no transfer
-        assertEq(recipient.balance, balBefore); // no ETH was sent
-        assertTrue(wallet.frozen()); // wallet is now frozen
+        vm.expectRevert("ARC402: velocity limit exceeded");
+        wallet.executeSpend(payable(recipient), 0.6 ether, "claims", attest2);
+        // Revert rolled back frozen=true — wallet is not auto-frozen (explicit freeze needed)
+        assertFalse(wallet.frozen());
     }
 
     function test_VelocityLimit_ResetsAfterWindow() public {
@@ -331,7 +332,7 @@ contract ARC402WalletTest is Test {
     }
 
     function test_RevertSpend_WhenFrozen() public {
-        // Trigger auto-freeze via velocity limit, then confirm subsequent spend reverts.
+        // B-02 fix: velocity limit causes hard revert; manual freeze still blocks spend.
         vm.prank(address(wallet));
         policyEngine.setCategoryLimit("claims", 2 ether);
 
@@ -346,17 +347,23 @@ contract ARC402WalletTest is Test {
         wallet.attest(attest1, "pay", "P1", recipient, 0.6 ether, address(0), 0);
         wallet.executeSpend(payable(recipient), 0.6 ether, "claims", attest1);
 
-        // Each spend requires a fresh context (contextId dedup prevents replay within same context)
         wallet.closeContext();
         bytes32 CONTEXT_ID_2 = keccak256("context-frozen-2");
         wallet.openContext(CONTEXT_ID_2, "claims_processing");
 
-        // 0.6 ETH: velocity exceeded → freezes, no transfer (no revert — state persists)
+        // 0.6 ETH: velocity exceeded → hard revert (B-02: no silent state mutation)
         wallet.attest(attest2, "pay", "P2", recipient, 0.6 ether, address(0), 0);
+        vm.expectRevert("ARC402: velocity limit exceeded");
         wallet.executeSpend(payable(recipient), 0.6 ether, "claims", attest2);
-        assertTrue(wallet.frozen()); // auto-frozen
+        assertFalse(wallet.frozen()); // revert rolled back frozen=true
 
-        // Wallet is now frozen — further spend must revert (wallet.attest is not gated by notFrozen)
+        // Separately: owner can manually freeze — subsequent spend must revert
+        wallet.freeze("security incident");
+        assertTrue(wallet.frozen());
+
+        wallet.closeContext();
+        bytes32 CONTEXT_ID_3 = keccak256("context-frozen-3");
+        wallet.openContext(CONTEXT_ID_3, "claims_processing");
         wallet.attest(attest3, "pay", "P3", recipient, 0.1 ether, address(0), 0);
         vm.expectRevert("ARC402: wallet frozen");
         wallet.executeSpend(payable(recipient), 0.1 ether, "claims", attest3);

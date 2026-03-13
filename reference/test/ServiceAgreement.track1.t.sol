@@ -146,7 +146,7 @@ contract ServiceAgreementTrack1Test is Test {
 
         assertEq(provider.balance, providerBefore + 0.4 ether);
         assertEq(client.balance, clientBefore + 0.6 ether);
-        assertEq(uint256(sa.getAgreement(id).status), uint256(IServiceAgreement.Status.PARTIAL_SETTLEMENT));
+        assertEq(uint256(sa.getAgreement(id).status), uint256(IServiceAgreement.Status.FULFILLED)); // B-03: partial outcomes now terminal FULFILLED
     }
 
     function test_ProviderCanRequestHumanReviewHook() public {
@@ -196,7 +196,7 @@ contract ServiceAgreementTrack1Test is Test {
 
         assertEq(provider.balance, providerBefore + 0.4 ether);
         assertEq(client.balance, clientBefore + 0.6 ether);
-        assertEq(uint256(sa.getAgreement(id).status), uint256(IServiceAgreement.Status.PARTIAL_SETTLEMENT));
+        assertEq(uint256(sa.getAgreement(id).status), uint256(IServiceAgreement.Status.FULFILLED)); // B-03: partial outcomes now terminal FULFILLED
     }
 }
 

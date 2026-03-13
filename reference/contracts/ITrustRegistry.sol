@@ -3,6 +3,11 @@ pragma solidity ^0.8.24;
 
 interface ITrustRegistry {
     function getScore(address wallet) external view returns (uint256 score);
+
+    /// @notice Returns the effective (time-decayed) trust score.
+    ///         Implementations without time decay should return the same value as getScore().
+    ///         B-07: used by DisputeArbitration.isEligibleArbitrator to respect time decay.
+    function getEffectiveScore(address wallet) external view returns (uint256 score);
     /// @notice Record a successful delivery. Called by ServiceAgreement on verified release / auto-release,
     ///         and only on legacy fulfill when that trusted-only compatibility path is explicitly enabled.
     /// @param wallet The provider who delivered.

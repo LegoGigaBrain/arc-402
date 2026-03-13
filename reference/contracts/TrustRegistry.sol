@@ -70,6 +70,12 @@ contract TrustRegistry is ITrustRegistry, Ownable2Step {
         return scores[wallet];
     }
 
+    /// @notice v1 has no time decay — returns same value as getScore (B-07).
+    function getEffectiveScore(address wallet) external view returns (uint256) {
+        if (!initialized[wallet]) return 0;
+        return scores[wallet];
+    }
+
     function recordSuccess(
         address wallet,
         address /*counterparty*/,

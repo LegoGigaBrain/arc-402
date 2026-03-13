@@ -1,6 +1,6 @@
 specVersion: 0.0.5
 schema:
-  file: ./schema.graphql
+  file: schema.graphql
 dataSources:
   - kind: ethereum
     name: AgentRegistry
@@ -18,7 +18,7 @@ dataSources:
         - ProtocolStats
       abis:
         - name: AgentRegistry
-          file: ./abis/AgentRegistry.json
+          file: AgentRegistry/abis/AgentRegistry.json
       eventHandlers:
         - event: AgentRegistered(indexed address,string,string,uint256)
           handler: handleAgentRegistered
@@ -32,8 +32,7 @@ dataSources:
           handler: handleEndpointChanged
         - event: HeartbeatSubmitted(indexed address,uint256,uint256,uint256,uint256,uint256)
           handler: handleHeartbeatSubmitted
-      file: ./src/agentRegistry.ts
-
+      file: AgentRegistry/AgentRegistry.wasm
   - kind: ethereum
     name: WalletFactory
     network: base-sepolia
@@ -50,12 +49,11 @@ dataSources:
         - ProtocolStats
       abis:
         - name: WalletFactory
-          file: ./abis/WalletFactory.json
+          file: WalletFactory/abis/WalletFactory.json
       eventHandlers:
         - event: WalletCreated(indexed address,indexed address)
           handler: handleWalletCreated
-      file: ./src/walletFactory.ts
-
+      file: WalletFactory/WalletFactory.wasm
   - kind: ethereum
     name: PolicyEngine
     network: base-sepolia
@@ -72,12 +70,11 @@ dataSources:
         - Wallet
       abis:
         - name: PolicyEngine
-          file: ./abis/PolicyEngine.json
+          file: PolicyEngine/abis/PolicyEngine.json
       eventHandlers:
         - event: CategoryLimitSet(indexed address,string,uint256)
           handler: handleCategoryLimitSet
-      file: ./src/policyEngine.ts
-
+      file: PolicyEngine/PolicyEngine.wasm
   - kind: ethereum
     name: ServiceAgreement
     network: base-sepolia
@@ -95,9 +92,10 @@ dataSources:
         - ProtocolStats
       abis:
         - name: ServiceAgreement
-          file: ./abis/ServiceAgreement.json
+          file: ServiceAgreement/abis/ServiceAgreement.json
       eventHandlers:
-        - event: AgreementProposed(indexed uint256,indexed address,indexed address,string,uint256,address,uint256)
+        - event: AgreementProposed(indexed uint256,indexed address,indexed
+            address,string,uint256,address,uint256)
           handler: handleAgreementProposed
         - event: AgreementAccepted(indexed uint256,indexed address)
           handler: handleAgreementAccepted
@@ -109,8 +107,7 @@ dataSources:
           handler: handleAgreementCancelled
         - event: DetailedDisputeResolved(indexed uint256,uint8,uint256,uint256)
           handler: handleDisputeResolved
-      file: ./src/serviceAgreement.ts
-
+      file: ServiceAgreement/ServiceAgreement.wasm
   - kind: ethereum
     name: SessionChannels
     network: base-sepolia
@@ -127,9 +124,10 @@ dataSources:
         - ProtocolStats
       abis:
         - name: SessionChannels
-          file: ./abis/SessionChannels.json
+          file: SessionChannels/abis/SessionChannels.json
       eventHandlers:
-        - event: ChannelOpened(indexed bytes32,indexed address,indexed address,address,uint256,uint256)
+        - event: ChannelOpened(indexed bytes32,indexed address,indexed
+            address,address,uint256,uint256)
           handler: handleChannelOpened
         - event: ChannelClosing(indexed bytes32,uint256,uint256,uint256)
           handler: handleChannelClosing
@@ -141,8 +139,7 @@ dataSources:
           handler: handleChallengeFinalised
         - event: ChannelExpiredReclaimed(indexed bytes32,indexed address,uint256)
           handler: handleChannelExpired
-      file: ./src/sessionChannels.ts
-
+      file: SessionChannels/SessionChannels.wasm
   - kind: ethereum
     name: TrustRegistryV2
     network: base-sepolia
@@ -159,14 +156,13 @@ dataSources:
         - TrustScoreUpdate
       abis:
         - name: TrustRegistryV2
-          file: ./abis/TrustRegistryV2.json
+          file: TrustRegistryV2/abis/TrustRegistryV2.json
       eventHandlers:
         - event: WalletInitialized(indexed address,uint256)
           handler: handleWalletInitialized
         - event: ScoreUpdated(indexed address,uint256,string,int256)
           handler: handleScoreUpdated
-      file: ./src/trustRegistry.ts
-
+      file: TrustRegistryV2/TrustRegistryV2.wasm
   - kind: ethereum
     name: ReputationOracle
     network: base-sepolia
@@ -182,12 +178,11 @@ dataSources:
         - ReputationSignal
       abis:
         - name: ReputationOracle
-          file: ./abis/ReputationOracle.json
+          file: ReputationOracle/abis/ReputationOracle.json
       eventHandlers:
         - event: SignalPublished(indexed address,indexed address,uint8,bytes32,uint256,bool)
           handler: handleSignalPublished
-      file: ./src/reputationOracle.ts
-
+      file: ReputationOracle/ReputationOracle.wasm
   - kind: ethereum
     name: TrustRegistry
     network: base-sepolia
@@ -203,14 +198,13 @@ dataSources:
         - TrustScoreV1
       abis:
         - name: TrustRegistry
-          file: ./abis/TrustRegistry.json
+          file: TrustRegistry/abis/TrustRegistry.json
       eventHandlers:
         - event: WalletInitialized(indexed address,uint256)
           handler: handleTrustV1WalletInitialized
         - event: ScoreUpdated(indexed address,uint256,uint256,string)
           handler: handleTrustV1ScoreUpdated
-      file: ./src/trustRegistryV1.ts
-
+      file: TrustRegistry/TrustRegistry.wasm
   - kind: ethereum
     name: TrustRegistrySA
     network: base-sepolia
@@ -226,14 +220,13 @@ dataSources:
         - TrustScoreV1
       abis:
         - name: TrustRegistry
-          file: ./abis/TrustRegistry.json
+          file: TrustRegistrySA/abis/TrustRegistry.json
       eventHandlers:
         - event: WalletInitialized(indexed address,uint256)
           handler: handleTrustV1WalletInitialized
         - event: ScoreUpdated(indexed address,uint256,uint256,string)
           handler: handleTrustV1ScoreUpdated
-      file: ./src/trustRegistryV1.ts
-
+      file: TrustRegistry/TrustRegistry.wasm
   - kind: ethereum
     name: IntentAttestation
     network: base-sepolia
@@ -249,12 +242,11 @@ dataSources:
         - IntentAttestation
       abis:
         - name: IntentAttestation
-          file: ./abis/IntentAttestation.json
+          file: IntentAttestation/abis/IntentAttestation.json
       eventHandlers:
         - event: AttestationCreated(indexed bytes32,indexed address,string,address,uint256)
           handler: handleAttestationCreated
-      file: ./src/intentAttestation.ts
-
+      file: IntentAttestation/IntentAttestation.wasm
   - kind: ethereum
     name: SettlementCoordinator
     network: base-sepolia
@@ -270,7 +262,7 @@ dataSources:
         - SettlementProposal
       abis:
         - name: SettlementCoordinator
-          file: ./abis/SettlementCoordinator.json
+          file: SettlementCoordinator/abis/SettlementCoordinator.json
       eventHandlers:
         - event: ProposalCreated(indexed bytes32,indexed address,indexed address,uint256)
           handler: handleProposalCreated
@@ -282,8 +274,7 @@ dataSources:
           handler: handleProposalRejected
         - event: ProposalExpired(indexed bytes32)
           handler: handleProposalExpired
-      file: ./src/settlementCoordinator.ts
-
+      file: SettlementCoordinator/SettlementCoordinator.wasm
   - kind: ethereum
     name: SponsorshipAttestation
     network: base-sepolia
@@ -299,10 +290,11 @@ dataSources:
         - SponsorshipAttestation
       abis:
         - name: SponsorshipAttestation
-          file: ./abis/SponsorshipAttestation.json
+          file: SponsorshipAttestation/abis/SponsorshipAttestation.json
       eventHandlers:
-        - event: AttestationPublished(indexed bytes32,indexed address,indexed address,uint256,uint8,string)
+        - event: AttestationPublished(indexed bytes32,indexed address,indexed
+            address,uint256,uint8,string)
           handler: handleSponsorshipPublished
         - event: AttestationRevoked(indexed bytes32,indexed address,indexed address)
           handler: handleSponsorshipRevoked
-      file: ./src/sponsorshipAttestation.ts
+      file: SponsorshipAttestation/SponsorshipAttestation.wasm

@@ -1,0 +1,1509 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_sa",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [],
+    "name": "ArbitrationDeadlinePassed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ArbitrationPanelFull",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ArbitrationSelectionClosed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ArbitrationStillActive",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ArbitratorAlreadyNominated",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ArbitratorNotEligible",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ConflictedArbitrator",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DirectDisputeNotAllowed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DisputeFeeError",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DisputeTimeoutNotReached",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ETHTransferFailed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "EvidenceRequired",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "HumanEscalationRequired",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "HumanReviewNotRequested",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidPayout",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidResponse",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidStatus",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidVote",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidVoteSplit",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "MaxRemediationCycles",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NoActiveDispute",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NoRevisionRequested",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotPanelArbitrator",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotSA",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "PanelIncomplete",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "RemediationFirst",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "RemediationInactive",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "RemediationUnavailable",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "RemediationWindowElapsed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TranscriptChainMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "UnsupportedOutcome",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "VoteAlreadyCast",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes",
+        "name": "reason",
+        "type": "bytes"
+      }
+    ],
+    "name": "DisputeFeeCallFailed",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "ARBITRATION_DECISION_WINDOW",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "ARBITRATION_SELECTION_WINDOW",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "ARBITRATOR_MAJORITY",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "ARBITRATOR_PANEL_SIZE",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "DISPUTE_TIMEOUT",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_REMEDIATION_CYCLES",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "REMEDIATION_WINDOW",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "enum IServiceAgreement.Status",
+        "name": "currentStatus",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "deadline",
+        "type": "uint256"
+      },
+      {
+        "internalType": "enum IServiceAgreement.DirectDisputeReason",
+        "name": "directReason",
+        "type": "uint8"
+      }
+    ],
+    "name": "canDirectDispute",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "voter",
+        "type": "address"
+      },
+      {
+        "internalType": "enum IServiceAgreement.Status",
+        "name": "currentStatus",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "price",
+        "type": "uint256"
+      },
+      {
+        "internalType": "enum IServiceAgreement.ArbitrationVote",
+        "name": "vote",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "providerAward",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "clientAward",
+        "type": "uint256"
+      }
+    ],
+    "name": "castArbitrationVote",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bool",
+            "name": "finalized",
+            "type": "bool"
+          },
+          {
+            "internalType": "enum IServiceAgreement.Status",
+            "name": "newStatus",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "resolvedAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "providerAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "clientAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "providerWithFee",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "updateTrust",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "trustSuccess",
+            "type": "bool"
+          },
+          {
+            "internalType": "enum IServiceAgreement.DisputeOutcome",
+            "name": "outcome",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bool",
+            "name": "feeResolutionCallback",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct IDisputeModule.FinalizeResult",
+        "name": "result",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      }
+    ],
+    "name": "closeRemediation",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "disputeArbitratorNominated",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "disputeArbitratorVoted",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "enum IServiceAgreement.Status",
+        "name": "currentStatus",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "resolvedAt",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "price",
+        "type": "uint256"
+      }
+    ],
+    "name": "expiredDisputeRefund",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bool",
+            "name": "finalized",
+            "type": "bool"
+          },
+          {
+            "internalType": "enum IServiceAgreement.Status",
+            "name": "newStatus",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "resolvedAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "providerAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "clientAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "providerWithFee",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "updateTrust",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "trustSuccess",
+            "type": "bool"
+          },
+          {
+            "internalType": "enum IServiceAgreement.DisputeOutcome",
+            "name": "outcome",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bool",
+            "name": "feeResolutionCallback",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct IDisputeModule.FinalizeResult",
+        "name": "result",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getArbitrationCase",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "agreementId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address[3]",
+            "name": "arbitrators",
+            "type": "address[3]"
+          },
+          {
+            "internalType": "uint8",
+            "name": "arbitratorCount",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "providerVotes",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "clientVotes",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "splitVotes",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "humanVotes",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "selectionDeadlineAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "decisionDeadlineAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "splitProviderAward",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "splitClientAward",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "finalized",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "humanBackstopUsed",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct IServiceAgreement.ArbitrationCase",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getDisputeCase",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "agreementId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "openedAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "responseDeadlineAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "enum IServiceAgreement.DisputeOutcome",
+            "name": "outcome",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "providerAward",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "clientAward",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "humanReviewRequested",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint256",
+            "name": "evidenceCount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "opener",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct IServiceAgreement.DisputeCase",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "getDisputeEvidence",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "submitter",
+            "type": "address"
+          },
+          {
+            "internalType": "enum IServiceAgreement.EvidenceType",
+            "name": "evidenceType",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "evidenceHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "string",
+            "name": "evidenceURI",
+            "type": "string"
+          },
+          {
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct IServiceAgreement.DisputeEvidence",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getRemediationCase",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint8",
+            "name": "cycleCount",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "openedAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "deadlineAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "lastActionAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "latestTranscriptHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bool",
+            "name": "active",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct IServiceAgreement.RemediationCase",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "getRemediationFeedback",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint8",
+            "name": "cycle",
+            "type": "uint8"
+          },
+          {
+            "internalType": "address",
+            "name": "author",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "feedbackHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "string",
+            "name": "feedbackURI",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "previousTranscriptHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "transcriptHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct IServiceAgreement.RemediationFeedback",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "getRemediationResponse",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint8",
+            "name": "cycle",
+            "type": "uint8"
+          },
+          {
+            "internalType": "address",
+            "name": "author",
+            "type": "address"
+          },
+          {
+            "internalType": "enum IServiceAgreement.ProviderResponseType",
+            "name": "responseType",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "proposedProviderPayout",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "responseHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "string",
+            "name": "responseURI",
+            "type": "string"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "previousTranscriptHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "transcriptHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct IServiceAgreement.RemediationResponse",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      }
+    ],
+    "name": "markDisputeResolved",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "nominator",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "arbitrator",
+        "type": "address"
+      },
+      {
+        "internalType": "enum IServiceAgreement.Status",
+        "name": "currentStatus",
+        "type": "uint8"
+      },
+      {
+        "internalType": "address",
+        "name": "client",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "provider",
+        "type": "address"
+      }
+    ],
+    "name": "nominateArbitrator",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "enum IServiceAgreement.Status",
+            "name": "newStatus",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "panelSize",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bool",
+            "name": "panelComplete",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint256",
+            "name": "selectionDeadlineAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "decisionDeadlineAt",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct IDisputeModule.NominateResult",
+        "name": "result",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "agreementId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "caller",
+            "type": "address"
+          },
+          {
+            "internalType": "enum IServiceAgreement.Status",
+            "name": "currentStatus",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bool",
+            "name": "requireEligibility",
+            "type": "bool"
+          },
+          {
+            "internalType": "enum IServiceAgreement.DirectDisputeReason",
+            "name": "directReason",
+            "type": "uint8"
+          },
+          {
+            "internalType": "enum IDisputeArbitration.DisputeMode",
+            "name": "daMode",
+            "type": "uint8"
+          },
+          {
+            "internalType": "enum IDisputeArbitration.DisputeClass",
+            "name": "daClass",
+            "type": "uint8"
+          },
+          {
+            "internalType": "address",
+            "name": "client",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "provider",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "price",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct IDisputeModule.DisputeOpenParams",
+        "name": "p",
+        "type": "tuple"
+      }
+    ],
+    "name": "openFormalDispute",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "newResolvedAt",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "enum IServiceAgreement.Status",
+        "name": "currentStatus",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bool",
+        "name": "favorProvider",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "price",
+        "type": "uint256"
+      }
+    ],
+    "name": "ownerResolveDispute",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bool",
+            "name": "finalized",
+            "type": "bool"
+          },
+          {
+            "internalType": "enum IServiceAgreement.Status",
+            "name": "newStatus",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "resolvedAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "providerAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "clientAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "providerWithFee",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "updateTrust",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "trustSuccess",
+            "type": "bool"
+          },
+          {
+            "internalType": "enum IServiceAgreement.DisputeOutcome",
+            "name": "outcome",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bool",
+            "name": "feeResolutionCallback",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct IDisputeModule.FinalizeResult",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "enum IServiceAgreement.Status",
+        "name": "currentStatus",
+        "type": "uint8"
+      }
+    ],
+    "name": "requestHumanEscalation",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "client",
+        "type": "address"
+      },
+      {
+        "internalType": "enum IServiceAgreement.Status",
+        "name": "currentStatus",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "feedbackHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "string",
+        "name": "feedbackURI",
+        "type": "string"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "previousTranscriptHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "requestRevision",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint8",
+            "name": "cycleCount",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "transcriptHash",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct IDisputeModule.RequestRevisionResult",
+        "name": "result",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "enum IServiceAgreement.Status",
+        "name": "currentStatus",
+        "type": "uint8"
+      },
+      {
+        "internalType": "enum IServiceAgreement.DisputeOutcome",
+        "name": "outcome",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "providerAward",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "clientAward",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "price",
+        "type": "uint256"
+      }
+    ],
+    "name": "resolveDisputeDetailed",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bool",
+            "name": "finalized",
+            "type": "bool"
+          },
+          {
+            "internalType": "enum IServiceAgreement.Status",
+            "name": "newStatus",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "resolvedAt",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "providerAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "clientAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "providerWithFee",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "updateTrust",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "trustSuccess",
+            "type": "bool"
+          },
+          {
+            "internalType": "enum IServiceAgreement.DisputeOutcome",
+            "name": "outcome",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bool",
+            "name": "feeResolutionCallback",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct IDisputeModule.FinalizeResult",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "provider",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "price",
+        "type": "uint256"
+      },
+      {
+        "internalType": "enum IServiceAgreement.Status",
+        "name": "currentStatus",
+        "type": "uint8"
+      },
+      {
+        "internalType": "enum IServiceAgreement.ProviderResponseType",
+        "name": "responseType",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "proposedProviderPayout",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "responseHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "string",
+        "name": "responseURI",
+        "type": "string"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "previousTranscriptHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "respondToRevision",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "enum IServiceAgreement.Status",
+            "name": "newStatus",
+            "type": "uint8"
+          },
+          {
+            "internalType": "enum IServiceAgreement.ProviderResponseType",
+            "name": "responseType",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "transcriptHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bool",
+            "name": "needsDispute",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint8",
+            "name": "cycleCount",
+            "type": "uint8"
+          }
+        ],
+        "internalType": "struct IDisputeModule.RespondResult",
+        "name": "result",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "serviceAgreement",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "agreementId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "submitter",
+        "type": "address"
+      },
+      {
+        "internalType": "enum IServiceAgreement.Status",
+        "name": "currentStatus",
+        "type": "uint8"
+      },
+      {
+        "internalType": "enum IServiceAgreement.EvidenceType",
+        "name": "evidenceType",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "evidenceHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "string",
+        "name": "evidenceURI",
+        "type": "string"
+      }
+    ],
+    "name": "submitDisputeEvidence",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "evidenceIndex",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "stateMutability": "payable",
+    "type": "receive"
+  }
+]

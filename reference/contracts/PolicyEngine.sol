@@ -122,6 +122,12 @@ contract PolicyEngine is IPolicyEngine {
         }
 
         // Daily cumulative check
+        // NOTE: "Daily" limit uses a rolling 24-hour window from the first spend of a period,
+        // NOT calendar-day resets. On Base L2, block.timestamp is reliable to within ~2 seconds.
+        // This is intentional — UTC midnight resets require oracle coordination and add complexity.
+        // NOTE: dailySpend[wallet][category] accumulates GLOBALLY across ALL concurrent agreements
+        // for this wallet and category. If 100 agreements each call recordSpend in the same period,
+        // the accumulator reflects the sum of all of them. Per-agreement escaping is not possible.
         uint256 daily = dailyCategoryLimit[wallet][category];
         if (daily > 0) {
             uint256 accumulated = (block.timestamp > periodStart[wallet][category] + 1 days)

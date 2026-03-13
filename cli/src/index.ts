@@ -15,6 +15,7 @@ import { registerHandshakeCommand } from "./commands/agent-handshake";
 import { registerNegotiateCommands } from "./commands/negotiate";
 import { registerRelayCommands } from "./commands/relay";
 import { registerRemediateCommands } from "./commands/remediate";
+import { registerDaemonCommands } from "./commands/daemon";
 import { registerTrustCommand } from "./commands/trust";
 import { registerWalletCommands } from "./commands/wallet";
 
@@ -36,6 +37,7 @@ registerArbitratorCommand(program);
 registerCancelCommand(program);
 registerChannelCommands(program);
 registerRelayCommands(program);
+registerDaemonCommands(program);
 registerTrustCommand(program);
 registerWalletCommands(program);
 program.parse(process.argv);

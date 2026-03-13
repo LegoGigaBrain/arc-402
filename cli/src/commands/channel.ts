@@ -4,6 +4,10 @@ import { requireSigner, getClient } from "../client";
 import { ChannelClient } from "@arc402/sdk";
 import type { ChannelState } from "@arc402/sdk";
 import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
+
+const CHANNEL_STATES_DIR = path.join(os.homedir(), ".arc402", "channel-states");
 
 function loadStateFile(path: string): ChannelState {
   const raw = fs.readFileSync(path, "utf-8");
@@ -155,6 +159,50 @@ export function registerChannelCommands(program: Command): void {
         console.log(JSON.stringify(result, null, 2));
       } else {
         console.log(`reclaimed: ${result.txHash}`);
+      }
+    });
+
+  channel.command("store-state <channelId> <statePath>")
+    .description(
+      "Save a signed channel state to local storage (~/.arc402/channel-states/<channelId>.json) " +
+      "for the `arc402 daemon channel-watch` to use when auto-challenging stale closes."
+    )
+    .option("--json", "JSON output")
+    .action((channelId, statePath, opts) => {
+      let raw: string;
+      try {
+        raw = fs.readFileSync(statePath, "utf-8");
+      } catch (err) {
+        console.error(`Cannot read state file: ${statePath}\n${err}`);
+        process.exit(1);
+      }
+
+      let state: Record<string, unknown>;
+      try {
+        state = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        console.error("State file is not valid JSON.");
+        process.exit(1);
+      }
+
+      const required = ["sequenceNumber", "cumulativePayment", "callCount", "token", "timestamp", "clientSig", "providerSig"];
+      for (const field of required) {
+        if (!(field in state)) {
+          console.error(`State file missing required field: ${field}`);
+          process.exit(1);
+        }
+      }
+
+      fs.mkdirSync(CHANNEL_STATES_DIR, { recursive: true, mode: 0o700 });
+      const dest = path.join(CHANNEL_STATES_DIR, `${channelId}.json`);
+      const stored = { ...state, channelId };
+      fs.writeFileSync(dest, JSON.stringify(stored, null, 2), { mode: 0o600 });
+
+      if (opts.json || program.opts().json) {
+        console.log(JSON.stringify({ stored: true, channelId, path: dest }));
+      } else {
+        console.log(`State stored: ${dest}`);
+        console.log(`  seq: ${state.sequenceNumber}`);
       }
     });
 }

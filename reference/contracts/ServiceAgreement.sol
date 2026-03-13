@@ -5,6 +5,8 @@ import "./IServiceAgreement.sol";
 import "./IDisputeArbitration.sol";
 import "./ITrustRegistry.sol";
 import "./ReputationOracle.sol";
+import "./IArc402Guardian.sol";
+import "./IWatchtowerRegistry.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -17,6 +19,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     ReputationOracle public reputationOracle;
     address public immutable trustRegistry;
     address public disputeArbitration;
+    IArc402Guardian public guardian;
+    address public watchtowerRegistry;
 
     address public constant ETH = address(0);
     uint256 public constant VERIFY_WINDOW = 3 days;
@@ -111,6 +115,9 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     event ChannelChallenged(bytes32 indexed channelId, address indexed challenger, uint256 newSequenceNumber, uint256 newSettledAmount);
     event ChannelSettled(bytes32 indexed channelId, address indexed provider, uint256 settledAmount, uint256 refundAmount);
     event ChannelExpiredReclaimed(bytes32 indexed channelId, address indexed client, uint256 reclaimedAmount);
+    event ChallengeFinalised(bytes32 indexed channelId, address indexed finaliser, uint256 settledAmount);
+    event GuardianUpdated(address indexed guardian);
+    event WatchtowerRegistryUpdated(address indexed watchtowerRegistry);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "ServiceAgreement: not owner");
@@ -120,6 +127,13 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     modifier onlyParty(uint256 agreementId) {
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.client || msg.sender == ag.provider, "ServiceAgreement: not a party");
+        _;
+    }
+
+    modifier whenNotPaused() {
+        if (address(guardian) != address(0)) {
+            require(!guardian.isPaused(), "ServiceAgreement: protocol paused");
+        }
         _;
     }
 
@@ -184,7 +198,17 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         emit DisputeArbitrationUpdated(da);
     }
 
-    function propose(address provider, string calldata serviceType, string calldata description, uint256 price, address token, uint256 deadline, bytes32 deliverablesHash) external payable nonReentrant returns (uint256 agreementId) {
+    function setGuardian(address _guardian) external onlyOwner {
+        guardian = IArc402Guardian(_guardian);
+        emit GuardianUpdated(_guardian);
+    }
+
+    function setWatchtowerRegistry(address _watchtowerRegistry) external onlyOwner {
+        watchtowerRegistry = _watchtowerRegistry;
+        emit WatchtowerRegistryUpdated(_watchtowerRegistry);
+    }
+
+    function propose(address provider, string calldata serviceType, string calldata description, uint256 price, address token, uint256 deadline, bytes32 deliverablesHash) external payable nonReentrant whenNotPaused returns (uint256 agreementId) {
         require(bytes(serviceType).length <= 64, "ServiceAgreement: serviceType too long");
         require(bytes(description).length <= 1024, "ServiceAgreement: description too long");
         require(provider != address(0), "ServiceAgreement: zero provider");
@@ -224,7 +248,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         emit AgreementProposed(agreementId, msg.sender, provider, serviceType, price, token, deadline);
     }
 
-    function accept(uint256 agreementId) external nonReentrant {
+    function accept(uint256 agreementId) external nonReentrant whenNotPaused {
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.provider, "ServiceAgreement: not provider");
         require(ag.status == Status.PROPOSED, "ServiceAgreement: not PROPOSED");
@@ -232,7 +256,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         emit AgreementAccepted(agreementId, msg.sender);
     }
 
-    function fulfill(uint256 agreementId, bytes32 actualDeliverablesHash) external nonReentrant {
+    function fulfill(uint256 agreementId, bytes32 actualDeliverablesHash) external nonReentrant whenNotPaused {
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.provider, "ServiceAgreement: not provider");
         require(legacyFulfillEnabled, "ServiceAgreement: legacy fulfill disabled");
@@ -248,7 +272,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         _updateTrust(agreementId, ag, true);
     }
 
-    function commitDeliverable(uint256 agreementId, bytes32 deliverableHash) external nonReentrant {
+    function commitDeliverable(uint256 agreementId, bytes32 deliverableHash) external nonReentrant whenNotPaused {
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.provider, "ServiceAgreement: not provider");
         require(ag.status == Status.ACCEPTED || ag.status == Status.REVISED, "ServiceAgreement: not ACCEPTED");
@@ -261,7 +285,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         emit DeliverableCommitted(agreementId, msg.sender, deliverableHash, ag.verifyWindowEnd);
     }
 
-    function verifyDeliverable(uint256 agreementId) external nonReentrant {
+    function verifyDeliverable(uint256 agreementId) external nonReentrant whenNotPaused {
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.client, "ServiceAgreement: not client");
         require(ag.status == Status.PENDING_VERIFICATION, "ServiceAgreement: not PENDING_VERIFICATION");
@@ -823,7 +847,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         uint256 maxAmount,
         uint256 ratePerCall,
         uint256 deadline
-    ) external payable nonReentrant returns (bytes32 channelId) {
+    ) external payable nonReentrant whenNotPaused returns (bytes32 channelId) {
         require(provider != address(0), "ServiceAgreement: zero provider");
         require(provider != msg.sender, "ServiceAgreement: client == provider");
         require(deadline > block.timestamp, "ServiceAgreement: deadline in past");
@@ -853,7 +877,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         emit ChannelOpened(channelId, msg.sender, provider, token, maxAmount, deadline);
     }
 
-    function closeChannel(bytes32 channelId, bytes calldata finalStateBytes) external nonReentrant {
+    function closeChannel(bytes32 channelId, bytes calldata finalStateBytes) external nonReentrant whenNotPaused {
         Channel storage ch = channels[channelId];
         require(ch.client != address(0), "ServiceAgreement: channel not found");
         require(ch.status == ChannelStatus.OPEN, "ServiceAgreement: channel not OPEN");
@@ -871,11 +895,19 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         emit ChannelClosing(channelId, state.sequenceNumber, state.cumulativePayment, ch.challengeExpiry);
     }
 
-    function challengeChannel(bytes32 channelId, bytes calldata latestStateBytes) external nonReentrant {
+    function challengeChannel(bytes32 channelId, bytes calldata latestStateBytes) external nonReentrant whenNotPaused {
         Channel storage ch = channels[channelId];
         require(ch.client != address(0), "ServiceAgreement: channel not found");
         require(ch.status == ChannelStatus.CLOSING || ch.status == ChannelStatus.OPEN, "ServiceAgreement: not challengeable");
-        require(msg.sender == ch.client || msg.sender == ch.provider, "ServiceAgreement: not a party");
+        require(
+            msg.sender == ch.client ||
+            msg.sender == ch.provider ||
+            (watchtowerRegistry != address(0) && (
+                IWatchtowerRegistry(watchtowerRegistry).channelWatchtower(channelId) == msg.sender ||
+                msg.sender == watchtowerRegistry
+            )),
+            "ServiceAgreement: not authorized to challenge"
+        );
         if (ch.status == ChannelStatus.CLOSING) {
             require(block.timestamp <= ch.challengeExpiry, "ServiceAgreement: challenge window expired");
         }
@@ -906,6 +938,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         require(ch.status == ChannelStatus.CLOSING, "ServiceAgreement: not CLOSING");
         require(block.timestamp > ch.challengeExpiry, "ServiceAgreement: challenge window open");
         ch.status = ChannelStatus.SETTLED;
+        emit ChallengeFinalised(channelId, msg.sender, ch.settledAmount);
         _settleChannel(channelId, ch);
         // Clean close — positive trust for both
         _updateChannelTrust(channelId, ch, true, false);

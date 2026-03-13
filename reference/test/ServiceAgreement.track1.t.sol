@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/ServiceAgreement.sol";
+import "../contracts/DisputeModule.sol";
 import "../contracts/TrustRegistryV2.sol";
 import "../contracts/ARC402Wallet.sol";
 import "../contracts/ARC402Registry.sol";
@@ -13,6 +14,7 @@ import "../contracts/SettlementCoordinator.sol";
 contract ServiceAgreementTrack1Test is Test {
     ServiceAgreement sa;
     TrustRegistryV2 registry;
+    DisputeModule dm;
 
     address client = address(0xC1);
     address provider = address(0xA1);
@@ -24,6 +26,8 @@ contract ServiceAgreementTrack1Test is Test {
         registry = new TrustRegistryV2(address(0));
         sa = new ServiceAgreement(address(registry));
         registry.addUpdater(address(sa));
+        dm = new DisputeModule(address(sa));
+        sa.setDisputeModule(address(dm));
         sa.setApprovedArbitrator(address(0xB1), true);
         sa.setApprovedArbitrator(address(0xB2), true);
         sa.setApprovedArbitrator(address(0xB3), true);
@@ -60,12 +64,12 @@ contract ServiceAgreementTrack1Test is Test {
         vm.prank(client);
         sa.requestRevision(id, f1, "ipfs://feedback-1", bytes32(0));
 
-        IServiceAgreement.RemediationCase memory rc = sa.getRemediationCase(id);
+        IServiceAgreement.RemediationCase memory rc = dm.getRemediationCase(id);
         assertTrue(rc.active);
         assertEq(rc.cycleCount, 1);
         assertEq(rc.deadlineAt, rc.openedAt + sa.REMEDIATION_WINDOW());
 
-        IServiceAgreement.RemediationFeedback memory feedback = sa.getRemediationFeedback(id, 0);
+        IServiceAgreement.RemediationFeedback memory feedback = dm.getRemediationFeedback(id, 0);
         assertEq(feedback.feedbackHash, f1);
         assertEq(feedback.previousTranscriptHash, bytes32(0));
         assertEq(feedback.transcriptHash, rc.latestTranscriptHash);
@@ -73,7 +77,7 @@ contract ServiceAgreementTrack1Test is Test {
         vm.prank(provider);
         sa.respondToRevision(id, IServiceAgreement.ProviderResponseType.REVISE, 0, keccak256("resp-1"), "ipfs://resp-1", feedback.transcriptHash);
 
-        IServiceAgreement.RemediationResponse memory response = sa.getRemediationResponse(id, 0);
+        IServiceAgreement.RemediationResponse memory response = dm.getRemediationResponse(id, 0);
         assertEq(uint256(response.responseType), uint256(IServiceAgreement.ProviderResponseType.REVISE));
         assertEq(response.previousTranscriptHash, feedback.transcriptHash);
         assertEq(uint256(sa.getAgreement(id).status), uint256(IServiceAgreement.Status.REVISED));
@@ -84,21 +88,21 @@ contract ServiceAgreementTrack1Test is Test {
 
         vm.prank(client);
         sa.requestRevision(id, keccak256("f1"), "uri1", bytes32(0));
-        bytes32 t1 = sa.getRemediationCase(id).latestTranscriptHash;
+        bytes32 t1 = dm.getRemediationCase(id).latestTranscriptHash;
 
         vm.prank(provider);
         sa.respondToRevision(id, IServiceAgreement.ProviderResponseType.DEFEND, 0, keccak256("r1"), "uri-r1", t1);
-        bytes32 t2 = sa.getRemediationCase(id).latestTranscriptHash;
+        bytes32 t2 = dm.getRemediationCase(id).latestTranscriptHash;
 
         vm.prank(client);
         sa.requestRevision(id, keccak256("f2"), "uri2", t2);
 
-        bytes32 t3 = sa.getRemediationCase(id).latestTranscriptHash;
-        vm.expectRevert("ServiceAgreement: max remediation cycles");
+        bytes32 t3 = dm.getRemediationCase(id).latestTranscriptHash;
+        vm.expectRevert(ServiceAgreement.MaxRemediationCycles.selector);
         vm.prank(client);
         sa.requestRevision(id, keccak256("f3"), "uri3", t3);
 
-        bytes32 t4 = sa.getRemediationCase(id).latestTranscriptHash;
+        bytes32 t4 = dm.getRemediationCase(id).latestTranscriptHash;
         vm.prank(provider);
         sa.respondToRevision(id, IServiceAgreement.ProviderResponseType.DEFEND, 0, keccak256("r2"), "uri-r2", t4);
 
@@ -107,7 +111,7 @@ contract ServiceAgreementTrack1Test is Test {
 
         IServiceAgreement.Agreement memory ag = sa.getAgreement(id);
         assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.DISPUTED));
-        IServiceAgreement.DisputeCase memory dc = sa.getDisputeCase(id);
+        IServiceAgreement.DisputeCase memory dc = dm.getDisputeCase(id);
         assertEq(uint256(dc.outcome), uint256(IServiceAgreement.DisputeOutcome.PENDING));
         assertEq(dc.responseDeadlineAt, dc.openedAt + sa.DISPUTE_TIMEOUT());
     }
@@ -126,7 +130,7 @@ contract ServiceAgreementTrack1Test is Test {
         uint256 id = _proposeAccept();
         vm.prank(client);
         sa.requestRevision(id, keccak256("f1"), "uri1", bytes32(0));
-        bytes32 transcript = sa.getRemediationCase(id).latestTranscriptHash;
+        bytes32 transcript = dm.getRemediationCase(id).latestTranscriptHash;
 
         vm.prank(provider);
         sa.respondToRevision(id, IServiceAgreement.ProviderResponseType.REQUEST_HUMAN_REVIEW, 0, keccak256("human"), "uri-human", transcript);
@@ -136,7 +140,7 @@ contract ServiceAgreementTrack1Test is Test {
         vm.prank(provider);
         sa.submitDisputeEvidence(id, IServiceAgreement.EvidenceType.COMMUNICATION, keccak256("e2"), "ipfs://e2");
 
-        IServiceAgreement.DisputeCase memory beforeResolution = sa.getDisputeCase(id);
+        IServiceAgreement.DisputeCase memory beforeResolution = dm.getDisputeCase(id);
         assertEq(beforeResolution.evidenceCount, 2);
         assertTrue(beforeResolution.humanReviewRequested);
 
@@ -153,13 +157,13 @@ contract ServiceAgreementTrack1Test is Test {
         uint256 id = _proposeAccept();
         vm.prank(client);
         sa.requestRevision(id, keccak256("f1"), "uri1", bytes32(0));
-        bytes32 transcript = sa.getRemediationCase(id).latestTranscriptHash;
+        bytes32 transcript = dm.getRemediationCase(id).latestTranscriptHash;
 
         vm.prank(provider);
         sa.respondToRevision(id, IServiceAgreement.ProviderResponseType.REQUEST_HUMAN_REVIEW, 0, keccak256("human"), "uri-human", transcript);
 
         assertEq(uint256(sa.getAgreement(id).status), uint256(IServiceAgreement.Status.ESCALATED_TO_HUMAN));
-        assertTrue(sa.getDisputeCase(id).humanReviewRequested);
+        assertTrue(dm.getDisputeCase(id).humanReviewRequested);
     }
 
     function test_PeerArbitration_MajoritySplitFinalizesExactPartialOutcome() public {

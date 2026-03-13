@@ -21,6 +21,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/ServiceAgreement.sol";
+import "../contracts/DisputeModule.sol";
 import "../contracts/TrustRegistry.sol";
 import "../contracts/IServiceAgreement.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -87,7 +88,7 @@ contract FlashLoanAttacker {
         try sa.cancel(agreementId) {
             stolenFunds += 1; // should never reach here
         } catch {
-            // Expected: "ServiceAgreement: not client"
+            // Expected: "SessionChannels: not client"
         }
     }
 
@@ -158,6 +159,8 @@ contract ServiceAgreementEconomicTest is Test {
         sa.setLegacyFulfillMode(true);
         sa.setLegacyFulfillProvider(provider, true);
         trust.addUpdater(address(sa)); // SA is the ONLY authorized trust score updater
+        DisputeModule dm = new DisputeModule(address(sa));
+        sa.setDisputeModule(address(dm));
         usdc  = new MockERC20();
 
         vm.deal(client,   200 ether);
@@ -384,7 +387,7 @@ contract ServiceAgreementEconomicTest is Test {
 
         // ── MEV bot cannot access honest client's escrow ──
         vm.prank(mevBot);
-        vm.expectRevert("ServiceAgreement: not client");
+        vm.expectRevert(ServiceAgreement.NotClient.selector);
         sa.cancel(honestAgreementId);
 
         // ── MEV bot cannot fulfill honest agreement ──
@@ -500,7 +503,7 @@ contract ServiceAgreementEconomicTest is Test {
 
         // FIX: Token not in allowlist — propose() reverts before any transfer occurs
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: token not allowed");
+        vm.expectRevert(ServiceAgreement.TokenNotAllowed.selector);
         sa.propose(
             provider, "data-analysis", "Analyse dataset", 500e18,
             address(malToken), block.timestamp + WEEK, SPEC
@@ -786,7 +789,7 @@ contract ServiceAgreementEconomicTest is Test {
 
         // fulfill() must fail (past deadline)
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: past deadline");
+        vm.expectRevert(ServiceAgreement.PastDeadline.selector);
         sa.fulfill(id2, DELIVERY);
 
         // expiredCancel() must succeed

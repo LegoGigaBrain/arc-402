@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/ServiceAgreement.sol";
+import "../contracts/DisputeModule.sol";
 import "../contracts/TrustRegistry.sol";
 import "../contracts/IServiceAgreement.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -24,6 +25,7 @@ contract ServiceAgreementTest is Test {
     ServiceAgreement public sa;
     TrustRegistry    public trustReg;
     MockERC20 public token;
+    DisputeModule    public dm;
 
     address public owner   = address(this);
     address public client  = address(0xC1);
@@ -47,6 +49,8 @@ contract ServiceAgreementTest is Test {
         trustReg.addUpdater(address(sa));
         // T-03: allowlist the mock ERC-20 token for ERC-20 agreement tests
         sa.allowToken(address(token));
+        dm = new DisputeModule(address(sa));
+        sa.setDisputeModule(address(dm));
 
         vm.deal(client, 100 ether);
         vm.deal(provider, 10 ether);
@@ -170,7 +174,7 @@ contract ServiceAgreementTest is Test {
 
         vm.prank(client);
         sa.requestRevision(id, keccak256("feedback"), "ipfs://feedback", bytes32(0));
-        bytes32 transcript = sa.getRemediationCase(id).latestTranscriptHash;
+        bytes32 transcript = dm.getRemediationCase(id).latestTranscriptHash;
         vm.prank(provider);
         sa.respondToRevision(id, IServiceAgreement.ProviderResponseType.REQUEST_HUMAN_REVIEW, 0, keccak256("human"), "ipfs://human", transcript);
         vm.prank(client);
@@ -178,7 +182,7 @@ contract ServiceAgreementTest is Test {
 
         uint256 providerBefore = provider.balance;
 
-        sa.resolveDispute(id, true);
+        sa.resolveDisputeDetailed(id, IServiceAgreement.DisputeOutcome.PROVIDER_WINS, sa.getAgreement(id).price, 0);
 
         IServiceAgreement.Agreement memory ag = sa.getAgreement(id);
         assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.FULFILLED));
@@ -195,7 +199,7 @@ contract ServiceAgreementTest is Test {
 
         vm.prank(client);
         sa.requestRevision(id, keccak256("feedback"), "ipfs://feedback", bytes32(0));
-        bytes32 transcript = sa.getRemediationCase(id).latestTranscriptHash;
+        bytes32 transcript = dm.getRemediationCase(id).latestTranscriptHash;
         vm.prank(provider);
         sa.respondToRevision(id, IServiceAgreement.ProviderResponseType.REQUEST_HUMAN_REVIEW, 0, keccak256("human"), "ipfs://human", transcript);
         vm.prank(client);
@@ -204,7 +208,7 @@ contract ServiceAgreementTest is Test {
         uint256 clientBefore = client.balance;
         uint256 scoreBefore = trustReg.getScore(provider);
 
-        sa.resolveDispute(id, false);
+        sa.resolveDisputeDetailed(id, IServiceAgreement.DisputeOutcome.CLIENT_REFUND, 0, sa.getAgreement(id).price);
 
         IServiceAgreement.Agreement memory ag = sa.getAgreement(id);
         assertEq(uint256(ag.status), uint256(IServiceAgreement.Status.CANCELLED));
@@ -260,7 +264,7 @@ contract ServiceAgreementTest is Test {
         // T-03: tokens not on the allowlist must be rejected
         address unlisted = address(0xBAD);
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: token not allowed");
+        vm.expectRevert(ServiceAgreement.TokenNotAllowed.selector);
         sa.propose(
             provider, "compute", "task", PRICE, unlisted,
             block.timestamp + DEADLINE, SPEC_HASH
@@ -283,7 +287,7 @@ contract ServiceAgreementTest is Test {
         uint256 id = _propose();
 
         vm.prank(stranger);
-        vm.expectRevert("ServiceAgreement: not provider");
+        vm.expectRevert(ServiceAgreement.NotProvider.selector);
         sa.accept(id);
     }
 
@@ -297,7 +301,7 @@ contract ServiceAgreementTest is Test {
         vm.warp(block.timestamp + DEADLINE + 1);
 
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: past deadline");
+        vm.expectRevert(ServiceAgreement.PastDeadline.selector);
         sa.fulfill(id, DELIVERY_HASH);
     }
 
@@ -308,7 +312,7 @@ contract ServiceAgreementTest is Test {
         sa.accept(id);
 
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: not PROPOSED");
+        vm.expectRevert(ServiceAgreement.InvalidStatus.selector);
         sa.cancel(id);
     }
 
@@ -341,7 +345,7 @@ contract ServiceAgreementTest is Test {
     }
 
     function test_RevertGetAgreement_NotFound() public {
-        vm.expectRevert("ServiceAgreement: not found");
+        vm.expectRevert(ServiceAgreement.NotFound.selector);
         sa.getAgreement(999);
     }
 }
@@ -383,6 +387,7 @@ contract ServiceAgreementTrustLivenessTest is Test {
 
     ServiceAgreement public sa;
     BrokenTrustRegistry public brokenRegistry;
+    DisputeModule public dm;
 
     address public owner    = address(this);
     address public client   = address(0xC1);
@@ -399,6 +404,8 @@ contract ServiceAgreementTrustLivenessTest is Test {
         sa.setLegacyFulfillMode(true);
         sa.setLegacyFulfillProvider(provider, true);
         // Note: do NOT add ServiceAgreement as updater — the registry always reverts anyway.
+        dm = new DisputeModule(address(sa));
+        sa.setDisputeModule(address(dm));
         vm.deal(client, 100 ether);
         vm.deal(provider, 10 ether);
     }
@@ -467,14 +474,14 @@ contract ServiceAgreementTrustLivenessTest is Test {
         uint256 id = _proposeAndAccept();
         vm.prank(client);
         sa.requestRevision(id, keccak256("feedback"), "ipfs://feedback", bytes32(0));
-        bytes32 transcript = sa.getRemediationCase(id).latestTranscriptHash;
+        bytes32 transcript = dm.getRemediationCase(id).latestTranscriptHash;
         vm.prank(provider);
         sa.respondToRevision(id, IServiceAgreement.ProviderResponseType.REQUEST_HUMAN_REVIEW, 0, keccak256("human"), "ipfs://human", transcript);
         vm.prank(client);
         sa.submitDisputeEvidence(id, IServiceAgreement.EvidenceType.DELIVERABLE, keccak256("e1"), "ipfs://e1");
 
         uint256 providerBefore = provider.balance;
-        sa.resolveDispute(id, true);
+        sa.resolveDisputeDetailed(id, IServiceAgreement.DisputeOutcome.PROVIDER_WINS, sa.getAgreement(id).price, 0);
         assertEq(provider.balance, providerBefore + PRICE);
     }
 
@@ -486,14 +493,14 @@ contract ServiceAgreementTrustLivenessTest is Test {
         uint256 id = _proposeAndAccept();
         vm.prank(client);
         sa.requestRevision(id, keccak256("feedback"), "ipfs://feedback", bytes32(0));
-        bytes32 transcript = sa.getRemediationCase(id).latestTranscriptHash;
+        bytes32 transcript = dm.getRemediationCase(id).latestTranscriptHash;
         vm.prank(provider);
         sa.respondToRevision(id, IServiceAgreement.ProviderResponseType.REQUEST_HUMAN_REVIEW, 0, keccak256("human"), "ipfs://human", transcript);
         vm.prank(client);
         sa.submitDisputeEvidence(id, IServiceAgreement.EvidenceType.COMMUNICATION, keccak256("e1"), "ipfs://e1");
 
         uint256 clientBefore = client.balance;
-        sa.resolveDispute(id, false);
+        sa.resolveDisputeDetailed(id, IServiceAgreement.DisputeOutcome.CLIENT_REFUND, 0, sa.getAgreement(id).price);
         assertEq(client.balance, clientBefore + PRICE);
     }
 
@@ -518,7 +525,7 @@ contract ServiceAgreementTrustLivenessTest is Test {
         uint256 disputedAt = ag.resolvedAt;
 
         vm.warp(disputedAt + 30 days);
-        vm.expectRevert("ServiceAgreement: dispute timeout not reached");
+        vm.expectRevert(ServiceAgreement.DisputeTimeoutNotReached.selector);
         sa.expiredDisputeRefund(id);
 
         vm.warp(disputedAt + 31 days);
@@ -557,7 +564,7 @@ contract ServiceAgreementTrustLivenessTest is Test {
         sa.transferOwnership(newOwner);
 
         vm.prank(address(0xBB02));
-        vm.expectRevert("ServiceAgreement: not pending owner");
+        vm.expectRevert(ServiceAgreement.NotPendingOwner.selector);
         sa.acceptOwnership();
 
         // Owner unchanged
@@ -576,7 +583,7 @@ contract ServiceAgreementTrustLivenessTest is Test {
         assertEq(sa.pendingOwner(), ownerB);
 
         vm.prank(ownerA);
-        vm.expectRevert("ServiceAgreement: not pending owner");
+        vm.expectRevert(ServiceAgreement.NotPendingOwner.selector);
         sa.acceptOwnership();
 
         vm.prank(ownerB);

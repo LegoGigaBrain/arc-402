@@ -51,6 +51,7 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
     address public owner;
     address public pendingOwner; // R-03: Ownable2Step
     address public serviceAgreement;
+    address public disputeModule; // set to DisputeModule address when DM calls openDispute/recordArbitratorVote
     address public trustRegistry;
     address public treasury;
 
@@ -94,7 +95,10 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
     }
 
     modifier onlyServiceAgreement() {
-        require(msg.sender == serviceAgreement, "DisputeArbitration: not ServiceAgreement");
+        require(
+            msg.sender == serviceAgreement || (disputeModule != address(0) && msg.sender == disputeModule),
+            "DisputeArbitration: not ServiceAgreement"
+        );
         _;
     }
 
@@ -135,6 +139,10 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
         require(sa != address(0), "DisputeArbitration: zero address");
         serviceAgreement = sa;
         emit ServiceAgreementUpdated(sa);
+    }
+
+    function setDisputeModule(address dm) external onlyOwner {
+        disputeModule = dm;
     }
 
     function setTrustRegistry(address tr) external onlyOwner {

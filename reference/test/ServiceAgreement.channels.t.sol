@@ -3,6 +3,8 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/ServiceAgreement.sol";
+import "../contracts/DisputeModule.sol";
+import "../contracts/SessionChannels.sol";
 import "../contracts/TrustRegistry.sol";
 import "../contracts/IServiceAgreement.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -68,6 +70,7 @@ contract FinaliseReentrancyAttacker {
 contract ServiceAgreementChannelTest is Test {
 
     ServiceAgreement sa;
+    SessionChannels  sc;
     TrustRegistry    trustReg;
     ChannelMockERC20 token;
 
@@ -94,6 +97,12 @@ contract ServiceAgreementChannelTest is Test {
 
         trustReg.addUpdater(address(sa));
         sa.allowToken(address(token));
+
+        DisputeModule dm = new DisputeModule(address(sa));
+        sa.setDisputeModule(address(dm));
+        sc = new SessionChannels(address(sa));
+        sa.setSessionChannels(address(sc));
+        trustReg.addUpdater(address(sc));
 
         vm.deal(client,   100 ether);
         vm.deal(provider, 100 ether);
@@ -166,10 +175,10 @@ contract ServiceAgreementChannelTest is Test {
     // ─── openSessionChannel ───────────────────────────────────────────────────
 
     function test_OpenSessionChannel_ETH_correct_deposit() public {
-        uint256 balBefore = address(sa).balance;
+        uint256 balBefore = address(sc).balance;
         bytes32 chId = _openETH(DEPOSIT, DEADLINE);
 
-        assertEq(address(sa).balance, balBefore + DEPOSIT, "ETH not deposited");
+        assertEq(address(sc).balance, balBefore + DEPOSIT, "ETH not deposited");
         ServiceAgreement.Channel memory ch = sa.getChannel(chId);
         assertEq(ch.client,        client);
         assertEq(ch.provider,      provider);
@@ -180,10 +189,10 @@ contract ServiceAgreementChannelTest is Test {
     }
 
     function test_OpenSessionChannel_ERC20_correct_deposit() public {
-        uint256 balBefore = token.balanceOf(address(sa));
+        uint256 balBefore = token.balanceOf(address(sc));
         bytes32 chId = _openERC20(DEPOSIT, DEADLINE);
 
-        assertEq(token.balanceOf(address(sa)), balBefore + DEPOSIT);
+        assertEq(token.balanceOf(address(sc)), balBefore + DEPOSIT);
         ServiceAgreement.Channel memory ch = sa.getChannel(chId);
         assertEq(ch.token,         address(token));
         assertEq(ch.depositAmount, DEPOSIT);
@@ -207,7 +216,7 @@ contract ServiceAgreementChannelTest is Test {
 
     function test_OpenSessionChannel_revert_zero_provider() public {
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: zero provider");
+        vm.expectRevert(ServiceAgreement.ZeroAddress.selector);
         sa.openSessionChannel{value: DEPOSIT}(
             address(0), address(0), DEPOSIT, 0, block.timestamp + DEADLINE
         );
@@ -215,7 +224,7 @@ contract ServiceAgreementChannelTest is Test {
 
     function test_OpenSessionChannel_revert_client_equals_provider() public {
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: client == provider");
+        vm.expectRevert(ServiceAgreement.ClientEqualsProvider.selector);
         sa.openSessionChannel{value: DEPOSIT}(
             client, address(0), DEPOSIT, 0, block.timestamp + DEADLINE
         );
@@ -223,7 +232,7 @@ contract ServiceAgreementChannelTest is Test {
 
     function test_OpenSessionChannel_revert_deadline_in_past() public {
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: deadline in past");
+        vm.expectRevert(ServiceAgreement.DeadlineInPast.selector);
         sa.openSessionChannel{value: DEPOSIT}(
             provider, address(0), DEPOSIT, 0, block.timestamp - 1
         );
@@ -231,7 +240,7 @@ contract ServiceAgreementChannelTest is Test {
 
     function test_OpenSessionChannel_revert_zero_amount() public {
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: zero amount");
+        vm.expectRevert(ServiceAgreement.ZeroAmount.selector);
         sa.openSessionChannel{value: 0}(
             provider, address(0), 0, 0, block.timestamp + DEADLINE
         );
@@ -240,7 +249,7 @@ contract ServiceAgreementChannelTest is Test {
     function test_OpenSessionChannel_revert_token_not_allowed() public {
         address unknownToken = address(0xDEAD);
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: token not allowed");
+        vm.expectRevert(ServiceAgreement.TokenNotAllowed.selector);
         sa.openSessionChannel(
             provider, unknownToken, DEPOSIT, 0, block.timestamp + DEADLINE
         );
@@ -248,7 +257,7 @@ contract ServiceAgreementChannelTest is Test {
 
     function test_OpenSessionChannel_ETH_revert_value_mismatch() public {
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: ETH value != maxAmount");
+        vm.expectRevert(ServiceAgreement.ETHValueMismatch.selector);
         sa.openSessionChannel{value: DEPOSIT / 2}(
             provider, address(0), DEPOSIT, 0, block.timestamp + DEADLINE
         );
@@ -258,7 +267,7 @@ contract ServiceAgreementChannelTest is Test {
         vm.prank(client);
         token.approve(address(sa), DEPOSIT);
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: ETH sent with ERC-20");
+        vm.expectRevert(ServiceAgreement.ETHWithERC20.selector);
         sa.openSessionChannel{value: 1 wei}(
             provider, address(token), DEPOSIT, 0, block.timestamp + DEADLINE
         );
@@ -305,7 +314,7 @@ contract ServiceAgreementChannelTest is Test {
         (ServiceAgreement.ChannelState memory state2,,) =
             _makeState(chId, 2, 0, address(0), block.timestamp);
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: channel not OPEN");
+        vm.expectRevert("SessionChannels: channel not OPEN");
         sa.closeChannel(chId, abi.encode(state2));
     }
 
@@ -315,7 +324,7 @@ contract ServiceAgreementChannelTest is Test {
             _makeState(chId, 1, 0, address(0), block.timestamp);
 
         vm.prank(stranger);
-        vm.expectRevert("ServiceAgreement: not a party");
+        vm.expectRevert("SessionChannels: not a party");
         sa.closeChannel(chId, abi.encode(state));
     }
 
@@ -325,7 +334,7 @@ contract ServiceAgreementChannelTest is Test {
             _makeState(chId, 1, DEPOSIT + 1 wei, address(0), block.timestamp);
 
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: payment exceeds deposit");
+        vm.expectRevert("SessionChannels: payment exceeds deposit");
         sa.closeChannel(chId, abi.encode(state));
     }
 
@@ -346,7 +355,7 @@ contract ServiceAgreementChannelTest is Test {
         });
 
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: invalid client sig");
+        vm.expectRevert("SessionChannels: invalid client sig");
         sa.closeChannel(chId, abi.encode(state));
     }
 
@@ -358,7 +367,7 @@ contract ServiceAgreementChannelTest is Test {
             _makeState(wrongId, 1, 0, address(0), block.timestamp);
 
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: channelId mismatch");
+        vm.expectRevert("SessionChannels: channelId mismatch");
         sa.closeChannel(chId, abi.encode(state));
     }
 
@@ -394,14 +403,14 @@ contract ServiceAgreementChannelTest is Test {
 
         // Still within the 24h challenge window
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: challenge window open");
+        vm.expectRevert("SessionChannels: challenge window open");
         sa.finaliseChallenge(chId);
     }
 
     function test_FinaliseChallenge_revert_not_CLOSING() public {
         bytes32 chId = _openETH(DEPOSIT, DEADLINE);
 
-        vm.expectRevert("ServiceAgreement: not CLOSING");
+        vm.expectRevert("SessionChannels: not CLOSING");
         sa.finaliseChallenge(chId);
     }
 
@@ -468,7 +477,7 @@ contract ServiceAgreementChannelTest is Test {
         (ServiceAgreement.ChannelState memory state3,,) =
             _makeState(chId, 3, 0.7 ether, address(0), block.timestamp);
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: sequence not higher");
+        vm.expectRevert("SessionChannels: sequence not higher");
         sa.challengeChannel(chId, abi.encode(state3));
     }
 
@@ -482,7 +491,7 @@ contract ServiceAgreementChannelTest is Test {
         (ServiceAgreement.ChannelState memory sameState,,) =
             _makeState(chId, 3, 0.7 ether, address(0), block.timestamp);
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: sequence not higher");
+        vm.expectRevert("SessionChannels: sequence not higher");
         sa.challengeChannel(chId, abi.encode(sameState));
     }
 
@@ -495,7 +504,7 @@ contract ServiceAgreementChannelTest is Test {
         (ServiceAgreement.ChannelState memory state2,,) =
             _makeState(chId, 2, 0, address(0), block.timestamp);
         vm.prank(stranger);
-        vm.expectRevert("ServiceAgreement: not authorized to challenge");
+        vm.expectRevert("SessionChannels: not authorized to challenge");
         sa.challengeChannel(chId, abi.encode(state2));
     }
 
@@ -510,7 +519,7 @@ contract ServiceAgreementChannelTest is Test {
         (ServiceAgreement.ChannelState memory state2,,) =
             _makeState(chId, 2, 0, address(0), block.timestamp);
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: challenge window expired");
+        vm.expectRevert("SessionChannels: challenge window expired");
         sa.challengeChannel(chId, abi.encode(state2));
     }
 
@@ -542,7 +551,7 @@ contract ServiceAgreementChannelTest is Test {
         (ServiceAgreement.ChannelState memory state2,,) =
             _makeState(chId, 2, DEPOSIT + 1 wei, address(0), block.timestamp);
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: payment exceeds deposit");
+        vm.expectRevert("SessionChannels: payment exceeds deposit");
         sa.challengeChannel(chId, abi.encode(state2));
     }
 
@@ -568,7 +577,7 @@ contract ServiceAgreementChannelTest is Test {
         bytes32 chId = _openETH(DEPOSIT, DEADLINE);
 
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: deadline not passed");
+        vm.expectRevert("SessionChannels: deadline not passed");
         sa.reclaimExpiredChannel(chId);
     }
 
@@ -577,11 +586,11 @@ contract ServiceAgreementChannelTest is Test {
         vm.warp(block.timestamp + DEADLINE + 1);
 
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: not client");
+        vm.expectRevert("SessionChannels: not client");
         sa.reclaimExpiredChannel(chId);
 
         vm.prank(stranger);
-        vm.expectRevert("ServiceAgreement: not client");
+        vm.expectRevert("SessionChannels: not client");
         sa.reclaimExpiredChannel(chId);
     }
 
@@ -594,7 +603,7 @@ contract ServiceAgreementChannelTest is Test {
 
         vm.warp(block.timestamp + DEADLINE + 1);
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: channel not OPEN");
+        vm.expectRevert("SessionChannels: channel not OPEN");
         sa.reclaimExpiredChannel(chId);
     }
 
@@ -683,7 +692,7 @@ contract ServiceAgreementChannelTest is Test {
 
         // Replay the exact same close call → should revert (no longer OPEN)
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: channel not OPEN");
+        vm.expectRevert("SessionChannels: channel not OPEN");
         sa.closeChannel(chId, abi.encode(state));
     }
 
@@ -698,7 +707,7 @@ contract ServiceAgreementChannelTest is Test {
         (ServiceAgreement.ChannelState memory state1,,) =
             _makeState(chId, 1, 0.9 ether, address(0), block.timestamp);
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: sequence not higher");
+        vm.expectRevert("SessionChannels: sequence not higher");
         sa.challengeChannel(chId, abi.encode(state1));
     }
 }

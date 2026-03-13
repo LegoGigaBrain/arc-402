@@ -2,26 +2,27 @@
 pragma solidity ^0.8.24;
 
 import "./IServiceAgreement.sol";
+import "./ISessionChannels.sol";
 import "./IDisputeArbitration.sol";
+import "./IDisputeModule.sol";
 import "./ITrustRegistry.sol";
-import "./ReputationOracle.sol";
 import "./IArc402Guardian.sol";
 import "./IWatchtowerRegistry.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-
 contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     address public owner;
     address public pendingOwner;
-    ReputationOracle public reputationOracle;
     address public immutable trustRegistry;
     address public disputeArbitration;
     IArc402Guardian public guardian;
     address public watchtowerRegistry;
+    address public sessionChannels;
+    address public disputeModule;
+    address public reputationOracle;
 
     address public constant ETH = address(0);
     uint256 public constant VERIFY_WINDOW = 3 days;
@@ -50,19 +51,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     mapping(address => uint256[]) private _byClient;
     mapping(address => uint256[]) private _byProvider;
 
-    mapping(uint256 => RemediationCase) private _remediationCases;
-    mapping(uint256 => RemediationFeedback[]) private _remediationFeedbacks;
-    mapping(uint256 => RemediationResponse[]) private _remediationResponses;
-    mapping(uint256 => DisputeCase) private _disputeCases;
-    mapping(uint256 => DisputeEvidence[]) private _disputeEvidence;
-    mapping(uint256 => ArbitrationCase) private _arbitrationCases;
-    mapping(uint256 => mapping(address => bool)) public disputeArbitratorNominated;
-    mapping(uint256 => mapping(address => bool)) public disputeArbitratorVoted;
-
-    // R-04: accumulate split votes; compute average when majority reached
-    mapping(uint256 => uint256) private _splitProviderVoteSum;
-    mapping(uint256 => uint256) private _splitClientVoteSum;
-
+    // Channel types kept here for test ABI compatibility (zero bytecode cost).
+    // Channel state and funds live in the SessionChannels contract.
     enum ChannelStatus { OPEN, CLOSING, CHALLENGED, SETTLED }
     struct Channel {
         address client;
@@ -85,10 +75,67 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         bytes clientSig;
         bytes providerSig;
     }
-    mapping(bytes32 => Channel) public channels;
-    mapping(address => bytes32[]) private _channelsByClient;
-    mapping(address => bytes32[]) private _channelsByProvider;
-    uint256 private _channelNonce;
+
+    // ─── Custom Errors ────────────────────────────────────────────────────────
+    error NotOwner();
+    error NotParty();
+    error ProtocolPaused();
+    error ZeroAddress();
+    error NotPendingOwner();
+    error FeeExceedsCeiling();
+    error StringTooLong();
+    error ClientEqualsProvider();
+    error ZeroPrice();
+    error DeadlineInPast();
+    error TokenNotAllowed();
+    error ETHValueMismatch();
+    error ETHWithERC20();
+    error NotProvider();
+    error InvalidStatus();
+    error LegacyFulfillDisabled();
+    error NotLegacyTrusted();
+    error PastDeadline();
+    error VerifyWindowOpen();
+    error InvalidDirectDisputeReason();
+    error NotClient();
+    error MaxRemediationCycles();
+    error RemediationUnavailable();
+    error RemediationWindowElapsed();
+    error TranscriptChainMismatch();
+    error NoRevisionRequested();
+    error InvalidResponse();
+    error RemediationInactive();
+    error InvalidPayout();
+    error NotPastDeadline();
+    error NoActiveDispute();
+    error ArbitratorNotEligible();
+    error ConflictedArbitrator();
+    error ArbitrationSelectionClosed();
+    error ArbitratorAlreadyNominated();
+    error ArbitrationPanelFull();
+    error PanelIncomplete();
+    error NotPanelArbitrator();
+    error VoteAlreadyCast();
+    error ArbitrationDeadlinePassed();
+    error InvalidVote();
+    error InvalidVoteSplit();
+    error InvalidSplit();
+    error ArbitrationStillActive();
+    error HumanEscalationRequired();
+    error HumanReviewNotRequested();
+    error EvidenceRequired();
+    error DisputeTimeoutNotReached();
+    error NotFound();
+    error ETHTransferFailed();
+    error NotDisputeArbitration();
+    error DANotSet();
+    error NoSessionChannels();
+    error ZeroAmount();
+    error RemediationFirst();
+    error DirectDisputeNotAllowed();
+    error DisputeFeeError();
+    error UnsupportedOutcome();
+    error NoDisputeModule();
 
     event AgreementProposed(uint256 indexed id, address indexed client, address indexed provider, string serviceType, uint256 price, address token, uint256 deadline);
     event AgreementAccepted(uint256 indexed id, address indexed provider);
@@ -106,7 +153,6 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     event MinimumTrustValueUpdated(uint256 newValue);
     event LegacyFulfillModeUpdated(bool enabled);
     event LegacyFulfillProviderUpdated(address indexed provider, bool allowed);
-    event ReputationOracleUpdated(address indexed oracle);
     event DeliverableCommitted(uint256 indexed id, address indexed provider, bytes32 hash, uint256 verifyWindowEnd);
     event AutoReleased(uint256 indexed id, address indexed provider);
     event RevisionRequested(uint256 indexed id, uint8 indexed cycle, address indexed client, bytes32 transcriptHash);
@@ -121,31 +167,28 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     event ArbitrationActivated(uint256 indexed id, uint256 selectionDeadlineAt, uint256 decisionDeadlineAt);
     event ArbitrationVoteCast(uint256 indexed id, address indexed arbitrator, ArbitrationVote vote, uint256 providerAward, uint256 clientAward);
     event HumanEscalationRequested(uint256 indexed id, address indexed requester, string reason);
-    event ChannelOpened(bytes32 indexed channelId, address indexed client, address indexed provider, address token, uint256 depositAmount, uint256 deadline);
-    event ChannelClosing(bytes32 indexed channelId, uint256 sequenceNumber, uint256 settledAmount, uint256 challengeExpiry);
-    event ChannelChallenged(bytes32 indexed channelId, address indexed challenger, uint256 newSequenceNumber, uint256 newSettledAmount);
-    event ChannelSettled(bytes32 indexed channelId, address indexed provider, uint256 settledAmount, uint256 refundAmount);
-    event ChannelExpiredReclaimed(bytes32 indexed channelId, address indexed client, uint256 reclaimedAmount);
-    event ChallengeFinalised(bytes32 indexed channelId, address indexed finaliser, uint256 settledAmount);
+    event SessionChannelsUpdated(address indexed sessionChannels);
     event GuardianUpdated(address indexed guardian);
     event WatchtowerRegistryUpdated(address indexed watchtowerRegistry);
     event ProtocolFeeUpdated(uint256 newFeeBps);
     event ProtocolTreasuryUpdated(address indexed newTreasury);
+    event DisputeModuleUpdated(address indexed dm);
+    event ReputationOracleUpdated(address indexed oracle);
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "ServiceAgreement: not owner");
+        if (msg.sender != owner) revert NotOwner();
         _;
     }
 
     modifier onlyParty(uint256 agreementId) {
         Agreement storage ag = _get(agreementId);
-        require(msg.sender == ag.client || msg.sender == ag.provider, "ServiceAgreement: not a party");
+        if (msg.sender != ag.client && msg.sender != ag.provider) revert NotParty();
         _;
     }
 
     modifier whenNotPaused() {
         if (address(guardian) != address(0)) {
-            require(!guardian.isPaused(), "ServiceAgreement: protocol paused");
+            if (guardian.isPaused()) revert ProtocolPaused();
         }
         _;
     }
@@ -155,17 +198,17 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         trustRegistry = _trustRegistry;
         allowedTokens[address(0)] = true;
         emit TokenAllowed(address(0));
-        require(_trustRegistry != address(0), "ServiceAgreement: zero trust registry");
+        if (_trustRegistry == address(0)) revert ZeroAddress();
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "ServiceAgreement: zero address");
+        if (newOwner == address(0)) revert ZeroAddress();
         pendingOwner = newOwner;
         emit OwnershipTransferStarted(owner, newOwner);
     }
 
     function acceptOwnership() external {
-        require(msg.sender == pendingOwner, "ServiceAgreement: not pending owner");
+        if (msg.sender != pendingOwner) revert NotPendingOwner();
         address old = owner;
         owner = pendingOwner;
         pendingOwner = address(0);
@@ -202,13 +245,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         emit LegacyFulfillProviderUpdated(provider, allowed);
     }
 
-    function setReputationOracle(address oracle) external onlyOwner {
-        reputationOracle = ReputationOracle(oracle);
-        emit ReputationOracleUpdated(oracle);
-    }
-
     function setDisputeArbitration(address da) external onlyOwner {
-        require(da != address(0), "ServiceAgreement: zero address");
+        if (da == address(0)) revert ZeroAddress();
         disputeArbitration = da;
         emit DisputeArbitrationUpdated(da);
     }
@@ -219,39 +257,55 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     }
 
     function setWatchtowerRegistry(address _watchtowerRegistry) external onlyOwner {
-        require(_watchtowerRegistry != address(0), "ServiceAgreement: zero address");
+        if (_watchtowerRegistry == address(0)) revert ZeroAddress();
         watchtowerRegistry = _watchtowerRegistry;
         emit WatchtowerRegistryUpdated(_watchtowerRegistry);
     }
 
     /// @notice Update protocol fee in basis points (max 1%, enforced by MAX_PROTOCOL_FEE_BPS).
     function setProtocolFee(uint256 feeBps) external onlyOwner {
-        require(feeBps <= MAX_PROTOCOL_FEE_BPS, "ServiceAgreement: fee exceeds ceiling");
+        if (feeBps > MAX_PROTOCOL_FEE_BPS) revert FeeExceedsCeiling();
         protocolFeeBps = feeBps;
         emit ProtocolFeeUpdated(feeBps);
     }
 
     /// @notice Set the protocol treasury address that receives protocol fees.
     function setProtocolTreasury(address treasury) external onlyOwner {
-        require(treasury != address(0), "ServiceAgreement: zero treasury");
+        if (treasury == address(0)) revert ZeroAddress();
         protocolTreasury = treasury;
         emit ProtocolTreasuryUpdated(treasury);
     }
 
+    function setSessionChannels(address _sc) external onlyOwner {
+        if (_sc == address(0)) revert ZeroAddress();
+        sessionChannels = _sc;
+        emit SessionChannelsUpdated(_sc);
+    }
+
+    function setDisputeModule(address _dm) external onlyOwner {
+        disputeModule = _dm;
+        emit DisputeModuleUpdated(_dm);
+    }
+
+    function setReputationOracle(address oracle) external onlyOwner {
+        reputationOracle = oracle;
+        emit ReputationOracleUpdated(oracle);
+    }
+
     function propose(address provider, string calldata serviceType, string calldata description, uint256 price, address token, uint256 deadline, bytes32 deliverablesHash) external payable nonReentrant whenNotPaused returns (uint256 agreementId) {
-        require(bytes(serviceType).length <= 64, "ServiceAgreement: serviceType too long");
-        require(bytes(description).length <= 1024, "ServiceAgreement: description too long");
-        require(provider != address(0), "ServiceAgreement: zero provider");
-        require(provider != msg.sender, "ServiceAgreement: client == provider");
-        require(price > 0, "ServiceAgreement: zero price");
+        if (bytes(serviceType).length > 64) revert StringTooLong();
+        if (bytes(description).length > 1024) revert StringTooLong();
+        if (provider == address(0)) revert ZeroAddress();
+        if (provider == msg.sender) revert ClientEqualsProvider();
+        if (price == 0) revert ZeroPrice();
         // slither-disable-next-line timestamp
-        require(deadline > block.timestamp, "ServiceAgreement: deadline in past");
-        require(allowedTokens[token], "ServiceAgreement: token not allowed");
+        if (deadline <= block.timestamp) revert DeadlineInPast();
+        if (!allowedTokens[token]) revert TokenNotAllowed();
 
         if (token == address(0)) {
-            require(msg.value == price, "ServiceAgreement: ETH value != price");
+            if (msg.value != price) revert ETHValueMismatch();
         } else {
-            require(msg.value == 0, "ServiceAgreement: ETH sent with ERC-20 agreement");
+            if (msg.value != 0) revert ETHWithERC20();
             IERC20(token).safeTransferFrom(msg.sender, address(this), price);
         }
 
@@ -281,21 +335,21 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
 
     function accept(uint256 agreementId) external nonReentrant whenNotPaused {
         Agreement storage ag = _get(agreementId);
-        require(msg.sender == ag.provider, "ServiceAgreement: not provider");
-        require(ag.status == Status.PROPOSED, "ServiceAgreement: not PROPOSED");
+        if (msg.sender != ag.provider) revert NotProvider();
+        if (ag.status != Status.PROPOSED) revert InvalidStatus();
         ag.status = Status.ACCEPTED;
         emit AgreementAccepted(agreementId, msg.sender);
     }
 
     function fulfill(uint256 agreementId, bytes32 actualDeliverablesHash) external nonReentrant whenNotPaused {
         Agreement storage ag = _get(agreementId);
-        require(msg.sender == ag.provider, "ServiceAgreement: not provider");
-        require(legacyFulfillEnabled, "ServiceAgreement: legacy fulfill disabled");
-        require(legacyFulfillProviders[msg.sender], "ServiceAgreement: provider not legacy trusted");
-        require(ag.status == Status.ACCEPTED || ag.status == Status.REVISED, "ServiceAgreement: not ACCEPTED");
+        if (msg.sender != ag.provider) revert NotProvider();
+        if (!legacyFulfillEnabled) revert LegacyFulfillDisabled();
+        if (!legacyFulfillProviders[msg.sender]) revert NotLegacyTrusted();
+        if (ag.status != Status.ACCEPTED && ag.status != Status.REVISED) revert InvalidStatus();
         // slither-disable-next-line timestamp
-        require(block.timestamp <= ag.deadline, "ServiceAgreement: past deadline");
-        _closeRemediation(agreementId);
+        if (block.timestamp > ag.deadline) revert PastDeadline();
+        if (disputeModule != address(0)) IDisputeModule(disputeModule).closeRemediation(agreementId);
         ag.status = Status.FULFILLED;
         ag.resolvedAt = block.timestamp;
         ag.deliverablesHash = actualDeliverablesHash;
@@ -306,11 +360,11 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
 
     function commitDeliverable(uint256 agreementId, bytes32 deliverableHash) external nonReentrant whenNotPaused {
         Agreement storage ag = _get(agreementId);
-        require(msg.sender == ag.provider, "ServiceAgreement: not provider");
-        require(ag.status == Status.ACCEPTED || ag.status == Status.REVISED, "ServiceAgreement: not ACCEPTED");
+        if (msg.sender != ag.provider) revert NotProvider();
+        if (ag.status != Status.ACCEPTED && ag.status != Status.REVISED) revert InvalidStatus();
         // slither-disable-next-line timestamp
-        require(block.timestamp <= ag.deadline, "ServiceAgreement: past deadline");
-        _closeRemediation(agreementId);
+        if (block.timestamp > ag.deadline) revert PastDeadline();
+        if (disputeModule != address(0)) IDisputeModule(disputeModule).closeRemediation(agreementId);
         ag.status = Status.PENDING_VERIFICATION;
         ag.committedHash = deliverableHash;
         ag.verifyWindowEnd = block.timestamp + VERIFY_WINDOW;
@@ -320,9 +374,9 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
 
     function verifyDeliverable(uint256 agreementId) external nonReentrant whenNotPaused {
         Agreement storage ag = _get(agreementId);
-        require(msg.sender == ag.client, "ServiceAgreement: not client");
-        require(ag.status == Status.PENDING_VERIFICATION, "ServiceAgreement: not PENDING_VERIFICATION");
-        _closeRemediation(agreementId);
+        if (msg.sender != ag.client) revert NotClient();
+        if (ag.status != Status.PENDING_VERIFICATION) revert InvalidStatus();
+        if (disputeModule != address(0)) IDisputeModule(disputeModule).closeRemediation(agreementId);
         ag.status = Status.FULFILLED;
         ag.resolvedAt = block.timestamp;
         emit AgreementFulfilled(agreementId, ag.provider, ag.committedHash);
@@ -332,10 +386,10 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
 
     function autoRelease(uint256 agreementId) external nonReentrant {
         Agreement storage ag = _get(agreementId);
-        require(ag.status == Status.PENDING_VERIFICATION, "ServiceAgreement: not PENDING_VERIFICATION");
+        if (ag.status != Status.PENDING_VERIFICATION) revert InvalidStatus();
         // slither-disable-next-line timestamp
-        require(block.timestamp > ag.verifyWindowEnd, "ServiceAgreement: verify window open");
-        _closeRemediation(agreementId);
+        if (block.timestamp <= ag.verifyWindowEnd) revert VerifyWindowOpen();
+        if (disputeModule != address(0)) IDisputeModule(disputeModule).closeRemediation(agreementId);
         ag.status = Status.FULFILLED;
         ag.resolvedAt = block.timestamp;
         emit AgreementFulfilled(agreementId, ag.provider, ag.committedHash);
@@ -345,126 +399,58 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     }
 
     function dispute(uint256 agreementId, string calldata reason) external payable {
-        _openFormalDispute(agreementId, reason, true, DirectDisputeReason.NONE, IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
+        _callOpenFormalDispute(agreementId, reason, true, DirectDisputeReason.NONE, IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
     }
 
     function directDispute(uint256 agreementId, DirectDisputeReason directReason, string calldata reason) external payable {
-        require(directReason != DirectDisputeReason.NONE, "ServiceAgreement: invalid direct dispute reason");
-        _openFormalDispute(agreementId, reason, false, directReason, IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
+        if (directReason == DirectDisputeReason.NONE) revert InvalidDirectDisputeReason();
+        _callOpenFormalDispute(agreementId, reason, false, directReason, IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
     }
 
-    /// @notice Open a dispute with explicit fee mode and dispute class.
-    ///         For ERC-20 payment tokens, caller must approve DisputeArbitration for the fee amount first.
-    ///         For ETH payment tokens, send the required fee as msg.value (use getFeeQuote to preview).
-    function openDisputeWithMode(
-        uint256 agreementId,
-        IDisputeArbitration.DisputeMode mode,
-        IDisputeArbitration.DisputeClass disputeClass,
-        string calldata reason
-    ) external payable {
-        _openFormalDispute(agreementId, reason, true, DirectDisputeReason.NONE, mode, disputeClass);
-    }
 
     function requestRevision(uint256 agreementId, bytes32 feedbackHash, string calldata feedbackURI, bytes32 previousTranscriptHash) external {
+        if (bytes(feedbackURI).length > 512) revert StringTooLong();
         Agreement storage ag = _get(agreementId);
-        require(msg.sender == ag.client, "ServiceAgreement: not client");
-        require(ag.status != Status.REVISION_REQUESTED, "ServiceAgreement: max remediation cycles");
-        require(
-            ag.status == Status.ACCEPTED ||
-            ag.status == Status.PENDING_VERIFICATION ||
-            ag.status == Status.REVISED,
-            "ServiceAgreement: remediation unavailable"
+        if (msg.sender != ag.client) revert NotClient();
+        if (disputeModule == address(0)) revert NoDisputeModule();
+        IDisputeModule.RequestRevisionResult memory r = IDisputeModule(disputeModule).requestRevision(
+            agreementId, msg.sender, ag.status, feedbackHash, feedbackURI, previousTranscriptHash
         );
-
-        RemediationCase storage rc = _remediationCases[agreementId];
-        if (rc.active) {
-            require(block.timestamp <= rc.deadlineAt, "ServiceAgreement: remediation window elapsed");
-            require(rc.cycleCount < MAX_REMEDIATION_CYCLES, "ServiceAgreement: max remediation cycles");
-            require(previousTranscriptHash == rc.latestTranscriptHash, "ServiceAgreement: transcript chain mismatch");
-        } else {
-            rc.openedAt = block.timestamp;
-            rc.deadlineAt = block.timestamp + REMEDIATION_WINDOW;
-            rc.active = true;
-            require(previousTranscriptHash == bytes32(0), "ServiceAgreement: transcript chain mismatch");
-        }
-
-        rc.cycleCount += 1;
-        rc.lastActionAt = block.timestamp;
-        bytes32 transcriptHash = keccak256(abi.encodePacked(agreementId, rc.cycleCount, msg.sender, feedbackHash, bytes(feedbackURI), previousTranscriptHash));
-        rc.latestTranscriptHash = transcriptHash;
-
-        _remediationFeedbacks[agreementId].push(RemediationFeedback({
-            cycle: rc.cycleCount,
-            author: msg.sender,
-            feedbackHash: feedbackHash,
-            feedbackURI: feedbackURI,
-            previousTranscriptHash: previousTranscriptHash,
-            transcriptHash: transcriptHash,
-            timestamp: block.timestamp
-        }));
-
         ag.status = Status.REVISION_REQUESTED;
-        emit RevisionRequested(agreementId, rc.cycleCount, msg.sender, transcriptHash);
+        emit RevisionRequested(agreementId, r.cycleCount, msg.sender, r.transcriptHash);
     }
 
     function respondToRevision(uint256 agreementId, ProviderResponseType responseType, uint256 proposedProviderPayout, bytes32 responseHash, string calldata responseURI, bytes32 previousTranscriptHash) external {
         Agreement storage ag = _get(agreementId);
-        require(msg.sender == ag.provider, "ServiceAgreement: not provider");
-        require(ag.status == Status.REVISION_REQUESTED, "ServiceAgreement: no revision requested");
-        require(responseType != ProviderResponseType.NONE, "ServiceAgreement: invalid response");
-
-        RemediationCase storage rc = _remediationCases[agreementId];
-        require(rc.active, "ServiceAgreement: remediation inactive");
-        require(block.timestamp <= rc.deadlineAt, "ServiceAgreement: remediation window elapsed");
-        require(previousTranscriptHash == rc.latestTranscriptHash, "ServiceAgreement: transcript chain mismatch");
-        require(proposedProviderPayout <= ag.price, "ServiceAgreement: invalid payout");
-
-        bytes32 transcriptHash = keccak256(abi.encodePacked(agreementId, rc.cycleCount, msg.sender, uint256(responseType), proposedProviderPayout, responseHash, bytes(responseURI), previousTranscriptHash));
-        rc.lastActionAt = block.timestamp;
-        rc.latestTranscriptHash = transcriptHash;
-
-        _remediationResponses[agreementId].push(RemediationResponse({
-            cycle: rc.cycleCount,
-            author: msg.sender,
-            responseType: responseType,
-            proposedProviderPayout: proposedProviderPayout,
-            responseHash: responseHash,
-            responseURI: responseURI,
-            previousTranscriptHash: previousTranscriptHash,
-            transcriptHash: transcriptHash,
-            timestamp: block.timestamp
-        }));
-
-        if (responseType == ProviderResponseType.REVISE) {
-            ag.status = Status.REVISED;
-        } else if (responseType == ProviderResponseType.PARTIAL_SETTLEMENT) {
-            ag.status = Status.PARTIAL_SETTLEMENT;
-        } else if (responseType == ProviderResponseType.REQUEST_HUMAN_REVIEW) {
-            ag.status = Status.ESCALATED_TO_HUMAN;
-            _ensureDisputeCase(agreementId, true);
-        } else if (responseType == ProviderResponseType.ESCALATE) {
-            _openFormalDispute(agreementId, "provider escalation", true, DirectDisputeReason.NONE, IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
+        if (msg.sender != ag.provider) revert NotProvider();
+        if (disputeModule == address(0)) revert NoDisputeModule();
+        IDisputeModule.RespondResult memory r = IDisputeModule(disputeModule).respondToRevision(
+            agreementId, msg.sender, ag.price, ag.status, responseType,
+            proposedProviderPayout, responseHash, responseURI, previousTranscriptHash
+        );
+        if (r.needsDispute) {
+            _callOpenFormalDispute(agreementId, "provider escalation", true, DirectDisputeReason.NONE, IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
             return;
-        } else {
-            ag.status = Status.REVISED;
         }
-
-        emit RevisionResponded(agreementId, rc.cycleCount, msg.sender, responseType, transcriptHash);
+        ag.status = r.newStatus;
+        emit RevisionResponded(agreementId, r.cycleCount, msg.sender, responseType, r.transcriptHash);
     }
 
     function escalateToDispute(uint256 agreementId, string calldata reason) external payable {
-        _openFormalDispute(agreementId, reason, true, DirectDisputeReason.NONE, IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
+        _callOpenFormalDispute(agreementId, reason, true, DirectDisputeReason.NONE, IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
     }
 
     function canDirectDispute(uint256 agreementId, DirectDisputeReason directReason) external view returns (bool) {
-        return _canDirectDispute(_get(agreementId), directReason);
+        if (disputeModule == address(0)) return false;
+        Agreement storage ag = _get(agreementId);
+        return IDisputeModule(disputeModule).canDirectDispute(ag.status, ag.deadline, directReason);
     }
 
     function cancel(uint256 agreementId) external nonReentrant {
         Agreement storage ag = _get(agreementId);
-        require(msg.sender == ag.client, "ServiceAgreement: not client");
-        require(ag.status == Status.PROPOSED, "ServiceAgreement: not PROPOSED");
-        _closeRemediation(agreementId);
+        if (msg.sender != ag.client) revert NotClient();
+        if (ag.status != Status.PROPOSED) revert InvalidStatus();
+        if (disputeModule != address(0)) IDisputeModule(disputeModule).closeRemediation(agreementId);
         ag.status = Status.CANCELLED;
         ag.resolvedAt = block.timestamp;
         emit AgreementCancelled(agreementId, msg.sender);
@@ -473,11 +459,16 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
 
     function expiredCancel(uint256 agreementId) external nonReentrant {
         Agreement storage ag = _get(agreementId);
-        require(msg.sender == ag.client, "ServiceAgreement: not client");
-        require(ag.status == Status.ACCEPTED || ag.status == Status.REVISED || ag.status == Status.REVISION_REQUESTED || ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAgreement: not ACCEPTED"); // B-03: removed PARTIAL_SETTLEMENT — it is no longer a reachable non-terminal state
+        if (msg.sender != ag.client) revert NotClient();
+        if (
+            ag.status != Status.ACCEPTED &&
+            ag.status != Status.REVISED &&
+            ag.status != Status.REVISION_REQUESTED &&
+            ag.status != Status.ESCALATED_TO_HUMAN
+        ) revert InvalidStatus(); // B-03: removed PARTIAL_SETTLEMENT
         // slither-disable-next-line timestamp
-        require(block.timestamp > ag.deadline, "ServiceAgreement: not past deadline");
-        _closeRemediation(agreementId);
+        if (block.timestamp <= ag.deadline) revert NotPastDeadline();
+        if (disputeModule != address(0)) IDisputeModule(disputeModule).closeRemediation(agreementId);
         ag.status = Status.CANCELLED;
         ag.resolvedAt = block.timestamp;
         emit AgreementCancelled(agreementId, msg.sender);
@@ -485,220 +476,100 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     }
 
     function nominateArbitrator(uint256 agreementId, address arbitrator) external onlyParty(agreementId) {
+        if (disputeModule == address(0)) revert NoDisputeModule();
         Agreement storage ag = _get(agreementId);
-        require(ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_ARBITRATION || ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAgreement: no active dispute");
-        require(
-            disputeArbitration != address(0)
-                ? IDisputeArbitration(disputeArbitration).isEligibleArbitrator(arbitrator)
-                : approvedArbitrators[arbitrator],
-            "ServiceAgreement: arbitrator not eligible"
+        IDisputeModule.NominateResult memory r = IDisputeModule(disputeModule).nominateArbitrator(
+            agreementId, msg.sender, arbitrator, ag.status, ag.client, ag.provider
         );
-        require(arbitrator != ag.client && arbitrator != ag.provider, "ServiceAgreement: conflicted arbitrator");
-
-        ArbitrationCase storage ac = _arbitrationCases[agreementId];
-        if (ac.selectionDeadlineAt == 0) {
-            ac.agreementId = agreementId;
-            ac.selectionDeadlineAt = block.timestamp + ARBITRATION_SELECTION_WINDOW;
-        }
-        require(block.timestamp <= ac.selectionDeadlineAt, "ServiceAgreement: arbitration selection closed");
-        require(!disputeArbitratorNominated[agreementId][arbitrator], "ServiceAgreement: arbitrator already nominated");
-        require(ac.arbitratorCount < ARBITRATOR_PANEL_SIZE, "ServiceAgreement: arbitration panel full");
-
-        ac.arbitrators[ac.arbitratorCount] = arbitrator;
-        ac.arbitratorCount += 1;
-        disputeArbitratorNominated[agreementId][arbitrator] = true;
-        ag.status = Status.ESCALATED_TO_ARBITRATION;
-
-        emit ArbitratorNominated(agreementId, msg.sender, arbitrator, ac.arbitratorCount);
-
-        if (ac.arbitratorCount == ARBITRATOR_PANEL_SIZE) {
-            ac.decisionDeadlineAt = block.timestamp + ARBITRATION_DECISION_WINDOW;
-            emit ArbitrationActivated(agreementId, ac.selectionDeadlineAt, ac.decisionDeadlineAt);
+        ag.status = r.newStatus;
+        emit ArbitratorNominated(agreementId, msg.sender, arbitrator, r.panelSize);
+        if (r.panelComplete) {
+            emit ArbitrationActivated(agreementId, r.selectionDeadlineAt, r.decisionDeadlineAt);
         }
     }
 
     // wake-disable-next-line reentrancy
     // @dev Called only from nonReentrant-guarded entry points. Reentrancy path blocked upstream.
     function castArbitrationVote(uint256 agreementId, ArbitrationVote vote, uint256 providerAward, uint256 clientAward) external {
+        if (disputeModule == address(0)) revert NoDisputeModule();
         Agreement storage ag = _get(agreementId);
-        require(ag.status == Status.ESCALATED_TO_ARBITRATION, "ServiceAgreement: not in arbitration");
-        ArbitrationCase storage ac = _arbitrationCases[agreementId];
-        require(ac.arbitratorCount == ARBITRATOR_PANEL_SIZE, "ServiceAgreement: panel incomplete");
-        require(_isPanelArbitrator(ac, msg.sender), "ServiceAgreement: not panel arbitrator");
-        require(!disputeArbitratorVoted[agreementId][msg.sender], "ServiceAgreement: vote already cast");
-        require(block.timestamp <= ac.decisionDeadlineAt, "ServiceAgreement: arbitration deadline passed");
-        require(vote != ArbitrationVote.NONE, "ServiceAgreement: invalid vote");
-
-        disputeArbitratorVoted[agreementId][msg.sender] = true;
-
-        // Notify DisputeArbitration so it can track vote for bond/fee settlement
-        // R-02: no try/catch — if this reverts, the whole vote reverts so arbitrator knows immediately
-        if (disputeArbitration != address(0)) {
-            IDisputeArbitration(disputeArbitration).recordArbitratorVote(agreementId, msg.sender);
-        }
-
-        if (vote == ArbitrationVote.PROVIDER_WINS) {
-            require(providerAward == ag.price && clientAward == 0, "ServiceAgreement: invalid provider vote split");
-            ac.providerVotes += 1;
-        } else if (vote == ArbitrationVote.CLIENT_REFUND) {
-            require(providerAward == 0 && clientAward == ag.price, "ServiceAgreement: invalid client vote split");
-            ac.clientVotes += 1;
-        } else if (vote == ArbitrationVote.SPLIT) {
-            require(providerAward + clientAward == ag.price, "ServiceAgreement: invalid split");
-            // R-04: collect all split votes; compute average at threshold (no exact-match requirement)
-            _splitProviderVoteSum[agreementId] += providerAward;
-            _splitClientVoteSum[agreementId] += clientAward;
-            ac.splitVotes += 1;
-        } else if (vote == ArbitrationVote.HUMAN_REVIEW_REQUIRED) {
-            require(providerAward == 0 && clientAward == 0, "ServiceAgreement: human review vote requires zero awards");
-            ac.humanVotes += 1;
-        }
-
+        IDisputeModule.FinalizeResult memory r = IDisputeModule(disputeModule).castArbitrationVote(
+            agreementId, msg.sender, ag.status, ag.price, vote, providerAward, clientAward
+        );
         emit ArbitrationVoteCast(agreementId, msg.sender, vote, providerAward, clientAward);
-
-        if (ac.providerVotes >= ARBITRATOR_MAJORITY) {
-            _finalizeDispute(agreementId, DisputeOutcome.PROVIDER_WINS, ag.price, 0, false);
-        } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {
-            _finalizeDispute(agreementId, DisputeOutcome.CLIENT_REFUND, 0, ag.price, false);
-        } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {
-            // R-04: average the submitted split amounts; ensure they sum to ag.price
-            uint256 avgProvider = _splitProviderVoteSum[agreementId] / ac.splitVotes;
-            uint256 avgClient = ag.price - avgProvider; // ensures exact sum = ag.price
-            ac.splitProviderAward = avgProvider;
-            ac.splitClientAward = avgClient;
-            _finalizeDispute(agreementId, DisputeOutcome.PARTIAL_PROVIDER, avgProvider, avgClient, false);
-        } else if (ac.humanVotes >= ARBITRATOR_MAJORITY) {
-            _markHumanEscalation(agreementId);
+        if (r.finalized) {
+            _applyFinalizeResult(agreementId, ag, r);
+        } else if (r.newStatus == Status.ESCALATED_TO_HUMAN) {
+            ag.status = Status.ESCALATED_TO_HUMAN;
         }
     }
 
     function requestHumanEscalation(uint256 agreementId, string calldata reason) external onlyParty(agreementId) {
-        require(bytes(reason).length <= 512, "ServiceAgreement: reason too long");
+        if (bytes(reason).length > 512) revert StringTooLong();
+        if (disputeModule == address(0)) revert NoDisputeModule();
         Agreement storage ag = _get(agreementId);
-        require(ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_ARBITRATION || ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAgreement: no active dispute");
-        ArbitrationCase storage ac = _arbitrationCases[agreementId];
-        bool arbitrationStalled = (ac.selectionDeadlineAt != 0 && ac.arbitratorCount < ARBITRATOR_PANEL_SIZE && block.timestamp > ac.selectionDeadlineAt)
-            || (ac.decisionDeadlineAt != 0 && block.timestamp > ac.decisionDeadlineAt);
-        require(arbitrationStalled || ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAgreement: arbitration still active");
-        _markHumanEscalation(agreementId);
+        IDisputeModule(disputeModule).requestHumanEscalation(agreementId, ag.status);
+        ag.status = Status.ESCALATED_TO_HUMAN;
         emit HumanEscalationRequested(agreementId, msg.sender, reason);
     }
 
-    function resolveDispute(uint256 agreementId, bool favorProvider) external onlyOwner {
-        resolveDisputeDetailed(
-            agreementId,
-            favorProvider ? DisputeOutcome.PROVIDER_WINS : DisputeOutcome.CLIENT_REFUND,
-            favorProvider ? _get(agreementId).price : 0,
-            favorProvider ? 0 : _get(agreementId).price
-        );
-        emit DisputeResolved(agreementId, favorProvider);
-    }
-
     /// @notice R-06: Owner can resolve a basic DISPUTED or ESCALATED_TO_HUMAN agreement.
-    ///         resolveDisputeDetailed requires humanReviewRequested + evidence; this bypasses
-    ///         those gates for owner-driven resolution of any active dispute state.
     function ownerResolveDispute(uint256 agreementId, bool favorProvider) external nonReentrant onlyOwner {
+        if (disputeModule == address(0)) revert NoDisputeModule();
         Agreement storage ag = _get(agreementId);
-        require(
-            ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_HUMAN || ag.status == Status.ESCALATED_TO_ARBITRATION,
-            "ServiceAgreement: must be in dispute"
+        IDisputeModule.FinalizeResult memory r = IDisputeModule(disputeModule).ownerResolveDispute(
+            agreementId, ag.status, favorProvider, ag.price
         );
-        DisputeOutcome outcome = favorProvider ? DisputeOutcome.PROVIDER_WINS : DisputeOutcome.CLIENT_REFUND;
-        _finalizeDispute(
-            agreementId,
-            outcome,
-            favorProvider ? ag.price : 0,
-            favorProvider ? 0 : ag.price,
-            false
-        );
+        _applyFinalizeResult(agreementId, ag, r);
         emit DisputeResolved(agreementId, favorProvider);
     }
 
     function submitDisputeEvidence(uint256 agreementId, EvidenceType evidenceType, bytes32 evidenceHash, string calldata evidenceURI) external {
         Agreement storage ag = _get(agreementId);
-        require(msg.sender == ag.client || msg.sender == ag.provider, "ServiceAgreement: not a party");
-        require(ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_HUMAN || ag.status == Status.ESCALATED_TO_ARBITRATION, "ServiceAgreement: no active dispute");
-        _disputeEvidence[agreementId].push(DisputeEvidence({
-            submitter: msg.sender,
-            evidenceType: evidenceType,
-            evidenceHash: evidenceHash,
-            evidenceURI: evidenceURI,
-            timestamp: block.timestamp
-        }));
-        _disputeCases[agreementId].evidenceCount = _disputeEvidence[agreementId].length;
-        emit DisputeEvidenceSubmitted(agreementId, _disputeEvidence[agreementId].length - 1, msg.sender, evidenceType, evidenceHash);
+        if (msg.sender != ag.client && msg.sender != ag.provider) revert NotParty();
+        if (disputeModule == address(0)) revert NoDisputeModule();
+        uint256 evidenceIndex = IDisputeModule(disputeModule).submitDisputeEvidence(
+            agreementId, msg.sender, ag.status, evidenceType, evidenceHash, evidenceURI
+        );
+        emit DisputeEvidenceSubmitted(agreementId, evidenceIndex, msg.sender, evidenceType, evidenceHash);
     }
 
     function resolveDisputeDetailed(uint256 agreementId, DisputeOutcome outcome, uint256 providerAward, uint256 clientAward) public nonReentrant onlyOwner {
+        if (disputeModule == address(0)) revert NoDisputeModule();
         Agreement storage ag = _get(agreementId);
-        require(ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAgreement: human escalation required");
-        require(_disputeCases[agreementId].humanReviewRequested, "ServiceAgreement: human review not requested");
-        require(_disputeEvidence[agreementId].length > 0, "ServiceAgreement: evidence required");
-        _finalizeDispute(agreementId, outcome, providerAward, clientAward, true);
+        if (providerAward + clientAward != ag.price && outcome != DisputeOutcome.HUMAN_REVIEW_REQUIRED) revert InvalidSplit();
+        IDisputeModule.FinalizeResult memory r = IDisputeModule(disputeModule).resolveDisputeDetailed(
+            agreementId, ag.status, outcome, providerAward, clientAward, ag.price
+        );
+        _applyFinalizeResult(agreementId, ag, r);
     }
 
     function expiredDisputeRefund(uint256 agreementId) external nonReentrant {
+        if (disputeModule == address(0)) revert NoDisputeModule();
         Agreement storage ag = _get(agreementId);
-        require(ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_HUMAN || ag.status == Status.ESCALATED_TO_ARBITRATION, "ServiceAgreement: not DISPUTED");
-        // slither-disable-next-line timestamp
-        require(block.timestamp > ag.resolvedAt + DISPUTE_TIMEOUT, "ServiceAgreement: dispute timeout not reached");
-        _closeRemediation(agreementId);
-        ag.status = Status.CANCELLED;
-        ag.resolvedAt = block.timestamp;
+        IDisputeModule.FinalizeResult memory r = IDisputeModule(disputeModule).expiredDisputeRefund(
+            agreementId, ag.status, ag.resolvedAt, ag.price
+        );
+        ag.status = r.newStatus;
+        ag.resolvedAt = r.resolvedAt;
         emit AgreementCancelled(agreementId, ag.client);
         emit DisputeTimedOut(agreementId, ag.client);
         _releaseEscrow(ag.token, ag.client, ag.price);
-
-        // R-01: release arbitrator bonds and fees so they are not permanently locked
-        if (disputeArbitration != address(0)) {
-            try IDisputeArbitration(disputeArbitration).resolveDisputeFee(
-                agreementId,
-                uint8(DisputeOutcome.CLIENT_REFUND) // timeout = client wins
-            ) {} catch {
-                // Catch is acceptable here — escrow release is primary; bonds are secondary
-            }
-        }
-    }
-
-    /// @notice Protocol version tag (Spec 20).
-    function protocolVersion() external pure returns (string memory) {
-        return "1.0.0";
     }
 
     function getAgreement(uint256 id) external view returns (Agreement memory) {
-        require(_agreements[id].id != 0, "ServiceAgreement: not found");
+        if (_agreements[id].id == 0) revert NotFound();
         return _agreements[id];
     }
 
-    function getRemediationCase(uint256 agreementId) external view returns (RemediationCase memory) {
-        return _remediationCases[agreementId];
-    }
-
-    function getRemediationFeedback(uint256 agreementId, uint256 index) external view returns (RemediationFeedback memory) {
-        return _remediationFeedbacks[agreementId][index];
-    }
-
-    function getRemediationResponse(uint256 agreementId, uint256 index) external view returns (RemediationResponse memory) {
-        return _remediationResponses[agreementId][index];
-    }
-
-    function getDisputeCase(uint256 agreementId) external view returns (DisputeCase memory) {
-        return _disputeCases[agreementId];
-    }
-
-    function getDisputeEvidence(uint256 agreementId, uint256 index) external view returns (DisputeEvidence memory) {
-        return _disputeEvidence[agreementId][index];
-    }
-
-    function getArbitrationCase(uint256 agreementId) external view returns (ArbitrationCase memory) {
-        return _arbitrationCases[agreementId];
-    }
 
     function getAgreementsByClient(address client) external view returns (uint256[] memory) { return _byClient[client]; }
     function getAgreementsByProvider(address provider) external view returns (uint256[] memory) { return _byProvider[provider]; }
     function agreementCount() external view returns (uint256) { return _nextId; }
 
-    function _openFormalDispute(
+    // ─── Internal: delegate dispute opening to DisputeModule ─────────────────
+
+    function _callOpenFormalDispute(
         uint256 agreementId,
         string memory reason,
         bool requireEligibility,
@@ -706,166 +577,73 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         IDisputeArbitration.DisputeMode daMode,
         IDisputeArbitration.DisputeClass daClass
     ) internal {
-        require(bytes(reason).length <= 512, "ServiceAgreement: reason too long");
+        if (bytes(reason).length > 512) revert StringTooLong();
+        if (disputeModule == address(0)) revert NoDisputeModule();
         Agreement storage ag = _get(agreementId);
-        require(msg.sender == ag.client || msg.sender == ag.provider, "ServiceAgreement: not a party");
-        require(ag.status == Status.ACCEPTED || ag.status == Status.PENDING_VERIFICATION || ag.status == Status.REVISED || ag.status == Status.REVISION_REQUESTED || ag.status == Status.PARTIAL_SETTLEMENT || ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAgreement: not ACCEPTED");
-        if (requireEligibility) {
-            require(_eligibleForEscalation(ag, agreementId), "ServiceAgreement: remediation first");
-        } else {
-            require(_canDirectDispute(ag, directReason), "ServiceAgreement: direct dispute not allowed");
-        }
-        _ensureDisputeCase(agreementId, false);
-        _disputeCases[agreementId].opener = msg.sender;
+        if (msg.sender != ag.client && msg.sender != ag.provider) revert NotParty();
+
+        // DM validates eligibility, creates dispute case, calls DA for fee, returns timestamp
+        uint256 newResolvedAt = IDisputeModule(disputeModule).openFormalDispute{value: msg.value}(
+            IDisputeModule.DisputeOpenParams({
+                agreementId:        agreementId,
+                caller:             msg.sender,
+                currentStatus:      ag.status,
+                requireEligibility: requireEligibility,
+                directReason:       directReason,
+                daMode:             daMode,
+                daClass:            daClass,
+                client:             ag.client,
+                provider:           ag.provider,
+                price:              ag.price,
+                token:              ag.token,
+                deadline:           ag.deadline
+            })
+        );
+
         ag.status = Status.DISPUTED;
         if (ag.resolvedAt == 0) {
-            ag.resolvedAt = block.timestamp; // B-06: only set once — never reset on re-entry
+            ag.resolvedAt = newResolvedAt; // B-06: only set once
         }
         emit AgreementDisputed(agreementId, msg.sender, reason);
         if (directReason != DirectDisputeReason.NONE) {
             emit DirectDisputeOpened(agreementId, msg.sender, directReason, reason);
         }
-        // DisputeArbitration fee hook
-        if (disputeArbitration != address(0)) {
-            try IDisputeArbitration(disputeArbitration).openDispute{value: msg.value}(
-                agreementId,
-                daMode,
-                daClass,
-                msg.sender,
-                ag.client,
-                ag.provider,
-                ag.price,
-                ag.token
-            ) {} catch (bytes memory feeRevertData) {
-                // B-05: refund msg.value to caller before reverting — never swallow ETH
-                if (msg.value > 0) {
-                    (bool refunded, ) = msg.sender.call{value: msg.value}("");
-                    require(refunded, "ServiceAgreement: ETH refund failed");
-                }
-                emit DisputeFeeCallFailed(agreementId, feeRevertData);
-                revert("ServiceAgreement: dispute fee call failed");
-            }
-        }
     }
 
-    function _canDirectDispute(Agreement storage ag, DirectDisputeReason directReason) internal view returns (bool) {
-        if (directReason == DirectDisputeReason.NO_DELIVERY) {
-            return ag.status == Status.ACCEPTED && block.timestamp > ag.deadline;
-        }
-        if (directReason == DirectDisputeReason.HARD_DEADLINE_BREACH) {
-            return block.timestamp > ag.deadline;
-        }
-        if (directReason == DirectDisputeReason.INVALID_OR_FRAUDULENT_DELIVERABLE) {
-            return ag.status == Status.PENDING_VERIFICATION;
-        }
-        if (directReason == DirectDisputeReason.SAFETY_CRITICAL_VIOLATION) {
-            return ag.status == Status.ACCEPTED || ag.status == Status.PENDING_VERIFICATION || ag.status == Status.REVISED || ag.status == Status.REVISION_REQUESTED;
-        }
-        return false;
-    }
-
-    function _eligibleForEscalation(Agreement storage ag, uint256 agreementId) internal view returns (bool) {
-        if (ag.status == Status.ESCALATED_TO_HUMAN || ag.status == Status.PARTIAL_SETTLEMENT) return true;
-        RemediationCase storage rc = _remediationCases[agreementId];
-        if (!rc.active) return false;
-        if (block.timestamp > rc.deadlineAt) return true;
-        if (rc.cycleCount >= MAX_REMEDIATION_CYCLES) return true;
-        return false;
-    }
-
-    function _ensureDisputeCase(uint256 agreementId, bool humanReviewRequested) internal {
-        DisputeCase storage dc = _disputeCases[agreementId];
-        if (dc.openedAt == 0) {
-            dc.agreementId = agreementId;
-            dc.openedAt = block.timestamp;
-            dc.responseDeadlineAt = block.timestamp + DISPUTE_TIMEOUT;
-            dc.outcome = DisputeOutcome.PENDING;
-            dc.humanReviewRequested = humanReviewRequested;
-            dc.evidenceCount = _disputeEvidence[agreementId].length;
-        } else if (humanReviewRequested) {
-            dc.humanReviewRequested = true;
-        }
-    }
-
-    function _markHumanEscalation(uint256 agreementId) internal {
-        Agreement storage ag = _get(agreementId);
-        _ensureDisputeCase(agreementId, true);
-        ag.status = Status.ESCALATED_TO_HUMAN;
-    }
+    // ─── Internal: apply finalization results from DisputeModule ─────────────
 
     // wake-disable-next-line reentrancy
-    // @dev Called only from nonReentrant-guarded entry points. Reentrancy path blocked upstream.
-    function _finalizeDispute(uint256 agreementId, DisputeOutcome outcome, uint256 providerAward, uint256 clientAward, bool humanBackstopUsed) internal {
-        Agreement storage ag = _get(agreementId);
-        require(ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_HUMAN || ag.status == Status.ESCALATED_TO_ARBITRATION, "ServiceAgreement: not DISPUTED");
-        require(providerAward + clientAward == ag.price || outcome == DisputeOutcome.HUMAN_REVIEW_REQUIRED, "ServiceAgreement: invalid split");
+    function _applyFinalizeResult(uint256 agreementId, Agreement storage ag, IDisputeModule.FinalizeResult memory r) internal {
+        ag.status = r.newStatus;
+        ag.resolvedAt = r.resolvedAt;
 
-        DisputeCase storage dc = _disputeCases[agreementId];
-        if (dc.openedAt == 0) {
-            _ensureDisputeCase(agreementId, ag.status == Status.ESCALATED_TO_HUMAN);
-        }
-        dc.outcome = outcome;
-        dc.providerAward = providerAward;
-        dc.clientAward = clientAward;
-        dc.responseDeadlineAt = block.timestamp;
-
-        ArbitrationCase storage ac = _arbitrationCases[agreementId];
-        ac.finalized = outcome != DisputeOutcome.HUMAN_REVIEW_REQUIRED;
-        ac.humanBackstopUsed = humanBackstopUsed;
-
-        _closeRemediation(agreementId);
-        ag.resolvedAt = block.timestamp;
-
-        if (outcome == DisputeOutcome.PROVIDER_WINS) {
-            ag.status = Status.FULFILLED;
-            if (providerAward > 0) _releaseEscrow(ag.token, ag.provider, providerAward);
-            _updateTrust(agreementId, ag, true);
-        } else if (outcome == DisputeOutcome.CLIENT_REFUND) {
-            ag.status = Status.CANCELLED;
-            if (clientAward > 0) _releaseEscrow(ag.token, ag.client, clientAward);
-            _updateTrust(agreementId, ag, false);
-        } else if (outcome == DisputeOutcome.PARTIAL_PROVIDER || outcome == DisputeOutcome.PARTIAL_CLIENT) {
-            ag.status = Status.FULFILLED; // terminal — all funds disbursed (B-03: was PARTIAL_SETTLEMENT, a non-terminal trap)
-            if (providerAward > 0) _releaseEscrowWithFee(ag.token, ag.provider, providerAward);
-            if (clientAward > 0) _releaseEscrow(ag.token, ag.client, clientAward);
-        } else if (outcome == DisputeOutcome.MUTUAL_CANCEL) {
-            ag.status = Status.MUTUAL_CANCEL;
-            if (clientAward > 0) _releaseEscrow(ag.token, ag.client, clientAward);
-            if (providerAward > 0) _releaseEscrow(ag.token, ag.provider, providerAward);
-        } else if (outcome == DisputeOutcome.HUMAN_REVIEW_REQUIRED) {
-            _markHumanEscalation(agreementId);
-        } else {
-            revert("ServiceAgreement: unsupported outcome");
-        }
-
-        emit DetailedDisputeResolved(agreementId, outcome, providerAward, clientAward);
-
-        // DisputeArbitration fee resolution callback
-        if (disputeArbitration != address(0)) {
-            try IDisputeArbitration(disputeArbitration).resolveDisputeFee(
-                agreementId,
-                uint8(outcome)
-            ) {} catch {
-                emit DisputeFeeResolutionFailed(agreementId);
+        if (r.providerAmount > 0) {
+            if (r.providerWithFee) {
+                _releaseEscrowWithFee(ag.token, ag.provider, r.providerAmount);
+            } else {
+                _releaseEscrow(ag.token, ag.provider, r.providerAmount);
             }
         }
-    }
-
-    function _isPanelArbitrator(ArbitrationCase storage ac, address arbitrator) internal view returns (bool) {
-        for (uint256 i = 0; i < ac.arbitratorCount; i++) {
-            if (ac.arbitrators[i] == arbitrator) return true;
+        if (r.clientAmount > 0) {
+            _releaseEscrow(ag.token, ag.client, r.clientAmount);
         }
-        return false;
-    }
 
-    function _closeRemediation(uint256 agreementId) internal {
-        if (_remediationCases[agreementId].active) {
-            _remediationCases[agreementId].active = false;
+        if (r.updateTrust) {
+            _updateTrust(agreementId, ag, r.trustSuccess);
         }
+
+        emit DetailedDisputeResolved(agreementId, r.outcome, r.providerAmount, r.clientAmount);
+
+        if (r.newStatus == Status.FULFILLED) {
+            emit AgreementFulfilled(agreementId, ag.provider, ag.deliverablesHash);
+        } else if (r.newStatus == Status.CANCELLED || r.newStatus == Status.MUTUAL_CANCEL) {
+            emit AgreementCancelled(agreementId, ag.client);
+        }
+
     }
 
     function _get(uint256 id) internal view returns (Agreement storage) {
-        require(_agreements[id].id != 0, "ServiceAgreement: not found");
+        if (_agreements[id].id == 0) revert NotFound();
         return _agreements[id];
     }
 
@@ -877,16 +655,13 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         if (amount == 0) return;
         if (token == address(0)) {
             (bool ok, ) = recipient.call{value: amount}("");
-            require(ok, "ServiceAgreement: ETH transfer failed");
+            if (!ok) revert ETHTransferFailed();
         } else {
             IERC20(token).safeTransfer(recipient, amount);
         }
     }
 
     /// @dev Release escrow to provider after deducting the protocol fee.
-    ///      Fee goes to protocolTreasury; remainder goes to provider.
-    ///      Handles both ETH (token == address(0)) and ERC-20 paths.
-    ///      If protocolFeeBps is 0 or protocolTreasury is unset, behaves identically to _releaseEscrow.
     function _releaseEscrowWithFee(address token, address provider, uint256 amount) internal {
         // slither-disable-next-line incorrect-equality
         if (amount == 0) return;
@@ -904,64 +679,22 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     // wake-disable-next-line reentrancy
     // @dev Called only from nonReentrant-guarded entry points. Reentrancy path blocked upstream.
     function _updateTrust(uint256 agreementId, Agreement storage ag, bool success) internal {
-        bytes32 capabilityHash = keccak256(bytes(ag.serviceType));
-        if (trustRegistry != address(0)) {
-            if (success) {
-                if (minimumTrustValue == 0 || ag.price >= minimumTrustValue) {
-                    try ITrustRegistry(trustRegistry).recordSuccess(ag.provider, ag.client, ag.serviceType, ag.price) {} catch {
-                        emit TrustUpdateFailed(agreementId, ag.provider, "fulfill");
-                    }
-                }
-            } else {
-                try ITrustRegistry(trustRegistry).recordAnomaly(ag.provider, ag.client, ag.serviceType, ag.price) {} catch {
-                    emit TrustUpdateFailed(agreementId, ag.provider, "resolveDispute:anomaly");
+        if (trustRegistry == address(0)) return;
+        if (success) {
+            if (minimumTrustValue == 0 || ag.price >= minimumTrustValue) {
+                try ITrustRegistry(trustRegistry).recordSuccess(ag.provider, ag.client, ag.serviceType, ag.price) {} catch {
+                    emit TrustUpdateFailed(agreementId, ag.provider, "fulfill");
                 }
             }
-        }
-        if (address(reputationOracle) != address(0)) {
-            if (success) {
-                try reputationOracle.autoRecordSuccess(ag.client, ag.provider, capabilityHash) {} catch {}
-            } else {
-                try reputationOracle.autoWarn(ag.client, ag.provider, capabilityHash) {} catch {}
+        } else {
+            try ITrustRegistry(trustRegistry).recordAnomaly(ag.provider, ag.client, ag.serviceType, ag.price) {} catch {
+                emit TrustUpdateFailed(agreementId, ag.provider, "resolveDispute:anomaly");
             }
         }
+        // Reputation oracle calls deferred — interface definition needed (v2)
     }
 
-    // ─── DisputeArbitration resolution callback ───────────────────────────────
-
-    /// @notice Called by DisputeArbitration to disburse escrow with a split between provider and client.
-    /// @dev providerAmount + clientAmount must equal ag.price to prevent stranded escrow (B-01).
-    function resolveFromArbitration(
-        uint256 agreementId,
-        address recipient,
-        uint256 providerAmount,
-        uint256 clientAmount
-    ) external nonReentrant {
-        require(msg.sender == disputeArbitration, "ServiceAgreement: not DisputeArbitration");
-        require(disputeArbitration != address(0), "ServiceAgreement: DA not set");
-        Agreement storage ag = _get(agreementId);
-        require(ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_HUMAN || ag.status == Status.ESCALATED_TO_ARBITRATION, "ServiceAgreement: not in dispute");
-        require(providerAmount + clientAmount == ag.price, "ServiceAgreement: amounts must equal escrow");
-
-        ag.status = providerAmount >= clientAmount ? Status.FULFILLED : Status.CANCELLED;
-        ag.resolvedAt = block.timestamp;
-
-        DisputeOutcome outcome = providerAmount >= clientAmount
-            ? DisputeOutcome.PROVIDER_WINS
-            : DisputeOutcome.CLIENT_REFUND;
-        emit DetailedDisputeResolved(agreementId, outcome, providerAmount, clientAmount);
-
-        if (providerAmount > 0) {
-            _releaseEscrowWithFee(ag.token, ag.provider, providerAmount);
-        }
-        if (clientAmount > 0) {
-            _releaseEscrow(ag.token, ag.client, clientAmount);
-        }
-
-        _updateTrust(agreementId, ag, providerAmount >= clientAmount);
-    }
-
-    // ─── Session Channels ─────────────────────────────────────────────────────
+    // ─── Session Channels (delegated to SessionChannels contract) ────────────
 
     function openSessionChannel(
         address provider,
@@ -970,173 +703,50 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         uint256 ratePerCall,
         uint256 deadline
     ) external payable nonReentrant whenNotPaused returns (bytes32 channelId) {
-        require(provider != address(0), "ServiceAgreement: zero provider");
-        require(provider != msg.sender, "ServiceAgreement: client == provider");
-        require(deadline > block.timestamp, "ServiceAgreement: deadline in past");
-        require(maxAmount > 0, "ServiceAgreement: zero amount");
-        require(allowedTokens[token], "ServiceAgreement: token not allowed");
+        if (sessionChannels == address(0)) revert NoSessionChannels();
+        if (provider == address(0)) revert ZeroAddress();
+        if (provider == msg.sender) revert ClientEqualsProvider();
+        if (deadline <= block.timestamp) revert DeadlineInPast();
+        if (maxAmount == 0) revert ZeroAmount();
+        if (!allowedTokens[token]) revert TokenNotAllowed();
         if (token == address(0)) {
-            require(msg.value == maxAmount, "ServiceAgreement: ETH value != maxAmount");
+            if (msg.value != maxAmount) revert ETHValueMismatch();
         } else {
-            require(msg.value == 0, "ServiceAgreement: ETH sent with ERC-20");
-            IERC20(token).safeTransferFrom(msg.sender, address(this), maxAmount);
+            if (msg.value != 0) revert ETHWithERC20();
+            IERC20(token).safeTransferFrom(msg.sender, sessionChannels, maxAmount);
         }
-        unchecked { _channelNonce++; }
-        channelId = keccak256(abi.encodePacked(msg.sender, provider, token, maxAmount, deadline, block.timestamp, _channelNonce));
-        channels[channelId] = Channel({
-            client: msg.sender,
-            provider: provider,
-            token: token,
-            depositAmount: maxAmount,
-            settledAmount: 0,
-            lastSequenceNumber: 0,
-            deadline: deadline,
-            challengeExpiry: 0,
-            status: ChannelStatus.OPEN
-        });
-        _channelsByClient[msg.sender].push(channelId);
-        _channelsByProvider[provider].push(channelId);
-        emit ChannelOpened(channelId, msg.sender, provider, token, maxAmount, deadline);
+        return ISessionChannels(sessionChannels).openSessionChannel{value: msg.value}(
+            msg.sender, provider, token, maxAmount, ratePerCall, deadline
+        );
     }
 
     function closeChannel(bytes32 channelId, bytes calldata finalStateBytes) external nonReentrant whenNotPaused {
-        Channel storage ch = channels[channelId];
-        require(ch.client != address(0), "ServiceAgreement: channel not found");
-        require(ch.status == ChannelStatus.OPEN, "ServiceAgreement: channel not OPEN");
-        require(msg.sender == ch.client || msg.sender == ch.provider, "ServiceAgreement: not a party");
-        ChannelState memory state = abi.decode(finalStateBytes, (ChannelState));
-        require(state.channelId == channelId, "ServiceAgreement: channelId mismatch");
-        require(state.token == ch.token, "ServiceAgreement: token mismatch");
-        require(state.cumulativePayment <= ch.depositAmount, "ServiceAgreement: payment exceeds deposit");
-        require(state.sequenceNumber > 0, "ServiceAgreement: zero sequence number");
-        _verifyChannelStateSigs(ch, state);
-        ch.status = ChannelStatus.CLOSING;
-        ch.lastSequenceNumber = state.sequenceNumber;
-        ch.settledAmount = state.cumulativePayment;
-        ch.challengeExpiry = block.timestamp + CHALLENGE_WINDOW;
-        emit ChannelClosing(channelId, state.sequenceNumber, state.cumulativePayment, ch.challengeExpiry);
+        ISessionChannels(sessionChannels).closeChannel(msg.sender, channelId, finalStateBytes);
     }
 
     function challengeChannel(bytes32 channelId, bytes calldata latestStateBytes) external nonReentrant whenNotPaused {
-        Channel storage ch = channels[channelId];
-        require(ch.client != address(0), "ServiceAgreement: channel not found");
-        require(ch.status == ChannelStatus.CLOSING || ch.status == ChannelStatus.OPEN, "ServiceAgreement: not challengeable");
-        require(
-            msg.sender == ch.client ||
-            msg.sender == ch.provider ||
-            (watchtowerRegistry != address(0) && (
-                IWatchtowerRegistry(watchtowerRegistry).channelWatchtower(channelId) == msg.sender ||
-                msg.sender == watchtowerRegistry
-            )),
-            "ServiceAgreement: not authorized to challenge"
-        );
-        if (ch.status == ChannelStatus.CLOSING) {
-            // slither-disable-next-line timestamp
-            require(block.timestamp <= ch.challengeExpiry, "ServiceAgreement: challenge window expired");
-        }
-        ChannelState memory state = abi.decode(latestStateBytes, (ChannelState));
-        require(state.channelId == channelId, "ServiceAgreement: channelId mismatch");
-        require(state.token == ch.token, "ServiceAgreement: token mismatch");
-        require(state.cumulativePayment <= ch.depositAmount, "ServiceAgreement: payment exceeds deposit");
-        require(state.sequenceNumber > ch.lastSequenceNumber, "ServiceAgreement: sequence not higher");
-        _verifyChannelStateSigs(ch, state);
-        // Challenge wins immediately — settle now
-        address badFaithCloser = ch.status == ChannelStatus.CLOSING ? (msg.sender == ch.client ? ch.provider : ch.client) : address(0);
-        ch.status = ChannelStatus.SETTLED;
-        ch.settledAmount = state.cumulativePayment;
-        ch.lastSequenceNumber = state.sequenceNumber;
-        emit ChannelChallenged(channelId, msg.sender, state.sequenceNumber, state.cumulativePayment);
-        _settleChannel(channelId, ch);
-        // Trust penalty for bad-faith closer
-        if (badFaithCloser != address(0) && trustRegistry != address(0)) {
-            try ITrustRegistry(trustRegistry).recordAnomaly(badFaithCloser, msg.sender, "session-channel-bad-faith", ch.depositAmount) {} catch {
-                emit TrustUpdateFailed(0, badFaithCloser, "channel:bad-faith-close");
-            }
-        }
+        ISessionChannels(sessionChannels).challengeChannel(msg.sender, channelId, latestStateBytes);
     }
 
     function finaliseChallenge(bytes32 channelId) external nonReentrant {
-        Channel storage ch = channels[channelId];
-        require(ch.client != address(0), "ServiceAgreement: channel not found");
-        require(ch.status == ChannelStatus.CLOSING, "ServiceAgreement: not CLOSING");
-        // slither-disable-next-line timestamp
-        require(block.timestamp > ch.challengeExpiry, "ServiceAgreement: challenge window open");
-        ch.status = ChannelStatus.SETTLED;
-        emit ChallengeFinalised(channelId, msg.sender, ch.settledAmount);
-        _settleChannel(channelId, ch);
-        // Clean close — positive trust for both
-        _updateChannelTrust(channelId, ch, true, false);
+        ISessionChannels(sessionChannels).finaliseChallenge(msg.sender, channelId);
     }
 
     function reclaimExpiredChannel(bytes32 channelId) external nonReentrant {
-        Channel storage ch = channels[channelId];
-        require(ch.client != address(0), "ServiceAgreement: channel not found");
-        require(msg.sender == ch.client, "ServiceAgreement: not client");
-        require(ch.status == ChannelStatus.OPEN, "ServiceAgreement: channel not OPEN");
-        // slither-disable-next-line timestamp
-        require(block.timestamp > ch.deadline, "ServiceAgreement: deadline not passed");
-        ch.status = ChannelStatus.SETTLED;
-        ch.settledAmount = 0;
-        uint256 reclaimAmount = ch.depositAmount;
-        emit ChannelExpiredReclaimed(channelId, ch.client, reclaimAmount);
-        _releaseEscrow(ch.token, ch.client, reclaimAmount);
-        // Provider non-response penalty
-        if (trustRegistry != address(0)) {
-            try ITrustRegistry(trustRegistry).recordAnomaly(ch.provider, ch.client, "session-channel-no-close", ch.depositAmount) {} catch {
-                emit TrustUpdateFailed(0, ch.provider, "channel:no-close");
-            }
-        }
+        ISessionChannels(sessionChannels).reclaimExpiredChannel(msg.sender, channelId);
     }
 
-    function getChannel(bytes32 channelId) external view returns (Channel memory) {
-        require(channels[channelId].client != address(0), "ServiceAgreement: channel not found");
-        return channels[channelId];
+    function getChannel(bytes32 channelId) external view returns (Channel memory ch) {
+        bytes memory data = ISessionChannels(sessionChannels).getChannelEncoded(channelId);
+        ch = abi.decode(data, (Channel));
     }
 
     function getChannelsByClient(address client) external view returns (bytes32[] memory) {
-        return _channelsByClient[client];
+        return ISessionChannels(sessionChannels).getChannelsByClient(client);
     }
 
     function getChannelsByProvider(address provider) external view returns (bytes32[] memory) {
-        return _channelsByProvider[provider];
-    }
-
-    function _settleChannel(bytes32 channelId, Channel storage ch) internal {
-        uint256 providerAmount = ch.settledAmount;
-        uint256 clientRefund = ch.depositAmount - ch.settledAmount;
-        emit ChannelSettled(channelId, ch.provider, providerAmount, clientRefund);
-        if (providerAmount > 0) _releaseEscrowWithFee(ch.token, ch.provider, providerAmount); // B-04: was _releaseEscrow, bypassed protocol fee
-        if (clientRefund > 0) _releaseEscrow(ch.token, ch.client, clientRefund);
-    }
-
-    function _updateChannelTrust(bytes32, Channel storage ch, bool providerSuccess, bool clientSuccess) internal {
-        if (trustRegistry == address(0)) return;
-        if (providerSuccess) {
-            try ITrustRegistry(trustRegistry).recordSuccess(ch.provider, ch.client, "session-channel", ch.settledAmount) {} catch {}
-        }
-        if (clientSuccess) {
-            try ITrustRegistry(trustRegistry).recordSuccess(ch.client, ch.provider, "session-channel", ch.settledAmount) {} catch {}
-        }
-    }
-
-    function _verifyChannelStateSigs(Channel storage ch, ChannelState memory state) internal view {
-        bytes32 messageHash = keccak256(abi.encode(
-            state.channelId,
-            state.sequenceNumber,
-            state.callCount,
-            state.cumulativePayment,
-            state.token,
-            state.timestamp
-        ));
-        bytes32 ethHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-        address clientSigner = _recoverSigner(ethHash, state.clientSig);
-        address providerSigner = _recoverSigner(ethHash, state.providerSig);
-        require(clientSigner == ch.client, "ServiceAgreement: invalid client sig");
-        require(providerSigner == ch.provider, "ServiceAgreement: invalid provider sig");
-    }
-
-    function _recoverSigner(bytes32 hash, bytes memory sig) internal pure returns (address) {
-        return ECDSA.recover(hash, sig);
+        return ISessionChannels(sessionChannels).getChannelsByProvider(provider);
     }
 
     receive() external payable {}

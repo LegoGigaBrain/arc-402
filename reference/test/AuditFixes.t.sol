@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "forge-std/Test.sol";
 import "../contracts/ServiceAgreement.sol";
 import "../contracts/DisputeArbitration.sol";
+import "../contracts/DisputeModule.sol";
 import "../contracts/TrustRegistry.sol";
 import "../contracts/TrustRegistryV2.sol";
 import "../contracts/IServiceAgreement.sol";
@@ -71,6 +72,8 @@ abstract contract AuditBaseTest is Test {
         trustReg = new TrustRegistry();
         sa = new ServiceAgreement(address(trustReg));
         trustReg.addUpdater(address(sa));
+        DisputeModule dm = new DisputeModule(address(sa));
+        sa.setDisputeModule(address(dm));
         vm.deal(client,   100 ether);
         vm.deal(provider,  10 ether);
     }
@@ -112,33 +115,25 @@ abstract contract AuditBaseTest is Test {
     }
 }
 
-// ─── B-01: resolveFromArbitration split disbursement ─────────────────────────
+// ─── B-01: Escrow split disbursement (no stranded funds) ─────────────────────
+// Originally tested via resolveFromArbitration (DA callback). Since resolveFromArbitration
+// was removed for EIP-170 compliance, these tests verify the same invariant via
+// resolveDisputeDetailed (owner-callable). Same escrow logic, same invariant.
 
 contract AuditFix_B01_SplitDisbursement is AuditBaseTest {
 
-    DisputeArbitration da;
-    address treasury = address(0xFEE0);
-
     function setUp() public {
         _baseSetUp();
-        da = new DisputeArbitration(address(trustReg), treasury);
-        da.setServiceAgreement(address(sa));
-        da.setTokenUsdRate(address(0), 2000e18);
-        trustReg.addUpdater(address(da));
-        sa.setDisputeArbitration(address(da));
-        vm.deal(treasury, 0 ether);
     }
 
     function test_B01_Split6040DisbursesBothParties() public {
         uint256 id = _propose();
-        uint256 fee = da.getFeeQuote(PRICE, address(0), IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
-        _directDisputeWithValue(id, fee);
+        _directDispute(id);
 
         uint256 providerBefore = provider.balance;
         uint256 clientBefore   = client.balance;
 
-        vm.prank(address(da));
-        sa.resolveFromArbitration(id, provider, 0.6 ether, 0.4 ether);
+        sa.resolveDisputeDetailed(id, IServiceAgreement.DisputeOutcome.PARTIAL_PROVIDER, 0.6 ether, 0.4 ether);
 
         assertEq(provider.balance - providerBefore, 0.6 ether);
         assertEq(client.balance   - clientBefore,   0.4 ether);
@@ -147,21 +142,17 @@ contract AuditFix_B01_SplitDisbursement is AuditBaseTest {
 
     function test_B01_RevertsIfAmountsDontSumToPrice() public {
         uint256 id = _propose();
-        uint256 fee = da.getFeeQuote(PRICE, address(0), IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
-        _directDisputeWithValue(id, fee);
+        _directDispute(id);
 
-        vm.prank(address(da));
-        vm.expectRevert("ServiceAgreement: amounts must equal escrow");
-        sa.resolveFromArbitration(id, provider, 0.3 ether, 0.4 ether); // 0.7 != 1.0
+        vm.expectRevert(ServiceAgreement.InvalidSplit.selector);
+        sa.resolveDisputeDetailed(id, IServiceAgreement.DisputeOutcome.PARTIAL_PROVIDER, 0.3 ether, 0.4 ether); // 0.7 != 1.0
     }
 
     function test_B01_FullProviderWin_StatusFulfilled() public {
         uint256 id = _propose();
-        uint256 fee = da.getFeeQuote(PRICE, address(0), IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
-        _directDisputeWithValue(id, fee);
+        _directDispute(id);
 
-        vm.prank(address(da));
-        sa.resolveFromArbitration(id, provider, 1 ether, 0);
+        sa.resolveDisputeDetailed(id, IServiceAgreement.DisputeOutcome.PROVIDER_WINS, 1 ether, 0);
 
         assertEq(address(sa).balance, 0);
         assertEq(uint256(sa.getAgreement(id).status), uint256(IServiceAgreement.Status.FULFILLED));
@@ -169,12 +160,10 @@ contract AuditFix_B01_SplitDisbursement is AuditBaseTest {
 
     function test_B01_FullClientRefund_StatusCancelled() public {
         uint256 id = _propose();
-        uint256 fee = da.getFeeQuote(PRICE, address(0), IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
-        _directDisputeWithValue(id, fee);
+        _directDispute(id);
         uint256 clientBefore = client.balance;
 
-        vm.prank(address(da));
-        sa.resolveFromArbitration(id, provider, 0, 1 ether);
+        sa.resolveDisputeDetailed(id, IServiceAgreement.DisputeOutcome.CLIENT_REFUND, 0, 1 ether);
 
         assertEq(client.balance - clientBefore, 1 ether);
         assertEq(address(sa).balance, 0);
@@ -197,6 +186,7 @@ contract AuditFix_B03_PartialSettlementTerminal is AuditBaseTest {
         _baseSetUp();
         da = new DisputeArbitration(address(trustReg), treasury);
         da.setServiceAgreement(address(sa));
+        da.setDisputeModule(sa.disputeModule());
         da.setTokenUsdRate(address(0), 2000e18);
         trustReg.addUpdater(address(da));
         sa.setDisputeArbitration(address(da));
@@ -262,7 +252,7 @@ contract AuditFix_B03_PartialSettlementTerminal is AuditBaseTest {
         // FULFILLED is terminal — expiredCancel should fail
         vm.warp(block.timestamp + 400 days);
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: not ACCEPTED");
+        vm.expectRevert(ServiceAgreement.InvalidStatus.selector);
         sa.expiredCancel(id);
     }
 }
@@ -287,7 +277,7 @@ contract AuditFix_B05_DisputeFeeETHRefund is AuditBaseTest {
 
         // Client sends 0.05 ETH as dispute fee — the DA will revert → whole tx reverts
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: dispute fee call failed");
+        vm.expectRevert(ServiceAgreement.DisputeFeeError.selector);
         sa.directDispute{value: 0.05 ether}(id, IServiceAgreement.DirectDisputeReason.HARD_DEADLINE_BREACH, "breach");
 
         // B-05: EVM revert automatically restores ETH (no net loss to client)
@@ -300,7 +290,7 @@ contract AuditFix_B05_DisputeFeeETHRefund is AuditBaseTest {
 
         // Dispute must fail — status is preserved as ACCEPTED
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: dispute fee call failed");
+        vm.expectRevert(ServiceAgreement.DisputeFeeError.selector);
         sa.directDispute(id, IServiceAgreement.DirectDisputeReason.HARD_DEADLINE_BREACH, "breach");
 
         // Agreement should remain ACCEPTED (revert rolled back DISPUTED status change)
@@ -338,7 +328,7 @@ contract AuditFix_B06_DisputeTimeoutSetOnce is AuditBaseTest {
 
         // Advance 29 days — not yet timed out
         vm.warp(openedAt + 29 days);
-        vm.expectRevert("ServiceAgreement: dispute timeout not reached");
+        vm.expectRevert(ServiceAgreement.DisputeTimeoutNotReached.selector);
         sa.expiredDisputeRefund(id);
 
         // Advance to 31 days — timed out
@@ -415,6 +405,7 @@ contract AuditFix_R01_ExpiredDisputeRefund is AuditBaseTest {
         _baseSetUp();
         da = new DisputeArbitration(address(trustReg), treasury);
         da.setServiceAgreement(address(sa));
+        da.setDisputeModule(sa.disputeModule());
         da.setTokenUsdRate(address(0), 2000e18);
         trustReg.addUpdater(address(da));
         sa.setDisputeArbitration(address(da));
@@ -468,9 +459,12 @@ contract AuditFix_R02_NoCatchOnRecordVote is Test {
         trustReg = new TrustRegistry();
         sa = new ServiceAgreement(address(trustReg));
         trustReg.addUpdater(address(sa));
+        DisputeModule dm = new DisputeModule(address(sa));
+        sa.setDisputeModule(address(dm));
 
         da = new DisputeArbitration(address(trustReg), treasury);
         da.setServiceAgreement(address(sa));
+        da.setDisputeModule(address(dm));
         da.setTokenUsdRate(address(0), 2000e18);
         trustReg.addUpdater(address(da));
         sa.setDisputeArbitration(address(da));
@@ -576,6 +570,7 @@ contract AuditFix_R04_SplitVoteAverage is AuditBaseTest {
         _baseSetUp();
         da = new DisputeArbitration(address(trustReg), treasury);
         da.setServiceAgreement(address(sa));
+        da.setDisputeModule(sa.disputeModule());
         da.setTokenUsdRate(address(0), 2000e18);
         trustReg.addUpdater(address(da));
         sa.setDisputeArbitration(address(da));
@@ -616,7 +611,7 @@ contract AuditFix_R04_SplitVoteAverage is AuditBaseTest {
         vm.prank(arb2); sa.castArbitrationVote(id, IServiceAgreement.ArbitrationVote.SPLIT, 0.5 ether, 0.5 ether);
         // Majority reached — finalized
 
-        IServiceAgreement.ArbitrationCase memory ac = sa.getArbitrationCase(id);
+        IServiceAgreement.ArbitrationCase memory ac = DisputeModule(sa.disputeModule()).getArbitrationCase(id);
         assertTrue(ac.finalized);
         // Average: (0.7+0.5)/2 = 0.6
         assertEq(ac.splitProviderAward, 0.6 ether);
@@ -631,13 +626,13 @@ contract AuditFix_R04_SplitVoteAverage is AuditBaseTest {
         vm.prank(arb1); sa.castArbitrationVote(id, IServiceAgreement.ArbitrationVote.SPLIT, 0.7 ether, 0.3 ether);
 
         // Not finalized yet
-        assertFalse(sa.getArbitrationCase(id).finalized);
+        assertFalse(DisputeModule(sa.disputeModule()).getArbitrationCase(id).finalized);
 
         // 2nd vote reaches majority → finalize
         vm.prank(arb2); sa.castArbitrationVote(id, IServiceAgreement.ArbitrationVote.SPLIT, 0.5 ether, 0.5 ether);
-        assertTrue(sa.getArbitrationCase(id).finalized);
+        assertTrue(DisputeModule(sa.disputeModule()).getArbitrationCase(id).finalized);
         // Average of 0.7 and 0.5 = 0.6
-        assertEq(sa.getArbitrationCase(id).splitProviderAward, 0.6 ether);
+        assertEq(DisputeModule(sa.disputeModule()).getArbitrationCase(id).splitProviderAward, 0.6 ether);
     }
 }
 
@@ -760,14 +755,14 @@ contract AuditFix_R06_OwnerResolveDispute is AuditBaseTest {
         _directDispute(id);
 
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: not owner");
+        vm.expectRevert(ServiceAgreement.NotOwner.selector);
         sa.ownerResolveDispute(id, true);
     }
 
     function test_R06_RevertsIfNotInDispute() public {
         uint256 id = _propose();
         // ACCEPTED status — not disputed
-        vm.expectRevert("ServiceAgreement: must be in dispute");
+        vm.expectRevert(ServiceAgreement.InvalidStatus.selector);
         sa.ownerResolveDispute(id, true);
     }
 }

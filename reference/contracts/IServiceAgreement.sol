@@ -224,11 +224,5 @@ interface IServiceAgreement {
         uint256 clientAward
     ) external;
 
-    function getRemediationCase(uint256 agreementId) external view returns (RemediationCase memory);
-    function getRemediationFeedback(uint256 agreementId, uint256 index) external view returns (RemediationFeedback memory);
-    function getRemediationResponse(uint256 agreementId, uint256 index) external view returns (RemediationResponse memory);
-    function getDisputeCase(uint256 agreementId) external view returns (DisputeCase memory);
-    function getDisputeEvidence(uint256 agreementId, uint256 index) external view returns (DisputeEvidence memory);
-    function getArbitrationCase(uint256 agreementId) external view returns (ArbitrationCase memory);
     function getAgreement(uint256 id) external view returns (Agreement memory);
 }

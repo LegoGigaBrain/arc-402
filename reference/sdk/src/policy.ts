@@ -1,86 +1,71 @@
-import { ethers } from "ethers";
+import { ContractRunner, ethers } from "ethers";
+import { POLICY_ENGINE_ABI } from "./contracts";
 import { Policy } from "./types";
-
-const POLICY_ENGINE_ABI = [
-  "function setPolicy(bytes32 policyHash, bytes calldata policyData) external",
-  "function getPolicy(address wallet) external view returns (bytes32, bytes)",
-  "function setCategoryLimit(string calldata category, uint256 limitPerTx) external",
-  "function setCategoryLimitFor(address wallet, string calldata category, uint256 limitPerTx) external",
-  "function validateSpend(address wallet, string calldata category, uint256 amount, bytes32 contextId) external view returns (bool, string)",
-  "function categoryLimits(address wallet, string category) external view returns (uint256)",
-  "function registerWallet(address wallet, address owner) external",
-];
 
 export class PolicyClient {
   private contract: ethers.Contract;
-
-  constructor(address: string, signer: ethers.Signer) {
-    this.contract = new ethers.Contract(address, POLICY_ENGINE_ABI, signer);
-  }
-
-  async set(walletAddress: string, categories: Record<string, bigint>): Promise<void> {
-    const policyData = JSON.stringify(
-      Object.fromEntries(
-        Object.entries(categories).map(([k, v]) => [k, v.toString()])
-      )
-    );
-    const policyHash = ethers.keccak256(ethers.toUtf8Bytes(policyData));
-    const tx = await this.contract.setPolicy(policyHash, ethers.toUtf8Bytes(policyData));
+  constructor(address: string, runner: ContractRunner) { this.contract = new ethers.Contract(address, POLICY_ENGINE_ABI, runner); }
+  async set(walletAddress: string, categories: Record<string, bigint>) {
+    const policyData = JSON.stringify(Object.fromEntries(Object.entries(categories).map(([k, v]) => [k, v.toString()])));
+    const tx = await this.contract.setPolicy(ethers.keccak256(ethers.toUtf8Bytes(policyData)), ethers.toUtf8Bytes(policyData));
     await tx.wait();
-
     for (const [category, limit] of Object.entries(categories)) {
-      const tx2 = await this.contract.setCategoryLimitFor(
-        walletAddress,
-        category,
-        limit
-      );
-      await tx2.wait();
+      const updateTx = await this.contract.setCategoryLimitFor(walletAddress, category, limit);
+      await updateTx.wait();
     }
   }
-
   async get(walletAddress: string): Promise<Policy> {
     const [policyHash, policyDataBytes] = await this.contract.getPolicy(walletAddress);
-    let categories: Record<string, { limitPerTx: bigint }> = {};
-
+    const categories: Policy["categories"] = {};
     if (policyDataBytes && policyDataBytes !== "0x") {
-      try {
-        const policyStr = ethers.toUtf8String(policyDataBytes);
-        const parsed = JSON.parse(policyStr);
-        for (const [k, v] of Object.entries(parsed)) {
-          categories[k] = { limitPerTx: BigInt(v as string) };
-        }
-      } catch {
-        // empty policy
-      }
+      const parsed = JSON.parse(ethers.toUtf8String(policyDataBytes));
+      for (const [key, value] of Object.entries(parsed)) categories[key] = { limitPerTx: BigInt(value as string) };
     }
-
-    return {
-      walletAddress,
-      policyHash,
-      categories,
-    };
+    return { walletAddress, policyHash, categories };
   }
-
-  async validate(
-    walletAddress: string,
-    category: string,
-    amount: bigint
-  ): Promise<{ valid: boolean; reason?: string }> {
-    const [valid, reason] = await this.contract.validateSpend(
-      walletAddress,
-      category,
-      amount,
-      ethers.ZeroHash
-    );
+  async validate(walletAddress: string, category: string, amount: bigint) {
+    const [valid, reason] = await this.contract.validateSpend(walletAddress, category, amount, ethers.ZeroHash);
     return { valid, reason: valid ? undefined : reason };
   }
-}
 
-export class PolicyObject extends PolicyClient {}
-export class PolicyValidator {
-  static validate(policy: Policy, category: string, amount: bigint): boolean {
-    const limit = policy.categories[category];
-    if (!limit) return false;
-    return amount <= limit.limitPerTx;
+  /** Freeze spend for a wallet. Callable by the wallet, its owner, or an authorized freeze agent. */
+  async freezeSpend(wallet: string): Promise<ethers.TransactionReceipt> {
+    const tx = await this.contract.freezeSpend(wallet);
+    return (await tx.wait())!;
+  }
+
+  /** Unfreeze spend for a wallet. Only callable by the wallet or its registered owner. */
+  async unfreeze(wallet: string): Promise<ethers.TransactionReceipt> {
+    const tx = await this.contract.unfreeze(wallet);
+    return (await tx.wait())!;
+  }
+
+  /** Authorize a watchtower agent to freeze this wallet's spending. Caller must be the wallet. */
+  async authorizeFreezeAgent(agent: string): Promise<ethers.TransactionReceipt> {
+    const tx = await this.contract.authorizeFreezeAgent(agent);
+    return (await tx.wait())!;
+  }
+
+  /** Revoke a watchtower agent's freeze authorization. */
+  async revokeFreezeAgent(agent: string): Promise<ethers.TransactionReceipt> {
+    const tx = await this.contract.revokeFreezeAgent(agent);
+    return (await tx.wait())!;
+  }
+
+  /**
+   * Queue a daily-limit reduction for wallet+category. Only reductions (newCap < current) are allowed.
+   * A 24-hour timelock applies before the new cap can be applied.
+   */
+  async queueCapReduction(wallet: string, category: string, newCap: bigint): Promise<ethers.TransactionReceipt> {
+    const tx = await this.contract.queueCapReduction(wallet, category, newCap);
+    return (await tx.wait())!;
+  }
+
+  /** Apply a queued cap reduction after the 24-hour timelock has elapsed. */
+  async applyCapReduction(wallet: string, category: string): Promise<ethers.TransactionReceipt> {
+    const tx = await this.contract.applyCapReduction(wallet, category);
+    return (await tx.wait())!;
   }
 }
+export class PolicyObject extends PolicyClient {}
+export class PolicyValidator { static validate(policy: Policy, category: string, amount: bigint) { return !!policy.categories[category] && amount <= policy.categories[category].limitPerTx; } }

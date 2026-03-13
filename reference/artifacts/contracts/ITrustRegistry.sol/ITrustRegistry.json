@@ -11,6 +11,25 @@
           "type": "address"
         }
       ],
+      "name": "getEffectiveScore",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "score",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "wallet",
+          "type": "address"
+        }
+      ],
       "name": "getScore",
       "outputs": [
         {
@@ -41,6 +60,21 @@
           "internalType": "address",
           "name": "wallet",
           "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "counterparty",
+          "type": "address"
+        },
+        {
+          "internalType": "string",
+          "name": "capability",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "agreementValueWei",
+          "type": "uint256"
         }
       ],
       "name": "recordAnomaly",
@@ -52,8 +86,41 @@
       "inputs": [
         {
           "internalType": "address",
+          "name": "arbitrator",
+          "type": "address"
+        },
+        {
+          "internalType": "string",
+          "name": "reason",
+          "type": "string"
+        }
+      ],
+      "name": "recordArbitratorSlash",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
           "name": "wallet",
           "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "counterparty",
+          "type": "address"
+        },
+        {
+          "internalType": "string",
+          "name": "capability",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "agreementValueWei",
+          "type": "uint256"
         }
       ],
       "name": "recordSuccess",

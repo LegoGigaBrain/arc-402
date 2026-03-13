@@ -1,159 +1,81 @@
+import { ContractRunner } from "ethers";
+import { AGENT_REGISTRY_ABI } from "./contracts";
 import { ethers } from "ethers";
+import { AgentInfo, OperationalMetrics } from "./types";
 
-// ─── ABI ────────────────────────────────────────────────────────────────────
-// Extracted directly from AgentRegistry.sol + IAgentRegistry.sol
-
-const AGENT_REGISTRY_ABI = [
-  // Write
-  "function register(string calldata name, string[] calldata capabilities, string calldata serviceType, string calldata endpoint, string calldata metadataURI) external",
-  "function update(string calldata name, string[] calldata capabilities, string calldata serviceType, string calldata endpoint, string calldata metadataURI) external",
-  "function deactivate() external",
-  "function reactivate() external",
-
-  // Read
-  "function getAgent(address wallet) external view returns (tuple(address wallet, string name, string[] capabilities, string serviceType, string endpoint, string metadataURI, bool active, uint256 registeredAt) info)",
-  "function isRegistered(address wallet) external view returns (bool)",
-  "function isActive(address wallet) external view returns (bool)",
-  "function getCapabilities(address wallet) external view returns (string[])",
-  "function getTrustScore(address wallet) external view returns (uint256)",
-  "function agentCount() external view returns (uint256)",
-  "function getAgentAtIndex(uint256 index) external view returns (address)",
-
-  // Events
-  "event AgentRegistered(address indexed wallet, string name, string serviceType, uint256 timestamp)",
-  "event AgentUpdated(address indexed wallet, string name, string serviceType)",
-  "event AgentDeactivated(address indexed wallet)",
-  "event AgentReactivated(address indexed wallet)",
-];
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-export interface AgentInfo {
-  wallet: string;
+export interface AgentRegistrationInput {
   name: string;
   capabilities: string[];
   serviceType: string;
   endpoint: string;
-  metadataURI: string;
-  active: boolean;
-  registeredAt: bigint;
-  /** Fetched from the shared TrustRegistry via AgentRegistry.getTrustScore() */
-  trustScore: bigint;
+  metadataURI?: string;
 }
-
-// ─── Client ──────────────────────────────────────────────────────────────────
 
 export class AgentRegistryClient {
   private contract: ethers.Contract;
 
-  constructor(address: string, signerOrProvider: ethers.Signer | ethers.Provider) {
-    this.contract = new ethers.Contract(address, AGENT_REGISTRY_ABI, signerOrProvider);
+  constructor(address: string, runner: ContractRunner) {
+    this.contract = new ethers.Contract(address, AGENT_REGISTRY_ABI, runner);
   }
 
-  // ── Write (require signer) ────────────────────────────────────────────────
-
-  async register(
-    name: string,
-    capabilities: string[],
-    serviceType: string,
-    endpoint: string,
-    metadataURI: string
-  ): Promise<ethers.TransactionReceipt> {
-    const tx = await this.contract.register(name, capabilities, serviceType, endpoint, metadataURI);
+  async register(input: AgentRegistrationInput) {
+    const tx = await this.contract.register(input.name, input.capabilities, input.serviceType, input.endpoint, input.metadataURI ?? "");
     return tx.wait();
   }
 
-  async update(
-    name: string,
-    capabilities: string[],
-    serviceType: string,
-    endpoint: string,
-    metadataURI: string
-  ): Promise<ethers.TransactionReceipt> {
-    const tx = await this.contract.update(name, capabilities, serviceType, endpoint, metadataURI);
+  async update(input: AgentRegistrationInput) {
+    const tx = await this.contract.update(input.name, input.capabilities, input.serviceType, input.endpoint, input.metadataURI ?? "");
     return tx.wait();
   }
 
-  async deactivate(): Promise<ethers.TransactionReceipt> {
-    const tx = await this.contract.deactivate();
+  async deactivate() { const tx = await this.contract.deactivate(); return tx.wait(); }
+  async reactivate() { const tx = await this.contract.reactivate(); return tx.wait(); }
+  async submitHeartbeat(latencyMs: number) { const tx = await this.contract.submitHeartbeat(latencyMs); return tx.wait(); }
+  async setHeartbeatPolicy(intervalSeconds: number, gracePeriodSeconds: number) {
+    const tx = await this.contract.setHeartbeatPolicy(intervalSeconds, gracePeriodSeconds);
     return tx.wait();
   }
-
-  async reactivate(): Promise<ethers.TransactionReceipt> {
-    const tx = await this.contract.reactivate();
-    return tx.wait();
-  }
-
-  // ── Read ──────────────────────────────────────────────────────────────────
 
   async getAgent(wallet: string): Promise<AgentInfo> {
-    const [raw, trustScore] = await Promise.all([
-      this.contract.getAgent(wallet),
-      this.contract.getTrustScore(wallet),
-    ]);
-    return this._toAgentInfo(raw, BigInt(trustScore));
-  }
-
-  async isRegistered(wallet: string): Promise<boolean> {
-    return this.contract.isRegistered(wallet);
-  }
-
-  async isActive(wallet: string): Promise<boolean> {
-    return this.contract.isActive(wallet);
-  }
-
-  async getCapabilities(wallet: string): Promise<string[]> {
-    return this.contract.getCapabilities(wallet);
-  }
-
-  async getTrustScore(wallet: string): Promise<bigint> {
-    return BigInt(await this.contract.getTrustScore(wallet));
-  }
-
-  async agentCount(): Promise<bigint> {
-    return BigInt(await this.contract.agentCount());
-  }
-
-  async getAgentAtIndex(index: number): Promise<AgentInfo> {
-    const walletAddr: string = await this.contract.getAgentAtIndex(index);
-    return this.getAgent(walletAddr);
-  }
-
-  // ── Utility ───────────────────────────────────────────────────────────────
-
-  /**
-   * List up to `limit` agents by iterating `getAgentAtIndex`.
-   * Defaults to all agents if limit is not provided.
-   */
-  async listAgents(limit?: number): Promise<AgentInfo[]> {
-    const count = Number(await this.agentCount());
-    const end = limit !== undefined ? Math.min(limit, count) : count;
-    const indices = Array.from({ length: end }, (_, i) => i);
-    return Promise.all(indices.map((i) => this.getAgentAtIndex(i)));
-  }
-
-  /**
-   * Filter agents by capability string (client-side scan).
-   * Fetches up to `limit` agents before filtering.
-   */
-  async findByCapability(capability: string, limit?: number): Promise<AgentInfo[]> {
-    const all = await this.listAgents(limit);
-    return all.filter((a) => a.capabilities.includes(capability));
-  }
-
-  // ── Internal ─────────────────────────────────────────────────────────────
-
-  private _toAgentInfo(raw: ethers.Result, trustScore: bigint): AgentInfo {
+    const [raw, trustScore] = await Promise.all([this.contract.getAgent(wallet), this.contract.getTrustScore(wallet)]);
     return {
-      wallet:      raw.wallet as string,
-      name:        raw.name as string,
-      capabilities: Array.from(raw.capabilities as string[]),
-      serviceType: raw.serviceType as string,
-      endpoint:    raw.endpoint as string,
-      metadataURI: raw.metadataURI as string,
-      active:      raw.active as boolean,
+      wallet: raw.wallet,
+      name: raw.name,
+      capabilities: [...raw.capabilities],
+      serviceType: raw.serviceType,
+      endpoint: raw.endpoint,
+      metadataURI: raw.metadataURI,
+      active: raw.active,
       registeredAt: BigInt(raw.registeredAt),
-      trustScore,
+      endpointChangedAt: BigInt(raw.endpointChangedAt),
+      endpointChangeCount: BigInt(raw.endpointChangeCount),
+      trustScore: BigInt(trustScore),
     };
+  }
+
+  async getOperationalMetrics(wallet: string): Promise<OperationalMetrics> {
+    const raw = await this.contract.getOperationalMetrics(wallet);
+    return {
+      heartbeatInterval: BigInt(raw.heartbeatInterval),
+      heartbeatGracePeriod: BigInt(raw.heartbeatGracePeriod),
+      lastHeartbeatAt: BigInt(raw.lastHeartbeatAt),
+      rollingLatency: BigInt(raw.rollingLatency),
+      heartbeatCount: BigInt(raw.heartbeatCount),
+      missedHeartbeatCount: BigInt(raw.missedHeartbeatCount),
+      uptimeScore: BigInt(raw.uptimeScore),
+      responseScore: BigInt(raw.responseScore),
+    };
+  }
+
+  async listAgents(limit?: number): Promise<AgentInfo[]> {
+    const count = Number(await this.contract.agentCount());
+    const end = limit ? Math.min(limit, count) : count;
+    const addresses = await Promise.all(Array.from({ length: end }, (_, i) => this.contract.getAgentAtIndex(i)));
+    return Promise.all(addresses.map((address: string) => this.getAgent(address)));
+  }
+
+  async findByCapability(capability: string, limit?: number): Promise<AgentInfo[]> {
+    const agents = await this.listAgents(limit);
+    return agents.filter((agent) => agent.capabilities.includes(capability));
   }
 }

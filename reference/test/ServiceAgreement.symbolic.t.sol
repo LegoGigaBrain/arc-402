@@ -24,6 +24,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/ServiceAgreement.sol";
+import "../contracts/DisputeModule.sol";
 import "../contracts/TrustRegistry.sol";
 import "../contracts/IServiceAgreement.sol";
 
@@ -42,6 +43,8 @@ contract ServiceAgreementSymbolic is Test {
         trustReg = new TrustRegistry();
         sa = new ServiceAgreement(address(trustReg));
         trustReg.addUpdater(address(sa));
+        DisputeModule dm = new DisputeModule(address(sa));
+        sa.setDisputeModule(address(dm));
         vm.deal(CLIENT, 100 ether);
         vm.deal(PROVIDER, 10 ether);
     }
@@ -244,9 +247,9 @@ contract ServiceAgreementSymbolic is Test {
             assert(false);
         } catch {}
 
-        // Stranger cannot resolveDispute (not owner)
+        // Stranger cannot resolveDisputeDetailed (not owner)
         vm.prank(STRANGER);
-        try sa.resolveDispute(id, true) {
+        try sa.resolveDisputeDetailed(id, IServiceAgreement.DisputeOutcome.PROVIDER_WINS, PRICE, 0) {
             assert(false);
         } catch {}
 
@@ -312,8 +315,14 @@ contract ServiceAgreementSymbolic is Test {
         uint256 id = _proposeAndAccept(deadline);
 
         // Agreement is ACCEPTED (not DISPUTED)
-        // resolveDispute() must revert
-        try sa.resolveDispute(id, favorProvider) {
+        // resolveDisputeDetailed() must revert
+        uint256 price = sa.getAgreement(id).price;
+        try sa.resolveDisputeDetailed(
+            id,
+            favorProvider ? IServiceAgreement.DisputeOutcome.PROVIDER_WINS : IServiceAgreement.DisputeOutcome.CLIENT_REFUND,
+            favorProvider ? price : 0,
+            favorProvider ? 0 : price
+        ) {
             assert(false); // should not succeed
         } catch {}
 

@@ -1,110 +1,289 @@
 import { Command } from "commander";
-import chalk from "chalk";
-import ora from "ora";
 import { ethers } from "ethers";
+import { AgentRegistryClient, CapabilityRegistryClient, ReputationOracleClient, SponsorshipAttestationClient } from "@arc402/sdk";
 import { loadConfig } from "../config";
 import { getClient } from "../client";
-import { AGENT_REGISTRY_ABI } from "../abis";
-import { AgentRow, printAgentTable } from "../utils/format";
+import { getTrustTier, printTable, truncateAddress } from "../utils/format";
+
+// Minimal ABI for the new getAgentsWithCapability function (Spec 18)
+const CAPABILITY_REGISTRY_EXTRA_ABI = [
+  "function getAgentsWithCapability(string calldata capability) external view returns (address[])",
+];
+
+// ─── Composite scoring helpers ────────────────────────────────────────────────
+
+interface ScoredAgent {
+  wallet: string;
+  name: string;
+  serviceType: string;
+  endpoint: string;
+  metadataURI: string;
+  capabilities: string[];
+  canonicalCapabilities: string[];
+  trustScore: number;
+  stake: bigint;
+  completedJobs: number;
+  priceUsd: number | null;
+  compositeScore: number;
+  rank: number;
+  operational: { uptimeScore: number; responseScore: number };
+  highestTier?: unknown;
+  reputation?: unknown;
+}
+
+function normalise(values: number[]): number[] {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
+  if (range === 0) return values.map(() => 1);
+  return values.map((v) => (v - min) / range);
+}
+
+function computeCompositeScores(agents: Omit<ScoredAgent, "compositeScore" | "rank">[]): ScoredAgent[] {
+  if (agents.length === 0) return [];
+
+  const trustVals = normalise(agents.map((a) => a.trustScore));
+  const stakeVals = normalise(agents.map((a) => Number(a.stake)));
+  const jobsVals  = normalise(agents.map((a) => a.completedJobs));
+
+  // Price: lower is better — invert. Missing price gets neutral 0.5.
+  const rawPrices   = agents.map((a) => (a.priceUsd !== null ? a.priceUsd : -1));
+  const validPrices = rawPrices.filter((p) => p >= 0);
+  const maxPrice    = validPrices.length > 0 ? Math.max(...validPrices) : 1;
+  const priceInvVals = rawPrices.map((p) =>
+    p < 0 ? 0.5 : maxPrice > 0 ? 1 - p / maxPrice : 1
+  );
+
+  return agents.map((agent, i) => ({
+    ...agent,
+    compositeScore:
+      trustVals[i]    * 0.5 +
+      stakeVals[i]    * 0.2 +
+      jobsVals[i]     * 0.2 +
+      priceInvVals[i] * 0.1,
+    rank: 0, // filled after sort
+  }));
+}
+
+// ─── Command ──────────────────────────────────────────────────────────────────
 
 export function registerDiscoverCommand(program: Command): void {
   program
     .command("discover")
-    .description("Discover registered agents on-chain")
-    .option("--capability <cap>", "Filter by capability (substring match)")
-    .option("--service-type <type>", "Filter by service type")
-    .option("--min-trust <score>", "Minimum trust score", "0")
-    .option("--limit <n>", "Maximum results", "10")
-    .option("--json", "Output raw JSON")
+    .description(
+      "Discover agents by capability with trust/price/stake filters and composite ranking (Specs 16, 18)"
+    )
+    .option("--capability <cap>",        "Exact canonical capability (e.g. legal.patent-analysis.us.v1)")
+    .option("--capability-prefix <pfx>", "Prefix match against registered capabilities")
+    .option("--service-type <type>",     "Filter by serviceType substring")
+    .option("--min-trust <score>",       "Minimum trust score", "0")
+    .option("--max-price <usd>",         "Maximum price in USD (from agent metadataURI, best-effort)", "0")
+    .option("--min-stake <wei>",         "Minimum stake in wei", "0")
+    .option("--sort <field>",            "Sort by: trust | price | jobs | stake | composite", "composite")
+    .option("--limit <n>",               "Max results", "20")
+    .option("--json",                    "Machine-parseable output")
     .action(async (opts) => {
       const config = loadConfig();
+      if (!config.agentRegistryAddress) throw new Error("agentRegistryAddress missing in config");
       const { provider } = await getClient(config);
-      const registry = new ethers.Contract(
-        config.agentRegistryAddress,
-        AGENT_REGISTRY_ABI,
-        provider
+
+      const registry     = new AgentRegistryClient(config.agentRegistryAddress, provider);
+      const capabilitySDK = config.capabilityRegistryAddress
+        ? new CapabilityRegistryClient(config.capabilityRegistryAddress, provider)
+        : null;
+      const sponsorship  = config.sponsorshipAttestationAddress
+        ? new SponsorshipAttestationClient(config.sponsorshipAttestationAddress, provider)
+        : null;
+      const reputation   = config.reputationOracleAddress
+        ? new ReputationOracleClient(config.reputationOracleAddress, provider)
+        : null;
+
+      const limit       = Number(opts.limit);
+      const minTrust    = Number(opts.minTrust);
+      const maxPriceUsd = Number(opts.maxPrice);   // 0 = no filter
+      const minStakeWei = BigInt(opts.minStake);
+
+      // ── Step 1: Get candidate addresses ─────────────────────────────────────
+
+      let candidateAddresses: string[] | null = null;
+
+      if (opts.capability && config.capabilityRegistryAddress) {
+        // Use the reverse index for O(1) exact-match (Spec 18: getAgentsWithCapability)
+        const capContract = new ethers.Contract(
+          config.capabilityRegistryAddress,
+          CAPABILITY_REGISTRY_EXTRA_ABI,
+          provider
+        );
+        try {
+          const addrs: string[] = await capContract.getAgentsWithCapability(opts.capability);
+          candidateAddresses = addrs;
+        } catch {
+          // Contract may not have been upgraded yet; fall through to listAgents
+        }
+      }
+
+      // ── Step 2: Load agent data ───────────────────────────────────────────
+
+      let agentInfos: Awaited<ReturnType<typeof registry.listAgents>>;
+
+      if (candidateAddresses !== null) {
+        const results = await Promise.allSettled(
+          candidateAddresses.map((addr) => registry.getAgent(addr))
+        );
+        agentInfos = results
+          .filter((r): r is PromiseFulfilledResult<typeof agentInfos[number]> => r.status === "fulfilled")
+          .map((r) => r.value);
+      } else {
+        agentInfos = await registry.listAgents(limit * 10);
+      }
+
+      // ── Step 3: Apply filters ────────────────────────────────────────────
+
+      let filtered = agentInfos.filter((a) => a.active !== false);
+
+      if (opts.capability) {
+        filtered = filtered.filter((a) =>
+          a.capabilities.some((c: string) => c === opts.capability)
+        );
+      }
+
+      if (opts.capabilityPrefix) {
+        filtered = filtered.filter((a) =>
+          a.capabilities.some((c: string) => c.startsWith(opts.capabilityPrefix as string))
+        );
+      }
+
+      if (opts.serviceType) {
+        filtered = filtered.filter((a) =>
+          a.serviceType.toLowerCase().includes(String(opts.serviceType).toLowerCase())
+        );
+      }
+
+      filtered = filtered.filter((a) => Number(a.trustScore ?? 0n) >= minTrust);
+
+      if (minStakeWei > 0n) {
+        filtered = filtered.filter((a) => {
+          const stake = (a as unknown as { stake?: bigint }).stake ?? 0n;
+          return BigInt(stake) >= minStakeWei;
+        });
+      }
+
+      // ── Step 4: Enrich ──────────────────────────────────────────────────
+
+      const enriched = await Promise.all(
+        filtered.slice(0, limit * 5).map(async (agent) => {
+          const [operational, canonicalCapabilities, highestTier, rep] = await Promise.all([
+            registry.getOperationalMetrics(agent.wallet),
+            capabilitySDK ? capabilitySDK.getCapabilities(agent.wallet) : Promise.resolve([]),
+            sponsorship ? sponsorship.getHighestTier(agent.wallet) : Promise.resolve(undefined),
+            reputation ? reputation.getReputation(agent.wallet) : Promise.resolve(undefined),
+          ]);
+
+          // Best-effort metadata fetch for priceUsd
+          let priceUsd: number | null = null;
+          if (agent.metadataURI && /^https?:\/\//.test(agent.metadataURI)) {
+            try {
+              const ctrl = new AbortController();
+              const tid = setTimeout(() => ctrl.abort(), 2000);
+              const resp = await fetch(agent.metadataURI, { signal: ctrl.signal });
+              clearTimeout(tid);
+              if (resp.ok) {
+                const meta = await resp.json() as { pricing?: { priceUsd?: number } };
+                if (meta.pricing?.priceUsd != null) priceUsd = meta.pricing.priceUsd;
+              }
+            } catch { /* ignore — advisory only */ }
+          }
+
+          // Apply max-price filter post-enrichment
+          if (maxPriceUsd > 0 && priceUsd !== null && priceUsd > maxPriceUsd) {
+            return null;
+          }
+
+          const repObj = rep && typeof rep === "object" ? (rep as unknown) as Record<string, unknown> : {};
+
+          return {
+            wallet: agent.wallet,
+            name: agent.name,
+            serviceType: agent.serviceType,
+            endpoint: agent.endpoint,
+            metadataURI: agent.metadataURI,
+            capabilities: agent.capabilities as string[],
+            canonicalCapabilities: canonicalCapabilities as string[],
+            trustScore: Number(agent.trustScore ?? 0n),
+            stake: (agent as unknown as { stake?: bigint }).stake ?? 0n,
+            completedJobs: Number(repObj.completedJobs ?? 0),
+            priceUsd,
+            compositeScore: 0,
+            rank: 0,
+            operational: {
+              uptimeScore: Number(operational.uptimeScore),
+              responseScore: Number(operational.responseScore),
+            },
+            highestTier,
+            reputation: rep,
+          } as Omit<ScoredAgent, "compositeScore" | "rank">;
+        })
       );
 
-      const spinner = ora("Fetching agents from chain…").start();
+      const validAgents = enriched.filter((a): a is Omit<ScoredAgent, "compositeScore" | "rank"> => a !== null);
 
-      try {
-        const count = Number(await registry.agentCount());
-        if (count === 0) {
-          spinner.succeed("No agents registered yet.");
-          return;
-        }
+      // ── Step 5: Score ──────────────────────────────────────────────────────
 
-        const limit = Math.min(count, parseInt(opts.limit, 10));
-        const minTrust = parseInt(opts.minTrust, 10);
+      let scored = computeCompositeScores(validAgents);
 
-        // Fetch all agent addresses
-        const addresses: string[] = [];
-        for (let i = 0; i < count; i++) {
-          addresses.push(await registry.getAgentAtIndex(i));
-        }
-
-        // Fetch all agent data in parallel
-        const results = await Promise.allSettled(
-          addresses.map(async (addr) => {
-            const [info, score] = await Promise.all([
-              registry.getAgent(addr),
-              registry.getTrustScore(addr),
-            ]);
-            return {
-              address: String(info.wallet),
-              name: String(info.name),
-              capabilities: [...info.capabilities] as string[],
-              serviceType: String(info.serviceType),
-              trust: Number(score),
-              active: Boolean(info.active),
-            } as AgentRow;
-          })
-        );
-
-        let agents: AgentRow[] = results
-          .filter(
-            (r): r is PromiseFulfilledResult<AgentRow> => r.status === "fulfilled"
-          )
-          .map((r) => r.value);
-
-        // Filter
-        if (opts.capability) {
-          const cap = opts.capability.toLowerCase();
-          agents = agents.filter((a) =>
-            a.capabilities.some((c) => c.toLowerCase().includes(cap))
-          );
-        }
-        if (opts.serviceType) {
-          const st = opts.serviceType.toLowerCase();
-          agents = agents.filter((a) =>
-            a.serviceType.toLowerCase().includes(st)
-          );
-        }
-        agents = agents.filter((a) => a.trust >= minTrust);
-
-        // Sort by trust descending
-        agents.sort((a, b) => b.trust - a.trust);
-
-        // Limit
-        agents = agents.slice(0, limit);
-
-        spinner.succeed(`Found ${agents.length} agent(s)`);
-
-        if (agents.length === 0) {
-          console.log(chalk.gray("  No agents match the given filters."));
-          return;
-        }
-
-        if (opts.json) {
-          console.log(JSON.stringify(agents, null, 2));
-          return;
-        }
-
-        printAgentTable(agents);
-      } catch (err: unknown) {
-        spinner.fail(chalk.red("Discovery failed"));
-        console.error(err instanceof Error ? err.message : String(err));
-        process.exit(1);
+      // Sort
+      switch (opts.sort) {
+        case "trust":
+          scored.sort((a, b) => b.trustScore - a.trustScore);
+          break;
+        case "price":
+          scored.sort((a, b) => {
+            if (a.priceUsd === null && b.priceUsd === null) return 0;
+            if (a.priceUsd === null) return 1;
+            if (b.priceUsd === null) return -1;
+            return a.priceUsd - b.priceUsd;
+          });
+          break;
+        case "jobs":
+          scored.sort((a, b) => b.completedJobs - a.completedJobs);
+          break;
+        case "stake":
+          scored.sort((a, b) => (b.stake > a.stake ? 1 : b.stake < a.stake ? -1 : 0));
+          break;
+        default: // "composite"
+          scored.sort((a, b) => b.compositeScore - a.compositeScore);
       }
+
+      // Assign 1-based ranks after sort
+      scored = scored.slice(0, limit).map((a, i) => ({ ...a, rank: i + 1 }));
+
+      // ── Step 6: Output ─────────────────────────────────────────────────────
+
+      if (opts.json) {
+        return console.log(JSON.stringify(
+          scored,
+          (_k, value) => typeof value === "bigint" ? value.toString() : value,
+          2
+        ));
+      }
+
+      printTable(
+        ["RANK", "ADDRESS", "NAME", "SERVICE", "TRUST", "SCORE", "CAPABILITIES"],
+        scored.map((agent) => {
+          const caps = (agent.canonicalCapabilities.length
+            ? agent.canonicalCapabilities
+            : agent.capabilities
+          ).slice(0, 2).join(", ");
+          return [
+            String(agent.rank),
+            truncateAddress(agent.wallet),
+            agent.name,
+            agent.serviceType,
+            `${agent.trustScore} ${getTrustTier(agent.trustScore)}`,
+            agent.compositeScore.toFixed(3),
+            caps,
+          ];
+        })
+      );
     });
 }

@@ -147,6 +147,111 @@ Total evaluation time: <100ms. The negotiation diagram in the design session too
 
 ---
 
+## Message Authentication (Required — v1)
+
+Every negotiation message MUST include a signature and timestamp. Receivers MUST verify before processing.
+
+### Required fields on all messages
+
+All four message types (PROPOSE, COUNTER, ACCEPT, REJECT) now require:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `timestamp` | number | Unix seconds. Receiver rejects if \|now - timestamp\| > 60s |
+| `sig` | string | ECDSA signature over `keccak256(abi.encodePacked(type, from, to, nonce, timestamp))` |
+
+PROPOSE additionally requires:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `expiresAt` | number | Unix seconds. Max: timestamp + 86400 (24h). Receiver rejects expired proposals. |
+
+### Signature computation
+
+```
+digest = keccak256(abi.encodePacked(
+  message.type,    // "PROPOSE", "COUNTER", etc.
+  message.from,    // address
+  message.to,      // address
+  nonce,           // message.nonce (PROPOSE) or message.refNonce (COUNTER/ACCEPT/REJECT) or bytes32(0)
+  message.timestamp
+))
+sig = agentKey.sign(digest)
+```
+
+### Receiver verification (required)
+
+Before processing any negotiation message, receivers MUST:
+
+1. Verify message size ≤ 64KB — drop oversized messages
+2. Verify `|now - timestamp| ≤ 60s` — reject (408) if stale
+3. Verify `now ≤ expiresAt` (PROPOSE only) — reject (410) if expired
+4. Recover signer from `sig` — reject (401) if recovery fails
+5. Verify recovered signer == `from` field — reject (401) if mismatch
+6. Verify `from` is registered in AgentRegistry — reject (401) if not found
+7. Verify nonce not seen before (24h cache, keyed by from + nonce + timestamp) — reject (409) if replay
+
+### SDK support
+
+The `@arc402/sdk` provides:
+- `createSignedProposal`, `createSignedCounter`, `createSignedAccept`, `createSignedReject` — factory functions that sign automatically
+- `NegotiationGuard` — receiver-side verification class with nonce cache
+- `parseNegotiationMessage` — validates size limit before parsing
+
+### Why fail open on registry downtime
+
+Step 6 (registry check) fails open: if AgentRegistry is unreachable, signature verification alone is used. This prevents protocol-wide negotiation outage from a single registry downtime event. The tradeoff: deregistered agents can still negotiate during registry downtime. Acceptable for v1.
+
+---
+
+## CLI as Secure Communication Layer
+
+The ARC-402 CLI is not just a convenience interface for on-chain operations. It is the secure agent communication layer — the trust infrastructure that replaced MCP-based negotiation.
+
+### What the CLI manages
+
+- **Session lifecycle**: Each negotiation has a unique session ID (`keccak256(initiator + responder + timestamp + nonce)`). All messages attach to the session.
+- **Automatic signing**: Every outbound message is signed with the sender's agent key. No unsigned messages enter the system.
+- **Local session store**: Sessions are persisted at `~/.arc402/sessions/<sessionId>.json`. Full message history, state, and transcript hash are retained.
+- **Transcript integrity**: On ACCEPT or REJECT, `transcriptHash = keccak256(JSON.stringify(messages))` is computed and stored. This is the tamper-evident record of the negotiation.
+- **On-chain linkage**: `arc402 hire --session <sessionId>` loads agreed price/deadline from the session, derives `deliverablesHash` incorporating the transcript hash, and records the on-chain agreement ID back to the session file.
+
+### Handshake before negotiation
+
+Before opening a session, either party can run `arc402 handshake <agentAddress>` to perform mutual identity verification:
+1. Checks both parties are registered and active in `AgentRegistry`
+2. Generates a signed challenge nonce (`keccak256(HANDSHAKE + from + to + nonce + timestamp)`)
+3. Outputs the signed challenge for relay to the counterparty's endpoint
+
+### CLI command reference
+
+```
+arc402 handshake <agentAddress>               # Mutual challenge-response auth
+arc402 negotiate propose --to --service-type --price --deadline --spec
+arc402 negotiate counter <sessionId>          # Send a signed counter-offer
+arc402 negotiate accept <sessionId>           # Accept, close session, compute transcript hash
+arc402 negotiate reject <sessionId>           # Reject and close session
+arc402 negotiate verify --message <json>      # Verify an incoming message
+arc402 negotiate session list                 # List all sessions
+arc402 negotiate session show <sessionId>     # Full session detail + transcript hash
+arc402 negotiate transcript show <sessionId>  # Show transcript hash only
+arc402 hire --session <sessionId>             # Commit agreed terms on-chain
+```
+
+### Why CLI over MCP
+
+MCP provides tool-call scaffolding but cannot enforce authentication, session continuity, or tamper-evident transcripts. The CLI owns these guarantees:
+
+| Concern | MCP | CLI (this design) |
+|---------|-----|-------------------|
+| Message authentication | None | ECDSA sig on every message |
+| Session continuity | None | Persistent session files with full history |
+| Transcript integrity | None | keccak256 over ordered message array |
+| On-chain linkage | Manual | `--session` flag threads session → agreement |
+| Identity verification | None | AgentRegistry check before first message |
+
+---
+
 ## Future Extensions
 
 **Auction mode:** Client broadcasts PROPOSE to N providers simultaneously. First ACCEPT wins. Useful for commodity services.

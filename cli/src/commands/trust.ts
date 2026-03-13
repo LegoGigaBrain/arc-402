@@ -1,56 +1,15 @@
 import { Command } from "commander";
-import chalk from "chalk";
-import { ethers } from "ethers";
+import { ReputationOracleClient, SponsorshipAttestationClient, TrustClient } from "@arc402/sdk";
 import { loadConfig } from "../config";
 import { getClient } from "../client";
-import { TRUST_REGISTRY_ABI } from "../abis";
-import { getTrustTier } from "../utils/format";
+import { getTrustTier, identityTierLabel } from "../utils/format";
 
 export function registerTrustCommand(program: Command): void {
-  program
-    .command("trust <address>")
-    .description("Look up the trust score for an address")
-    .option("--json", "Output raw JSON")
-    .action(async (address: string, opts) => {
-      const config = loadConfig();
-      const { provider } = await getClient(config);
-
-      const trust = new ethers.Contract(
-        config.trustRegistryAddress,
-        TRUST_REGISTRY_ABI,
-        provider
-      );
-
-      try {
-        const score = await trust.getScore(address);
-        const scoreNum = Number(score);
-        const tier = getTrustTier(scoreNum);
-
-        if (opts.json) {
-          console.log(
-            JSON.stringify({ address, score: scoreNum, tier }, null, 2)
-          );
-          return;
-        }
-
-        console.log(chalk.cyan(`\n─── Trust Score: ${address} ─────────────────`));
-        console.log(
-          `  Score: ${chalk.bold(String(scoreNum))} / 1000`
-        );
-        console.log(`  Tier:  ${chalk.bold(tier)}`);
-
-        // Visual bar
-        const filled = Math.round(scoreNum / 50);
-        const bar =
-          chalk.green("█".repeat(filled)) + chalk.gray("░".repeat(20 - filled));
-        console.log(`  ${bar}`);
-        console.log();
-      } catch (err: unknown) {
-        console.error(
-          chalk.red("Trust lookup failed:"),
-          err instanceof Error ? err.message : String(err)
-        );
-        process.exit(1);
-      }
-    });
+  program.command("trust <address>").description("Look up trust plus secondary sponsorship/reputation signals for an address").option("--json").action(async (address, opts) => {
+    const config = loadConfig(); const { provider } = await getClient(config); const trust = new TrustClient(config.trustRegistryAddress, provider);
+    const score = await trust.getScore(address); const sponsorship = config.sponsorshipAttestationAddress ? new SponsorshipAttestationClient(config.sponsorshipAttestationAddress, provider) : null; const reputation = config.reputationOracleAddress ? new ReputationOracleClient(config.reputationOracleAddress, provider) : null;
+    const highestTier = sponsorship ? await sponsorship.getHighestTier(address) : undefined; const rep = reputation ? await reputation.getReputation(address) : undefined;
+    if (opts.json) return console.log(JSON.stringify({ address, score, highestTier, reputation: rep }, (_k, value) => typeof value === 'bigint' ? value.toString() : value, 2));
+    console.log(`score=${score.score} tier=${getTrustTier(score.score)} next=${score.nextLevelAt}${highestTier !== undefined ? ` sponsorship=${identityTierLabel(highestTier)}` : ''}${rep ? ` reputation=${rep.weightedScore}` : ''}`);
+  });
 }

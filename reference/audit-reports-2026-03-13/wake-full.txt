@@ -1,0 +1,558 @@
+[11:54:51] Found 37 *.sol files in 0.07 s                          detect.py:729
+[11:54:52] Loaded previous build in 1.08 s                       compiler.py:869
+           Compiled 0 files using 0 solc runs in 0.00 s         compiler.py:1249
+           Processed compilation results in 0.01 s              compiler.py:1502
+
+
+╭─ [MEDIUM][HIGH] Unsafe variant of ERC-20 call [unsafe-erc20-call] ───────────╮
+│   462                                                                        │
+│   463         // 2. Per-tx ERC-20 approval — NOT infinite                    │
+│   464         if (params.approvalToken != address(0) && params.maxApprovalAm │
+│ ❱ 465             IERC20(params.approvalToken).approve(params.target, params │
+│   466         }                                                              │
+│   467                                                                        │
+│   468         // 3. Call target                                              │
+╰─ contracts/ARC402Wallet.sol ─────────────────────────────────────────────────╯
+
+
+╭─ [MEDIUM][HIGH] Unsafe variant of ERC-20 call [unsafe-erc20-call] ───────────╮
+│   472                                                                        │
+│   473         // 4. Reset approval to 0 (prevent residual allowance)         │
+│   474         if (params.approvalToken != address(0) && params.maxApprovalAm │
+│ ❱ 475             IERC20(params.approvalToken).approve(params.target, 0);    │
+│   476         }                                                              │
+│   477                                                                        │
+│   478         // 5. Slippage check — only if caller specified a minimum retu │
+╰─ contracts/ARC402Wallet.sol ─────────────────────────────────────────────────╯
+
+
+╭─ [HIGH][MEDIUM] Possible reentrancy in `DisputeArbitration._collectPayment(a─╮
+│   378             require(msg.value >= amount, "DisputeArbitration: insuffic │
+│   379             // refund excess ETH                                       │
+│   380             if (msg.value > amount) {                                  │
+│ ❱ 381                 (bool ok, ) = from.call{value: msg.value - amount}("") │
+│   382                 require(ok, "DisputeArbitration: ETH refund failed");  │
+│   383             }                                                          │
+│   384         } else {                                                       │
+╰─ contracts/DisputeArbitration.sol ───────────────────────────────────────────╯
+├── ╭─ Exploitable from `DisputeArbitration.joinMutualDispute(uint256)` ───────╮
+│   │   179         require(msg.sender == fs.client || msg.sender == fs.provid │
+│   │   180                                                                    │
+│   │   181         uint256 halfFee = fs.feeRequired / 2;                      │
+│   │ ❱ 182         _collectPayment(fs.token, respondent, halfFee);            │
+│   │   183         fs.respondentPaid = halfFee;                               │
+│   │   184                                                                    │
+│   │   185         emit MutualDisputeFunded(agreementId, respondent, halfFee) │
+│   ╰─ contracts/DisputeArbitration.sol ───────────────────────────────────────╯
+└── ╭─ Exploitable from `DisputeArbitration.acceptAssignment(uint256)` ────────╮
+    │   241         require(!_bonds[agreementId][msg.sender].locked, "DisputeA │
+    │   242                                                                    │
+    │   243         uint256 bondRequired = _calcBond(fs.feeRequired, fs.token) │
+    │ ❱ 244         _collectPayment(fs.token, msg.sender, bondRequired);       │
+    │   245                                                                    │
+    │   246         _bonds[agreementId][msg.sender] = ArbitratorBondState({    │
+    │   247             bondAmount: bondRequired,                              │
+    ╰─ contracts/DisputeArbitration.sol ───────────────────────────────────────╯
+
+
+╭─ [HIGH][MEDIUM] Possible reentrancy in `ServiceAgreement.castArbitrationVote─╮
+│   517                                                                        │
+│   518         // Notify DisputeArbitration so it can track vote for bond/fee │
+│   519         if (disputeArbitration != address(0)) {                        │
+│ ❱ 520             try IDisputeArbitration(disputeArbitration).recordArbitrat │
+│   521         }                                                              │
+│   522                                                                        │
+│   523         if (vote == ArbitrationVote.PROVIDER_WINS) {                   │
+╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────────╯
+└── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+    │   517                                                                    │
+    │   518         // Notify DisputeArbitration so it can track vote for bond │
+    │   519         if (disputeArbitration != address(0)) {                    │
+    │ ❱ 520             try IDisputeArbitration(disputeArbitration).recordArbi │
+    │   521         }                                                          │
+    │   522                                                                    │
+    │   523         if (vote == ArbitrationVote.PROVIDER_WINS) {               │
+    ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+
+
+╭─ [HIGH][MEDIUM] Possible reentrancy in `ServiceAgreement._releaseEscrow(addr─╮
+│   813     function _releaseEscrow(address token, address recipient, uint256  │
+│   814         if (amount == 0) return;                                       │
+│   815         if (token == address(0)) {                                     │
+│ ❱ 816             (bool ok, ) = recipient.call{value: amount}("");           │
+│   817             require(ok, "ServiceAgreement: ETH transfer failed");      │
+│   818         } else {                                                       │
+│   819             IERC20(token).safeTransfer(recipient, amount);             │
+╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.fulfill(uint256,bytes32)` ───────────╮
+│   │   289         ag.resolvedAt = block.timestamp;                           │
+│   │   290         ag.deliverablesHash = actualDeliverablesHash;              │
+│   │   291         emit AgreementFulfilled(agreementId, msg.sender, actualDel │
+│   │ ❱ 292         _releaseEscrowWithFee(ag.token, ag.provider, ag.price);    │
+│   │   293         _updateTrust(agreementId, ag, true);                       │
+│   │   294     }                                                              │
+│   │   295                                                                    │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.verifyDeliverable(uint256)` ─────────╮
+│   │   314         ag.status = Status.FULFILLED;                              │
+│   │   315         ag.resolvedAt = block.timestamp;                           │
+│   │   316         emit AgreementFulfilled(agreementId, ag.provider, ag.commi │
+│   │ ❱ 317         _releaseEscrowWithFee(ag.token, ag.provider, ag.price);    │
+│   │   318         _updateTrust(agreementId, ag, true);                       │
+│   │   319     }                                                              │
+│   │   320                                                                    │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.autoRelease(uint256)` ───────────────╮
+│   │   327         ag.resolvedAt = block.timestamp;                           │
+│   │   328         emit AgreementFulfilled(agreementId, ag.provider, ag.commi │
+│   │   329         emit AutoReleased(agreementId, ag.provider);               │
+│   │ ❱ 330         _releaseEscrowWithFee(ag.token, ag.provider, ag.price);    │
+│   │   331         _updateTrust(agreementId, ag, true);                       │
+│   │   332     }                                                              │
+│   │   333                                                                    │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+│   │   543         emit ArbitrationVoteCast(agreementId, msg.sender, vote, pr │
+│   │   544                                                                    │
+│   │   545         if (ac.providerVotes >= ARBITRATOR_MAJORITY) {             │
+│   │ ❱ 546             _finalizeDispute(agreementId, DisputeOutcome.PROVIDER_ │
+│   │   547         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {        │
+│   │   548             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_RE │
+│   │   549         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {         │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+│   │   545         if (ac.providerVotes >= ARBITRATOR_MAJORITY) {             │
+│   │   546             _finalizeDispute(agreementId, DisputeOutcome.PROVIDER_ │
+│   │   547         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {        │
+│   │ ❱ 548             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_RE │
+│   │   549         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {         │
+│   │   550             _finalizeDispute(agreementId, DisputeOutcome.PARTIAL_P │
+│   │   551         } else if (ac.humanVotes >= ARBITRATOR_MAJORITY) {         │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+│   │   547         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {        │
+│   │   548             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_RE │
+│   │   549         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {         │
+│   │ ❱ 550             _finalizeDispute(agreementId, DisputeOutcome.PARTIAL_P │
+│   │   551         } else if (ac.humanVotes >= ARBITRATOR_MAJORITY) {         │
+│   │   552             _markHumanEscalation(agreementId);                     │
+│   │   553         }                                                          │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.resolveDispute(uint256,bool)` ───────╮
+│   │   566     }                                                              │
+│   │   567                                                                    │
+│   │   568     function resolveDispute(uint256 agreementId, bool favorProvide │
+│   │ ❱ 569         resolveDisputeDetailed(                                    │
+│   │   570             agreementId,                                           │
+│   │   571             favorProvider ? DisputeOutcome.PROVIDER_WINS : Dispute │
+│   │   572             favorProvider ? _get(agreementId).price : 0,           │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.resolveDisputeDetailed(uint256,enum ─╮
+│   │   595         require(ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAg │
+│   │   596         require(_disputeCases[agreementId].humanReviewRequested, " │
+│   │   597         require(_disputeEvidence[agreementId].length > 0, "Service │
+│   │ ❱ 598         _finalizeDispute(agreementId, outcome, providerAward, clie │
+│   │   599     }                                                              │
+│   │   600                                                                    │
+│   │   601     function expiredDisputeRefund(uint256 agreementId) external no │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.resolveFromArbitration(uint256,addre─╮
+│   │   873         ag.status = Status.FULFILLED;                              │
+│   │   874         ag.resolvedAt = block.timestamp;                           │
+│   │   875         emit DetailedDisputeResolved(agreementId, DisputeOutcome.P │
+│   │ ❱ 876         _releaseEscrow(ag.token, recipient, amount);               │
+│   │   877         _updateTrust(agreementId, ag, recipient == ag.provider);   │
+│   │   878     }                                                              │
+│   │   879                                                                    │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.challengeChannel(bytes32,bytes)` ────╮
+│   │   961         ch.settledAmount = state.cumulativePayment;                │
+│   │   962         ch.lastSequenceNumber = state.sequenceNumber;              │
+│   │   963         emit ChannelChallenged(channelId, msg.sender, state.sequen │
+│   │ ❱ 964         _settleChannel(channelId, ch);                             │
+│   │   965         // Trust penalty for bad-faith closer                      │
+│   │   966         if (badFaithCloser != address(0) && trustRegistry != addre │
+│   │   967             try ITrustRegistry(trustRegistry).recordAnomaly(badFai │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.finaliseChallenge(bytes32)` ─────────╮
+│   │   977         require(block.timestamp > ch.challengeExpiry, "ServiceAgre │
+│   │   978         ch.status = ChannelStatus.SETTLED;                         │
+│   │   979         emit ChallengeFinalised(channelId, msg.sender, ch.settledA │
+│   │ ❱ 980         _settleChannel(channelId, ch);                             │
+│   │   981         // Clean close — positive trust for both                   │
+│   │   982         _updateChannelTrust(channelId, ch, true, false);           │
+│   │   983     }                                                              │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+└── ╭─ Exploitable from `ServiceAgreement.reclaimExpiredChannel(bytes32)` ─────╮
+    │   992         ch.settledAmount = 0;                                      │
+    │   993         uint256 reclaimAmount = ch.depositAmount;                  │
+    │   994         emit ChannelExpiredReclaimed(channelId, ch.client, reclaim │
+    │ ❱ 995         _releaseEscrow(ch.token, ch.client, reclaimAmount);        │
+    │   996         // Provider non-response penalty                           │
+    │   997         if (trustRegistry != address(0)) {                         │
+    │   998             try ITrustRegistry(trustRegistry).recordAnomaly(ch.pro │
+    ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+
+
+╭─ [HIGH][MEDIUM] Possible reentrancy in `ServiceAgreement._updateTrust(uint25─╮
+│   854         }                                                              │
+│   855         if (address(reputationOracle) != address(0)) {                 │
+│   856             if (success) {                                             │
+│ ❱ 857                 try reputationOracle.autoRecordSuccess(ag.client, ag.p │
+│   858             } else {                                                   │
+│   859                 try reputationOracle.autoWarn(ag.client, ag.provider,  │
+│   860             }                                                          │
+╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+│   │   543         emit ArbitrationVoteCast(agreementId, msg.sender, vote, pr │
+│   │   544                                                                    │
+│   │   545         if (ac.providerVotes >= ARBITRATOR_MAJORITY) {             │
+│   │ ❱ 546             _finalizeDispute(agreementId, DisputeOutcome.PROVIDER_ │
+│   │   547         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {        │
+│   │   548             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_RE │
+│   │   549         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {         │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+│   │   545         if (ac.providerVotes >= ARBITRATOR_MAJORITY) {             │
+│   │   546             _finalizeDispute(agreementId, DisputeOutcome.PROVIDER_ │
+│   │   547         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {        │
+│   │ ❱ 548             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_RE │
+│   │   549         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {         │
+│   │   550             _finalizeDispute(agreementId, DisputeOutcome.PARTIAL_P │
+│   │   551         } else if (ac.humanVotes >= ARBITRATOR_MAJORITY) {         │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+│   │   547         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {        │
+│   │   548             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_RE │
+│   │   549         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {         │
+│   │ ❱ 550             _finalizeDispute(agreementId, DisputeOutcome.PARTIAL_P │
+│   │   551         } else if (ac.humanVotes >= ARBITRATOR_MAJORITY) {         │
+│   │   552             _markHumanEscalation(agreementId);                     │
+│   │   553         }                                                          │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.resolveDispute(uint256,bool)` ───────╮
+│   │   566     }                                                              │
+│   │   567                                                                    │
+│   │   568     function resolveDispute(uint256 agreementId, bool favorProvide │
+│   │ ❱ 569         resolveDisputeDetailed(                                    │
+│   │   570             agreementId,                                           │
+│   │   571             favorProvider ? DisputeOutcome.PROVIDER_WINS : Dispute │
+│   │   572             favorProvider ? _get(agreementId).price : 0,           │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+└── ╭─ Exploitable from `ServiceAgreement.resolveDisputeDetailed(uint256,enum ─╮
+    │   595         require(ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAg │
+    │   596         require(_disputeCases[agreementId].humanReviewRequested, " │
+    │   597         require(_disputeEvidence[agreementId].length > 0, "Service │
+    │ ❱ 598         _finalizeDispute(agreementId, outcome, providerAward, clie │
+    │   599     }                                                              │
+    │   600                                                                    │
+    │   601     function expiredDisputeRefund(uint256 agreementId) external no │
+    ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+
+
+╭─ [HIGH][MEDIUM] Possible reentrancy in `ServiceAgreement._updateTrust(uint25─╮
+│   856             if (success) {                                             │
+│   857                 try reputationOracle.autoRecordSuccess(ag.client, ag.p │
+│   858             } else {                                                   │
+│ ❱ 859                 try reputationOracle.autoWarn(ag.client, ag.provider,  │
+│   860             }                                                          │
+│   861         }                                                              │
+│   862     }                                                                  │
+╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+│   │   543         emit ArbitrationVoteCast(agreementId, msg.sender, vote, pr │
+│   │   544                                                                    │
+│   │   545         if (ac.providerVotes >= ARBITRATOR_MAJORITY) {             │
+│   │ ❱ 546             _finalizeDispute(agreementId, DisputeOutcome.PROVIDER_ │
+│   │   547         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {        │
+│   │   548             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_RE │
+│   │   549         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {         │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+│   │   545         if (ac.providerVotes >= ARBITRATOR_MAJORITY) {             │
+│   │   546             _finalizeDispute(agreementId, DisputeOutcome.PROVIDER_ │
+│   │   547         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {        │
+│   │ ❱ 548             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_RE │
+│   │   549         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {         │
+│   │   550             _finalizeDispute(agreementId, DisputeOutcome.PARTIAL_P │
+│   │   551         } else if (ac.humanVotes >= ARBITRATOR_MAJORITY) {         │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+│   │   547         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {        │
+│   │   548             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_RE │
+│   │   549         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {         │
+│   │ ❱ 550             _finalizeDispute(agreementId, DisputeOutcome.PARTIAL_P │
+│   │   551         } else if (ac.humanVotes >= ARBITRATOR_MAJORITY) {         │
+│   │   552             _markHumanEscalation(agreementId);                     │
+│   │   553         }                                                          │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.resolveDispute(uint256,bool)` ───────╮
+│   │   566     }                                                              │
+│   │   567                                                                    │
+│   │   568     function resolveDispute(uint256 agreementId, bool favorProvide │
+│   │ ❱ 569         resolveDisputeDetailed(                                    │
+│   │   570             agreementId,                                           │
+│   │   571             favorProvider ? DisputeOutcome.PROVIDER_WINS : Dispute │
+│   │   572             favorProvider ? _get(agreementId).price : 0,           │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+└── ╭─ Exploitable from `ServiceAgreement.resolveDisputeDetailed(uint256,enum ─╮
+    │   595         require(ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAg │
+    │   596         require(_disputeCases[agreementId].humanReviewRequested, " │
+    │   597         require(_disputeEvidence[agreementId].length > 0, "Service │
+    │ ❱ 598         _finalizeDispute(agreementId, outcome, providerAward, clie │
+    │   599     }                                                              │
+    │   600                                                                    │
+    │   601     function expiredDisputeRefund(uint256 agreementId) external no │
+    ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+
+
+╭─ [HIGH][LOW] Possible reentrancy in `WalletFactory.createWallet()` [reentran─╮
+│   27         ARC402Wallet wallet = new ARC402Wallet(registry, msg.sender);   │
+│   28         // ARC402Wallet constructor already calls initWallet; this is i │
+│   29         ARC402Registry reg = ARC402Registry(registry);                  │
+│ ❱ 30         ITrustRegistry(reg.trustRegistry()).initWallet(address(wallet)) │
+│   31                                                                         │
+│   32         ownerWallets[msg.sender].push(address(wallet));                 │
+│   33         allWallets.push(address(wallet));                               │
+╰─ contracts/WalletFactory.sol ────────────────────────────────────────────────╯
+└── ╭─ Exploitable from `WalletFactory.createWallet()` ────────────────────────╮
+    │   27         ARC402Wallet wallet = new ARC402Wallet(registry, msg.sender │
+    │   28         // ARC402Wallet constructor already calls initWallet; this  │
+    │   29         ARC402Registry reg = ARC402Registry(registry);              │
+    │ ❱ 30         ITrustRegistry(reg.trustRegistry()).initWallet(address(wall │
+    │   31                                                                     │
+    │   32         ownerWallets[msg.sender].push(address(wallet));             │
+    │   33         allWallets.push(address(wallet));                           │
+    ╰─ contracts/WalletFactory.sol ────────────────────────────────────────────╯
+
+
+╭─ [WARNING][HIGH] Unchecked return value [unchecked-return-value] ────────────╮
+│   400         _policyEngine().recordSpend(address(this), category, amount, a │
+│   401         _intentAttestation().consume(attestationId);                   │
+│   402         emit SettlementProposed(recipientWallet, amount, attestationId │
+│ ❱ 403         _settlementCoordinator().propose(                              │
+│   404             address(this),                                             │
+│   405             recipientWallet,                                           │
+│   406             amount,                                                    │
+╰─ contracts/ARC402Wallet.sol ─────────────────────────────────────────────────╯
+
+
+╭─ [WARNING][HIGH] Unchecked return value [unchecked-return-value] ────────────╮
+│   462                                                                        │
+│   463         // 2. Per-tx ERC-20 approval — NOT infinite                    │
+│   464         if (params.approvalToken != address(0) && params.maxApprovalAm │
+│ ❱ 465             IERC20(params.approvalToken).approve(params.target, params │
+│   466         }                                                              │
+│   467                                                                        │
+│   468         // 3. Call target                                              │
+╰─ contracts/ARC402Wallet.sol ─────────────────────────────────────────────────╯
+
+
+╭─ [WARNING][HIGH] Unchecked return value [unchecked-return-value] ────────────╮
+│   472                                                                        │
+│   473         // 4. Reset approval to 0 (prevent residual allowance)         │
+│   474         if (params.approvalToken != address(0) && params.maxApprovalAm │
+│ ❱ 475             IERC20(params.approvalToken).approve(params.target, 0);    │
+│   476         }                                                              │
+│   477                                                                        │
+│   478         // 5. Slippage check — only if caller specified a minimum retu │
+╰─ contracts/ARC402Wallet.sol ─────────────────────────────────────────────────╯
+
+
+╭─ [WARNING][HIGH] Unchecked return value [unchecked-return-value] ───────────╮
+│   105         if (bytes(_canonicalCapability[capabilityId]).length == 0) {  │
+│   106             _canonicalCapability[capabilityId] = capability;          │
+│   107         }                                                             │
+│ ❱ 108         _capabilityAgents[capabilityId].add(msg.sender);              │
+│   109                                                                       │
+│   110         emit CapabilityClaimed(msg.sender, capabilityId, capability); │
+│   111     }                                                                 │
+╰─ contracts/CapabilityRegistry.sol ──────────────────────────────────────────╯
+
+
+╭─ [WARNING][HIGH] Unchecked return value [unchecked-return-value] ────────────╮
+│   115         require(hasCapability[msg.sender][capabilityId], "CapabilityRe │
+│   116                                                                        │
+│   117         hasCapability[msg.sender][capabilityId] = false;               │
+│ ❱ 118         _capabilityAgents[capabilityId].remove(msg.sender);            │
+│   119         bytes32[] storage ids = _agentCapabilityIds[msg.sender];       │
+│   120         uint256 length = ids.length;                                   │
+│   121         for (uint256 i = 0; i < length; i++) {                         │
+╰─ contracts/CapabilityRegistry.sol ───────────────────────────────────────────╯
+
+
+╭─ [WARNING][HIGH] Unchecked return value [unchecked-return-value] ────────────╮
+│   284     /// @notice Add a contract address to the per-wallet DeFi whitelis │
+│   285     function whitelistContract(address wallet, address target) externa │
+│   286         require(target != address(0), "PolicyEngine: zero target");    │
+│ ❱ 287         _whitelistedContracts[wallet].add(target);                     │
+│   288         emit ContractWhitelisted(wallet, target);                      │
+│   289     }                                                                  │
+│   290                                                                        │
+╰─ contracts/PolicyEngine.sol ─────────────────────────────────────────────────╯
+
+
+╭─ [WARNING][HIGH] Unchecked return value [unchecked-return-value] ────────────╮
+│   290                                                                        │
+│   291     /// @notice Remove a contract address from the per-wallet DeFi whi │
+│   292     function removeWhitelistedContract(address wallet, address target) │
+│ ❱ 293         _whitelistedContracts[wallet].remove(target);                  │
+│   294         emit ContractRemoved(wallet, target);                          │
+│   295     }                                                                  │
+│   296                                                                        │
+╰─ contracts/PolicyEngine.sol ─────────────────────────────────────────────────╯
+
+
+╭─ [WARNING][HIGH] Unchecked return value [unchecked-return-value] ────────────╮
+│   331     /// @notice Allow an NFT contract (ERC-721 / ERC-1155) for this wa │
+│   332     function allowNFTContract(address wallet, address nftContract) ext │
+│   333         require(nftContract != address(0), "PolicyEngine: zero nft con │
+│ ❱ 334         _allowedNFTContracts[wallet].add(nftContract);                 │
+│   335         emit NFTContractAllowed(wallet, nftContract);                  │
+│   336     }                                                                  │
+│   337                                                                        │
+╰─ contracts/PolicyEngine.sol ─────────────────────────────────────────────────╯
+
+
+╭─ [WARNING][HIGH] Unchecked return value [unchecked-return-value] ────────────╮
+│   337                                                                        │
+│   338     /// @notice Remove an NFT contract from this wallet's allowed list │
+│   339     function disallowNFTContract(address wallet, address nftContract)  │
+│ ❱ 340         _allowedNFTContracts[wallet].remove(nftContract);              │
+│   341         emit NFTContractDisallowed(wallet, nftContract);               │
+│   342     }                                                                  │
+│   343                                                                        │
+╰─ contracts/PolicyEngine.sol ─────────────────────────────────────────────────╯
+
+
+╭─ [WARNING][HIGH] Unchecked return value [unchecked-return-value] ────────────╮
+│   675         }                                                              │
+│   676         // DisputeArbitration fee hook                                 │
+│   677         if (disputeArbitration != address(0)) {                        │
+│ ❱ 678             try IDisputeArbitration(disputeArbitration).openDispute{va │
+│   679                 agreementId,                                           │
+│   680                 daMode,                                                │
+│   681                 daClass,                                               │
+╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────────╯
+
+
+╭─ [WARNING][MEDIUM] Not all execution paths have assigned return values [miss─╮
+│   62                                                                         │
+│   63     uint16 constant pLastMem = 896;                                     │
+│   64                                                                         │
+│ ❱ 65     function verifyProof(uint[2] calldata _pA, uint[2][2] calldata _pB, │
+│   66         assembly {                                                      │
+│   67             function checkField(v) {                                    │
+│   68                 if iszero(lt(v, r)) {                                   │
+╰─ contracts/CapabilityProofVerifier.sol ──────────────────────────────────────╯
+
+
+╭─ [WARNING][MEDIUM] Not all execution paths have assigned return values [miss─╮
+│   202                                                                        │
+│   203     // ─── Reputation Queries ──────────────────────────────────────── │
+│   204                                                                        │
+│ ❱ 205     function getReputation(address subject) external view returns (    │
+│   206         uint256 endorsements,                                          │
+│   207         uint256 warnings,                                              │
+│   208         uint256 blocks,                                                │
+╰─ contracts/ReputationOracle.sol ─────────────────────────────────────────────╯
+
+
+╭─ [WARNING][MEDIUM] Possible reentrancy in `ServiceAgreement._finalizeDispute─╮
+│   783                                                                        │
+│   784         // DisputeArbitration fee resolution callback                  │
+│   785         if (disputeArbitration != address(0)) {                        │
+│ ❱ 786             try IDisputeArbitration(disputeArbitration).resolveDispute │
+│   787                 agreementId,                                           │
+│   788                 uint8(outcome)                                         │
+│   789             ) {} catch {                                               │
+╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+│   │   543         emit ArbitrationVoteCast(agreementId, msg.sender, vote, pr │
+│   │   544                                                                    │
+│   │   545         if (ac.providerVotes >= ARBITRATOR_MAJORITY) {             │
+│   │ ❱ 546             _finalizeDispute(agreementId, DisputeOutcome.PROVIDER_ │
+│   │   547         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {        │
+│   │   548             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_RE │
+│   │   549         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {         │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+│   │   545         if (ac.providerVotes >= ARBITRATOR_MAJORITY) {             │
+│   │   546             _finalizeDispute(agreementId, DisputeOutcome.PROVIDER_ │
+│   │   547         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {        │
+│   │ ❱ 548             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_RE │
+│   │   549         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {         │
+│   │   550             _finalizeDispute(agreementId, DisputeOutcome.PARTIAL_P │
+│   │   551         } else if (ac.humanVotes >= ARBITRATOR_MAJORITY) {         │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.castArbitrationVote(uint256,enum ISe─╮
+│   │   547         } else if (ac.clientVotes >= ARBITRATOR_MAJORITY) {        │
+│   │   548             _finalizeDispute(agreementId, DisputeOutcome.CLIENT_RE │
+│   │   549         } else if (ac.splitVotes >= ARBITRATOR_MAJORITY) {         │
+│   │ ❱ 550             _finalizeDispute(agreementId, DisputeOutcome.PARTIAL_P │
+│   │   551         } else if (ac.humanVotes >= ARBITRATOR_MAJORITY) {         │
+│   │   552             _markHumanEscalation(agreementId);                     │
+│   │   553         }                                                          │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+├── ╭─ Exploitable from `ServiceAgreement.resolveDispute(uint256,bool)` ───────╮
+│   │   566     }                                                              │
+│   │   567                                                                    │
+│   │   568     function resolveDispute(uint256 agreementId, bool favorProvide │
+│   │ ❱ 569         resolveDisputeDetailed(                                    │
+│   │   570             agreementId,                                           │
+│   │   571             favorProvider ? DisputeOutcome.PROVIDER_WINS : Dispute │
+│   │   572             favorProvider ? _get(agreementId).price : 0,           │
+│   ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+└── ╭─ Exploitable from `ServiceAgreement.resolveDisputeDetailed(uint256,enum ─╮
+    │   595         require(ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAg │
+    │   596         require(_disputeCases[agreementId].humanReviewRequested, " │
+    │   597         require(_disputeEvidence[agreementId].length > 0, "Service │
+    │ ❱ 598         _finalizeDispute(agreementId, outcome, providerAward, clie │
+    │   599     }                                                              │
+    │   600                                                                    │
+    │   601     function expiredDisputeRefund(uint256 agreementId) external no │
+    ╰─ contracts/ServiceAgreement.sol ─────────────────────────────────────────╯
+
+
+╭─ [WARNING][MEDIUM] Not all execution paths have assigned return values [miss─╮
+│   59                                                                         │
+│   60     uint16 constant pLastMem = 896;                                     │
+│   61                                                                         │
+│ ❱ 62     function verifyProof(uint[2] calldata _pA, uint[2][2] calldata _pB, │
+│   63         assembly {                                                      │
+│   64             function checkField(v) {                                    │
+│   65                 if iszero(lt(v, r)) {                                   │
+╰─ contracts/SolvencyProofVerifier.sol ────────────────────────────────────────╯
+
+
+╭─ [WARNING][MEDIUM] Not all execution paths have assigned return values [miss─╮
+│   127         return _agentAttestations[agent];                              │
+│   128     }                                                                  │
+│   129                                                                        │
+│ ❱ 130     function activeSponsorCount(address sponsor) external view returns │
+│   131         bytes32[] storage ids = _sponsorAttestations[sponsor];         │
+│   132         for (uint256 i = 0; i < ids.length; i++) {                     │
+│   133             Attestation storage att = attestations[ids[i]];            │
+╰─ contracts/SponsorshipAttestation.sol ───────────────────────────────────────╯
+
+
+╭─ [WARNING][MEDIUM] Not all execution paths have assigned return values [miss─╮
+│   137         }                                                              │
+│   138     }                                                                  │
+│   139                                                                        │
+│ ❱ 140     function getHighestTier(address agent) external view returns (Iden │
+│   141         bytes32[] storage ids = _agentAttestations[agent];             │
+│   142         for (uint256 i = 0; i < ids.length; i++) {                     │
+│   143             Attestation storage att = attestations[ids[i]];            │
+╰─ contracts/SponsorshipAttestation.sol ───────────────────────────────────────╯
+
+
+╭─ [WARNING][MEDIUM] Not all execution paths have assigned return values [miss─╮
+│   59                                                                         │
+│   60     uint16 constant pLastMem = 896;                                     │
+│   61                                                                         │
+│ ❱ 62     function verifyProof(uint[2] calldata _pA, uint[2][2] calldata _pB, │
+│   63         assembly {                                                      │
+│   64             function checkField(v) {                                    │
+│   65                 if iszero(lt(v, r)) {                                   │
+╰─ contracts/TrustThresholdVerifier.sol ───────────────────────────────────────╯

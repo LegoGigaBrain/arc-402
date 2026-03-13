@@ -13,6 +13,7 @@ from arc402.reputation import ReputationOracleClient
 from arc402.sponsorship import SponsorshipAttestationClient
 from arc402.trust import TrustClient
 from arc402.types import (
+    ArbitrationVote,
     CapabilitySlot,
     IdentityTier,
     OperationalMetrics,
@@ -142,11 +143,33 @@ class TestServiceAgreementClient:
             contract.functions.requestRevision.return_value.build_transaction.return_value = {}
             contract.functions.respondToRevision.return_value.build_transaction.return_value = {}
             contract.functions.submitDisputeEvidence.return_value.build_transaction.return_value = {}
+            contract.functions.nominateArbitrator.return_value.build_transaction.return_value = {}
+            contract.functions.castArbitrationVote.return_value.build_transaction.return_value = {}
+            contract.functions.requestHumanEscalation.return_value.build_transaction.return_value = {}
             contract.functions.getRemediationCase.return_value.call.return_value = (1, 2, 3, 4, b"\x01" * 32, True)
+            contract.functions.getArbitrationCase.return_value.call.return_value = (
+                1,
+                ["0x1", "0x2", "0x3"],
+                3,
+                1,
+                0,
+                0,
+                0,
+                10,
+                20,
+                0,
+                0,
+                False,
+                False,
+            )
             asyncio.run(client.request_revision(1, "0x" + "11" * 32, "ipfs://feedback"))
             asyncio.run(client.respond_to_revision(1, ProviderResponseType.REVISE, 0, "0x" + "22" * 32))
             asyncio.run(client.submit_dispute_evidence(1, 2, "0x" + "33" * 32, "ipfs://evidence"))
+            asyncio.run(client.nominate_arbitrator(1, "0xArb"))
+            asyncio.run(client.cast_arbitration_vote(1, ArbitrationVote.PROVIDER_WINS, 100, 0))
+            asyncio.run(client.request_human_escalation(1, "stalled"))
             assert client.get_remediation_case(1).active is True
+            assert client.get_arbitration_case(1).arbitrator_count == 3
 
 
 class TestRegistryAndAttestations:

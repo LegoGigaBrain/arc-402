@@ -43,6 +43,7 @@ contract TrustRegistryV2 is ITrustRegistryV2, ITrustRegistry, Ownable2Step {
 
     /// @notice Top-5 on-chain capability score slots per wallet.
     /// @dev CapabilityScore.capabilityHash == 0 means slot is empty.
+    // slither-disable-next-line uninitialized-state
     mapping(address => CapabilityScore[5]) internal _capabilitySlots;
 
     /// @notice Counterparty diversity tracker: wallet → counterparty → capabilityHash → count.
@@ -51,6 +52,10 @@ contract TrustRegistryV2 is ITrustRegistryV2, ITrustRegistry, Ownable2Step {
 
     /// @notice Addresses authorised to call recordSuccess / recordAnomaly.
     mapping(address => bool) public isAuthorizedUpdater;
+
+    /// @notice Tracks the last block number a wallet's trust score was written.
+    ///         Used by noFlashLoan modifier to block same-block multi-write attacks.
+    mapping(address => uint256) private _lastUpdateBlock;
 
     /// @notice Minimum agreement value (wei). 0 = disabled.
     /// @dev Agreements below this threshold produce no trust update (not reverted).
@@ -69,6 +74,14 @@ contract TrustRegistryV2 is ITrustRegistryV2, ITrustRegistry, Ownable2Step {
 
     modifier onlyUpdater() {
         require(isAuthorizedUpdater[msg.sender], "TrustRegistryV2: not authorized updater");
+        _;
+    }
+
+    /// @dev Prevents flash-loan-assisted same-block trust manipulation.
+    ///      A wallet's trust score can only be written once per block.
+    modifier noFlashLoan(address subject) {
+        require(block.number > _lastUpdateBlock[subject], "TrustRegistryV2: flash loan protection");
+        _lastUpdateBlock[subject] = block.number;
         _;
     }
 
@@ -112,7 +125,7 @@ contract TrustRegistryV2 is ITrustRegistryV2, ITrustRegistry, Ownable2Step {
         address counterparty,
         string calldata capability,
         uint256 agreementValueWei
-    ) external override(ITrustRegistry, ITrustRegistryV2) onlyUpdater {
+    ) external override(ITrustRegistry, ITrustRegistryV2) onlyUpdater noFlashLoan(wallet) {
         // Minimum agreement value gate — silent skip, no revert
         if (minimumAgreementValue > 0 && agreementValueWei < minimumAgreementValue) return;
 
@@ -158,7 +171,7 @@ contract TrustRegistryV2 is ITrustRegistryV2, ITrustRegistry, Ownable2Step {
         address counterparty,
         string calldata capability,
         uint256 agreementValueWei
-    ) external override(ITrustRegistry, ITrustRegistryV2) onlyUpdater {
+    ) external override(ITrustRegistry, ITrustRegistryV2) onlyUpdater noFlashLoan(wallet) {
         // Minimum agreement value gate
         if (minimumAgreementValue > 0 && agreementValueWei < minimumAgreementValue) return;
 
@@ -200,7 +213,7 @@ contract TrustRegistryV2 is ITrustRegistryV2, ITrustRegistry, Ownable2Step {
     /// @inheritdoc ITrustRegistryV2
     /// @dev Applies half-life time decay toward DECAY_FLOOR at read time.
     ///      Decay is NEVER stored — only computed on each read.
-    function getEffectiveScore(address wallet) external view returns (uint256) {
+    function getEffectiveScore(address wallet) external view override(ITrustRegistry, ITrustRegistryV2) returns (uint256) {
         TrustProfile storage p = profiles[wallet];
         if (p.lastUpdated == 0) return 0;
 
@@ -388,5 +401,25 @@ contract TrustRegistryV2 is ITrustRegistryV2, ITrustRegistry, Ownable2Step {
             z = (x / z + z) / 2;
         }
         return y;
+    }
+
+    /// @notice Protocol version tag (Spec 20).
+    function protocolVersion() external pure returns (string memory) {
+        return "1.0.0";
+    }
+
+    /// @inheritdoc ITrustRegistry
+    function recordArbitratorSlash(
+        address arbitrator,
+        string calldata reason
+    ) external override(ITrustRegistry) onlyUpdater noFlashLoan(arbitrator) {
+        _ensureInitialized(arbitrator);
+        TrustProfile storage p = profiles[arbitrator];
+        uint256 oldGlobal = p.globalScore;
+        uint256 penalty = ANOMALY_PENALTY * 2; // Arbitrator slash is heavier than standard anomaly
+        uint256 newGlobal = oldGlobal >= penalty ? oldGlobal - penalty : 0;
+        p.globalScore = newGlobal;
+        p.lastUpdated = block.timestamp;
+        emit ScoreUpdated(arbitrator, newGlobal, reason, -int256(penalty));
     }
 }

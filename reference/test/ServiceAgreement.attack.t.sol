@@ -11,6 +11,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/ServiceAgreement.sol";
+import "../contracts/DisputeModule.sol";
 import "../contracts/TrustRegistry.sol";
 import "../contracts/IServiceAgreement.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -141,6 +142,7 @@ contract ServiceAgreementAttackTest is Test {
     ServiceAgreement public sa;
     TrustRegistry    public trustReg;
     MockERC20 public token;
+    DisputeModule    public dm;
 
     address public owner;
     address public client  = address(0xC1);
@@ -156,6 +158,8 @@ contract ServiceAgreementAttackTest is Test {
         sa.setLegacyFulfillMode(true);
         sa.setLegacyFulfillProvider(provider, true);
         trustReg.addUpdater(address(sa));
+        dm = new DisputeModule(address(sa));
+        sa.setDisputeModule(address(dm));
         token = new MockERC20();
         // NOTE: MockFeeToken is intentionally NOT added to allowedTokens — the tests
         //       verify that the allowlist blocks it before any funds change hands.
@@ -270,9 +274,14 @@ contract ServiceAgreementAttackTest is Test {
         attacker.setSecondAgreementId(id2);
         attacker.doAccept(id2);
 
-        // Dispute agreement 1
+        // Move agreement 1 into human backstop resolution path
         vm.prank(client);
-        sa.dispute(id1, "dispute");
+        sa.requestRevision(id1, keccak256("feedback"), "ipfs://feedback", bytes32(0));
+        bytes32 transcript = dm.getRemediationCase(id1).latestTranscriptHash;
+        vm.prank(address(attacker));
+        sa.respondToRevision(id1, IServiceAgreement.ProviderResponseType.REQUEST_HUMAN_REVIEW, 0, keccak256("human"), "ipfs://human", transcript);
+        vm.prank(client);
+        sa.submitDisputeEvidence(id1, IServiceAgreement.EvidenceType.DELIVERABLE, keccak256("e1"), "ipfs://e1");
 
         // Arm the reentrancy attack on resolve
         attacker.setAttacking(true);
@@ -282,12 +291,12 @@ contract ServiceAgreementAttackTest is Test {
         // The reentrancy guard must block the nested fulfill() call,
         // causing the ETH transfer to fail, reverting resolveDispute entirely
         vm.expectRevert();
-        sa.resolveDispute(id1, true);
+        sa.resolveDisputeDetailed(id1, IServiceAgreement.DisputeOutcome.PROVIDER_WINS, PRICE, 0);
 
-        // Verify state: dispute still active, no ETH moved
+        // Verify state: human-backstop stage unchanged, no ETH moved
         IServiceAgreement.Agreement memory ag1 = sa.getAgreement(id1);
-        assertEq(uint256(ag1.status), uint256(IServiceAgreement.Status.DISPUTED),
-            "Attack blocked: agreement remains DISPUTED");
+        assertEq(uint256(ag1.status), uint256(IServiceAgreement.Status.ESCALATED_TO_HUMAN),
+            "Attack blocked: agreement remains ESCALATED_TO_HUMAN");
         assertEq(address(sa).balance, 2 * PRICE, "Attack blocked: both escrows intact");
     }
 
@@ -305,7 +314,7 @@ contract ServiceAgreementAttackTest is Test {
         vm.deal(selfDealer, 10 ether);
 
         vm.prank(selfDealer);
-        vm.expectRevert("ServiceAgreement: client == provider");
+        vm.expectRevert(ServiceAgreement.ClientEqualsProvider.selector);
         sa.propose{value: PRICE}(
             selfDealer,   // provider == msg.sender (selfDealer)
             "compute", "self deal", PRICE, address(0),
@@ -327,7 +336,7 @@ contract ServiceAgreementAttackTest is Test {
      */
     function test_Attack_ZeroPriceGriefing() public {
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: zero price");
+        vm.expectRevert(ServiceAgreement.ZeroPrice.selector);
         sa.propose{value: 0}(
             provider, "compute", "free task", 0, address(0),
             block.timestamp + DEADLINE, bytes32(0)
@@ -368,7 +377,7 @@ contract ServiceAgreementAttackTest is Test {
 
         // Provider CANNOT fulfill — past deadline
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: past deadline");
+        vm.expectRevert(ServiceAgreement.PastDeadline.selector);
         sa.fulfill(id, bytes32(0));
 
         // Client CAN recover via expiredCancel — no funds trapped
@@ -407,7 +416,7 @@ contract ServiceAgreementAttackTest is Test {
 
         // Client tries to dispute — must revert (agreement already FULFILLED)
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: not ACCEPTED");
+        vm.expectRevert(ServiceAgreement.InvalidStatus.selector);
         sa.dispute(idA, "I disagree");
 
         IServiceAgreement.Agreement memory agA = sa.getAgreement(idA);
@@ -418,13 +427,14 @@ contract ServiceAgreementAttackTest is Test {
         uint256 idB = _proposeETH(client, provider, PRICE, DEADLINE);
         vm.prank(provider); sa.accept(idB);
 
-        // Client disputes first
+        // Client disputes first via direct hard-fail path after deadline breach
+        vm.warp(block.timestamp + DEADLINE + 1);
         vm.prank(client);
-        sa.dispute(idB, "Preemptive dispute");
+        sa.directDispute(idB, IServiceAgreement.DirectDisputeReason.NO_DELIVERY, "Preemptive dispute");
 
         // Provider tries to fulfill — must revert (agreement now DISPUTED)
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: not ACCEPTED");
+        vm.expectRevert(ServiceAgreement.InvalidStatus.selector);
         sa.fulfill(idB, bytes32(0));
 
         IServiceAgreement.Agreement memory agB = sa.getAgreement(idB);
@@ -465,7 +475,7 @@ contract ServiceAgreementAttackTest is Test {
 
         // FIX: propose() with fee-on-transfer token is rejected at the allowlist check.
         // No tokens are transferred — the client's balance is untouched.
-        vm.expectRevert("ServiceAgreement: token not allowed");
+        vm.expectRevert(ServiceAgreement.TokenNotAllowed.selector);
         sa.propose(
             provider, "compute", "fee-token task", requested,
             address(feeToken), block.timestamp + DEADLINE, bytes32(0)
@@ -502,7 +512,7 @@ contract ServiceAgreementAttackTest is Test {
 
         // Second expiredCancel — must revert (not ACCEPTED)
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: not ACCEPTED");
+        vm.expectRevert(ServiceAgreement.InvalidStatus.selector);
         sa.expiredCancel(id);
 
         // Balance unchanged (no double-refund)
@@ -520,15 +530,15 @@ contract ServiceAgreementAttackTest is Test {
         uint256 id = _proposeETH(client, provider, PRICE, DEADLINE);
 
         // Status is PROPOSED, not DISPUTED
-        vm.expectRevert("ServiceAgreement: not DISPUTED");
-        sa.resolveDispute(id, true); // owner calls this (test contract is owner)
+        vm.expectRevert(ServiceAgreement.HumanEscalationRequired.selector);
+        sa.resolveDisputeDetailed(id, IServiceAgreement.DisputeOutcome.PROVIDER_WINS, PRICE, 0); // owner calls this (test contract is owner)
 
         // Also test on ACCEPTED state
         vm.prank(provider);
         sa.accept(id);
 
-        vm.expectRevert("ServiceAgreement: not DISPUTED");
-        sa.resolveDispute(id, true);
+        vm.expectRevert(ServiceAgreement.HumanEscalationRequired.selector);
+        sa.resolveDisputeDetailed(id, IServiceAgreement.DisputeOutcome.PROVIDER_WINS, PRICE, 0);
 
         // Escrow intact
         assertEq(address(sa).balance, PRICE, "Owner cannot drain non-disputed escrow");
@@ -545,13 +555,14 @@ contract ServiceAgreementAttackTest is Test {
         uint256 id = _proposeETH(client, provider, PRICE, DEADLINE);
         vm.prank(provider); sa.accept(id);
 
-        // Client raises dispute
+        // Client raises direct hard-fail dispute after missed deadline
+        vm.warp(block.timestamp + DEADLINE + 1);
         vm.prank(client);
-        sa.dispute(id, "I'm not satisfied");
+        sa.directDispute(id, IServiceAgreement.DirectDisputeReason.NO_DELIVERY, "I'm not satisfied");
 
         // Provider attempts to fulfill — must revert
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: not ACCEPTED");
+        vm.expectRevert(ServiceAgreement.InvalidStatus.selector);
         sa.fulfill(id, bytes32(0));
 
         // Escrow still locked in disputed state

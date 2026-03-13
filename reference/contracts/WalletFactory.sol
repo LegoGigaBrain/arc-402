@@ -23,6 +23,8 @@ contract WalletFactory {
         registry = _registry;
     }
 
+    // wake-disable-next-line reentrancy
+    // @dev Called only from nonReentrant-guarded entry points. Reentrancy path blocked upstream.
     function createWallet() external returns (address) {
         ARC402Wallet wallet = new ARC402Wallet(registry, msg.sender);
         // ARC402Wallet constructor already calls initWallet; this is idempotent

@@ -22,7 +22,9 @@ describe("IntentAttestation", function () {
         "pay_for_data",
         "Need medical records for claim #4821",
         other.address,
-        hre.ethers.parseEther("0.01")
+        hre.ethers.parseEther("0.01"),
+        hre.ethers.ZeroAddress,
+        0
       );
 
       const [id, wallet, action, reason, recipient, amount] =
@@ -42,7 +44,9 @@ describe("IntentAttestation", function () {
           "pay_for_api",
           "Research data",
           other.address,
-          hre.ethers.parseEther("0.005")
+          hre.ethers.parseEther("0.005"),
+          hre.ethers.ZeroAddress,
+          0
         )
       )
         .to.emit(attestation, "AttestationCreated")
@@ -51,7 +55,9 @@ describe("IntentAttestation", function () {
           owner.address,
           "pay_for_api",
           other.address,
-          hre.ethers.parseEther("0.005")
+          hre.ethers.parseEther("0.005"),
+          hre.ethers.ZeroAddress,
+          0
         );
     });
 
@@ -61,7 +67,9 @@ describe("IntentAttestation", function () {
         "action1",
         "reason1",
         other.address,
-        hre.ethers.parseEther("0.01")
+        hre.ethers.parseEther("0.01"),
+        hre.ethers.ZeroAddress,
+        0
       );
       await expect(
         attestation.attest(
@@ -69,7 +77,9 @@ describe("IntentAttestation", function () {
           "action2",
           "reason2",
           other.address,
-          hre.ethers.parseEther("0.01")
+          hre.ethers.parseEther("0.01"),
+          hre.ethers.ZeroAddress,
+          0
         )
       ).to.be.revertedWith("IntentAttestation: already exists");
     });
@@ -82,9 +92,19 @@ describe("IntentAttestation", function () {
         "action",
         "reason",
         other.address,
-        hre.ethers.parseEther("0.01")
+        hre.ethers.parseEther("0.01"),
+        hre.ethers.ZeroAddress,
+        0
       );
-      expect(await attestation.verify(attestationId, owner.address)).to.be.true;
+      expect(
+        await attestation.verify(
+          attestationId,
+          owner.address,
+          other.address,
+          hre.ethers.parseEther("0.01"),
+          hre.ethers.ZeroAddress
+        )
+      ).to.be.true;
     });
 
     it("should return false for wrong wallet address", async function () {
@@ -93,14 +113,32 @@ describe("IntentAttestation", function () {
         "action",
         "reason",
         other.address,
-        hre.ethers.parseEther("0.01")
+        hre.ethers.parseEther("0.01"),
+        hre.ethers.ZeroAddress,
+        0
       );
-      expect(await attestation.verify(attestationId, other.address)).to.be.false;
+      expect(
+        await attestation.verify(
+          attestationId,
+          other.address,
+          other.address,
+          hre.ethers.parseEther("0.01"),
+          hre.ethers.ZeroAddress
+        )
+      ).to.be.false;
     });
 
     it("should return false for non-existent attestation", async function () {
       const fakeId = hre.ethers.keccak256(hre.ethers.toUtf8Bytes("fake"));
-      expect(await attestation.verify(fakeId, owner.address)).to.be.false;
+      expect(
+        await attestation.verify(
+          fakeId,
+          owner.address,
+          other.address,
+          hre.ethers.parseEther("0.01"),
+          hre.ethers.ZeroAddress
+        )
+      ).to.be.false;
     });
   });
 });

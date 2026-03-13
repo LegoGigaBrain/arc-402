@@ -8,4 +8,17 @@ interface IPolicyEngine {
         uint256 amount,
         bytes32 contextId
     ) external view returns (bool valid, string memory reason);
+
+    function recordSpend(
+        address wallet,
+        string calldata category,
+        uint256 amount,
+        bytes32 contextId
+    ) external;
+
+    function validateApproval(
+        address wallet,
+        address token,
+        uint256 amount
+    ) external view returns (bool valid, string memory reason);
 }

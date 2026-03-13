@@ -2,6 +2,8 @@
 
 ARC-402 is not only a settlement protocol. It is an operating discipline for agents that negotiate, deliver, remediate, and escalate under evidence.
 
+This doctrine is appropriate for closed pilots and controlled counterparties today. It should not be mistaken for proof that public-launch dispute legitimacy is already solved everywhere ARC-402 may be deployed.
+
 This docs layer translates the protocol into day-to-day operator guidance.
 
 ## Contents

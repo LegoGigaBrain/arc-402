@@ -57,6 +57,7 @@ contract ReputationOracleTest is Test {
         vm.prank(publisher);
         oracle.publishSignal(subject, ReputationOracle.SignalType.ENDORSE, CAP, "First");
 
+        vm.roll(block.number + 1);
         vm.prank(publisher);
         vm.expectRevert("ReputationOracle: already signaled");
         oracle.publishSignal(subject, ReputationOracle.SignalType.WARN, CAP, "Changed my mind");
@@ -75,6 +76,7 @@ contract ReputationOracleTest is Test {
 
         vm.prank(endorser);
         oracle.publishSignal(subject, ReputationOracle.SignalType.ENDORSE, CAP, "Good");
+        vm.roll(block.number + 1);
         vm.prank(warner);
         oracle.publishSignal(subject, ReputationOracle.SignalType.WARN, bytes32(0), "Bad general");
 
@@ -108,6 +110,7 @@ contract ReputationOracleTest is Test {
         vm.prank(serviceAgreement);
         oracle.autoWarn(client, provider, CAP);
 
+        vm.roll(block.number + 1);
         vm.prank(serviceAgreement);
         oracle.autoWarn(client, provider, CAP);
 
@@ -119,6 +122,7 @@ contract ReputationOracleTest is Test {
         oracle.autoRecordSuccess(client, provider, CAP);
         assertEq(oracle.successStreak(provider), 1);
 
+        vm.roll(block.number + 1);
         trustRegistry.initWallet(client);
         vm.prank(serviceAgreement);
         oracle.autoWarn(client, provider, CAP);
@@ -131,6 +135,7 @@ contract ReputationOracleTest is Test {
             trustRegistry.initWallet(nextClient);
             vm.prank(serviceAgreement);
             oracle.autoWarn(nextClient, provider, CAP);
+            vm.roll(block.number + 1);
         }
 
         assertEq(oracle.getSignalCount(provider), 3);
@@ -142,6 +147,7 @@ contract ReputationOracleTest is Test {
             trustRegistry.initWallet(nextClient);
             vm.prank(serviceAgreement);
             oracle.autoWarn(nextClient, provider, CAP);
+            vm.roll(block.number + 1);
         }
         assertEq(oracle.getSignalCount(provider), 3);
 
@@ -159,6 +165,7 @@ contract ReputationOracleTest is Test {
         for (uint256 i = 0; i < 4; i++) {
             vm.prank(serviceAgreement);
             oracle.autoRecordSuccess(address(uint160(0xF000 + i)), provider, CAP);
+            vm.roll(block.number + 1);
         }
         assertEq(oracle.successStreak(provider), 4);
         assertEq(oracle.getSignalCount(provider), 0);
@@ -181,6 +188,7 @@ contract ReputationOracleTest is Test {
 
         vm.prank(endorser1);
         oracle.publishSignal(subject, ReputationOracle.SignalType.ENDORSE, CAP, "Good at legal");
+        vm.roll(block.number + 1);
         vm.prank(endorser2);
         oracle.publishSignal(subject, ReputationOracle.SignalType.ENDORSE, keccak256("coding"), "Good at coding");
 

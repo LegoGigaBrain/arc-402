@@ -1,26 +1,30 @@
 {
   "name": "arc402-cli",
-  "version": "0.1.0",
-  "description": "ARC-402 agent intelligence exchange CLI",
+  "version": "0.2.0",
+  "description": "ARC-402 CLI for discovery, negotiation payloads, hire/remediation/dispute workflows, and network reads",
   "bin": {
     "arc402": "./dist/index.js"
   },
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc",
-    "dev": "ts-node src/index.ts"
+    "test": "node --test test/**/*.test.js"
   },
   "dependencies": {
+    "@arc402/sdk": "file:../reference/sdk",
+    "@walletconnect/sign-client": "^2.17.4",
     "chalk": "^5.3.0",
     "cli-table3": "^0.6.3",
     "commander": "^12.1.0",
     "ethers": "^6.13.4",
     "ora": "^8.1.1",
-    "prompts": "^2.4.2"
+    "prompts": "^2.4.2",
+    "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/prompts": "^2.4.9",
+    "@types/qrcode-terminal": "^0.12.2",
     "typescript": "^5.4.5"
   }
 }

@@ -12,6 +12,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../contracts/ServiceAgreement.sol";
+import "../contracts/DisputeModule.sol";
 import "../contracts/TrustRegistry.sol";
 import "../contracts/IServiceAgreement.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -49,6 +50,8 @@ contract MinimumTrustValueTest is Test {
         sa.setLegacyFulfillMode(true);
         sa.setLegacyFulfillProvider(provider, true);
         trustReg.addUpdater(address(sa));
+        DisputeModule dm = new DisputeModule(address(sa));
+        sa.setDisputeModule(address(dm));
 
         vm.deal(client,   100 ether);
         vm.deal(provider, 10 ether);
@@ -165,7 +168,7 @@ contract MinimumTrustValueTest is Test {
      */
     function test_MinimumTrustValue_OnlyOwner() public {
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: not owner");
+        vm.expectRevert(ServiceAgreement.NotOwner.selector);
         sa.setMinimumTrustValue(MINIMUM);
     }
 
@@ -215,6 +218,8 @@ contract CommitRevealTest is Test {
         sa.setLegacyFulfillMode(true);
         sa.setLegacyFulfillProvider(provider, true);
         trustReg.addUpdater(address(sa));
+        DisputeModule dm = new DisputeModule(address(sa));
+        sa.setDisputeModule(address(dm));
 
         vm.deal(client,   100 ether);
         vm.deal(provider, 10 ether);
@@ -319,7 +324,7 @@ contract CommitRevealTest is Test {
         _commit(id);
 
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: remediation first");
+        vm.expectRevert(ServiceAgreement.RemediationFirst.selector);
         sa.dispute(id, "Deliverable does not meet spec");
     }
 
@@ -332,6 +337,7 @@ contract CommitRevealTest is Test {
 
         vm.prank(client);
         sa.requestRevision(id, keccak256("needs-fix"), "ipfs://feedback", bytes32(0));
+        vm.warp(block.timestamp + 24 hours + 1);
 
         vm.prank(provider);
         sa.escalateToDispute(id, "deadlocked after remediation started");
@@ -407,7 +413,7 @@ contract CommitRevealTest is Test {
         _commit(id);
 
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: direct dispute not allowed");
+        vm.expectRevert(ServiceAgreement.DirectDisputeNotAllowed.selector);
         sa.directDispute(id, IServiceAgreement.DirectDisputeReason.NO_DELIVERY, "not yet overdue");
     }
 
@@ -419,12 +425,12 @@ contract CommitRevealTest is Test {
         _commit(id);
 
         vm.prank(stranger);
-        vm.expectRevert("ServiceAgreement: not client");
+        vm.expectRevert(ServiceAgreement.NotClient.selector);
         sa.verifyDeliverable(id);
 
         // Provider also cannot verify
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: not client");
+        vm.expectRevert(ServiceAgreement.NotClient.selector);
         sa.verifyDeliverable(id);
     }
 
@@ -436,14 +442,14 @@ contract CommitRevealTest is Test {
         _commit(id);
 
         // Still inside the verify window
-        vm.expectRevert("ServiceAgreement: verify window open");
+        vm.expectRevert(ServiceAgreement.VerifyWindowOpen.selector);
         sa.autoRelease(id);
 
         // Even 1 second before expiry
         uint256 verifyWindowEnd = sa.getAgreement(id).verifyWindowEnd;
         vm.warp(verifyWindowEnd - 1);
 
-        vm.expectRevert("ServiceAgreement: verify window open");
+        vm.expectRevert(ServiceAgreement.VerifyWindowOpen.selector);
         sa.autoRelease(id);
     }
 
@@ -454,7 +460,7 @@ contract CommitRevealTest is Test {
         uint256 id = _proposeAndAccept();
         // Did not commit — still ACCEPTED
 
-        vm.expectRevert("ServiceAgreement: not PENDING_VERIFICATION");
+        vm.expectRevert(ServiceAgreement.InvalidStatus.selector);
         sa.autoRelease(id);
     }
 
@@ -466,7 +472,7 @@ contract CommitRevealTest is Test {
         // Still ACCEPTED — not committed yet
 
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: not PENDING_VERIFICATION");
+        vm.expectRevert(ServiceAgreement.InvalidStatus.selector);
         sa.verifyDeliverable(id);
     }
 
@@ -478,7 +484,7 @@ contract CommitRevealTest is Test {
         // Still PROPOSED — not accepted
 
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: not ACCEPTED");
+        vm.expectRevert(ServiceAgreement.InvalidStatus.selector);
         sa.commitDeliverable(id, DELIVERY_HASH);
     }
 
@@ -492,7 +498,7 @@ contract CommitRevealTest is Test {
         vm.warp(block.timestamp + DEADLINE + 1);
 
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: past deadline");
+        vm.expectRevert(ServiceAgreement.PastDeadline.selector);
         sa.commitDeliverable(id, DELIVERY_HASH);
     }
 
@@ -503,7 +509,7 @@ contract CommitRevealTest is Test {
         uint256 id = _proposeAndAccept();
 
         vm.prank(client);
-        vm.expectRevert("ServiceAgreement: not provider");
+        vm.expectRevert(ServiceAgreement.NotProvider.selector);
         sa.commitDeliverable(id, DELIVERY_HASH);
     }
 
@@ -620,7 +626,7 @@ contract CommitRevealTest is Test {
         fresh.accept(id);
 
         vm.prank(provider);
-        vm.expectRevert("ServiceAgreement: legacy fulfill disabled");
+        vm.expectRevert(ServiceAgreement.LegacyFulfillDisabled.selector);
         fresh.fulfill(id, DELIVERY_HASH);
     }
 

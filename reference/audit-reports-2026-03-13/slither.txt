@@ -1,0 +1,1336 @@
+'forge clean' running (wd: /home/lego/.openclaw/workspace-engineering/products/arc-402/reference)
+'forge config --json' running
+'forge build --build-info --skip ./test/** ./script/** --force' running (wd: /home/lego/.openclaw/workspace-engineering/products/arc-402/reference)
+
+Detector: arbitrary-send-eth
+DisputeArbitration._releasePayment(address,address,uint256) (contracts/DisputeArbitration.sol#389-397) sends eth to arbitrary user
+	Dangerous calls:
+	- (ok,None) = to.call{value: amount}() (contracts/DisputeArbitration.sol#392)
+ServiceAgreement._releaseEscrow(address,address,uint256) (contracts/ServiceAgreement.sol#813-821) sends eth to arbitrary user
+	Dangerous calls:
+	- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#functions-that-send-ether-to-arbitrary-destinations
+
+Detector: weak-prng
+DisputeArbitration.selectArbitratorFromPool(uint256,address[]) (contracts/DisputeArbitration.sol#503-534) uses a weak PRNG: "j = i_scope_0 + (uint256(seed) % (candidates.length - i_scope_0)) (contracts/DisputeArbitration.sol#527)" 
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#weak-PRNG
+
+Detector: incorrect-exp
+Math.mulDiv(uint256,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#206-277) has bitwise-xor operator ^ instead of the exponentiation operator **: 
+	 - inverse = (3 * denominator) ^ 2 (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#259)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#incorrect-exponentiation
+
+Detector: incorrect-return
+Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[3]) (contracts/CapabilityProofVerifier.sol#65-181) calls Groth16Verifier.verifyProof.asm_0.checkField() (contracts/CapabilityProofVerifier.sol#67-72) which halt the execution return(uint256,uint256)(0,0x20) (contracts/CapabilityProofVerifier.sol#70)
+Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[3]) (contracts/CapabilityProofVerifier.sol#65-181) calls Groth16Verifier.verifyProof.asm_0.checkPairing() (contracts/CapabilityProofVerifier.sol#100-161) which halt the execution return(uint256,uint256)(0,0x20) (contracts/CapabilityProofVerifier.sol#96)
+Groth16Verifier.verifyProof.asm_0.checkPairing() (contracts/CapabilityProofVerifier.sol#100-161) calls Groth16Verifier.verifyProof.asm_0.g1_mulAccC() (contracts/CapabilityProofVerifier.sol#75-98) which halt the execution return(uint256,uint256)(0,0x20) (contracts/CapabilityProofVerifier.sol#96)
+Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[2]) (contracts/SolvencyProofVerifier.sol#62-174) calls Groth16Verifier.verifyProof.asm_0.checkField() (contracts/SolvencyProofVerifier.sol#64-69) which halt the execution return(uint256,uint256)(0,0x20) (contracts/SolvencyProofVerifier.sol#67)
+Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[2]) (contracts/SolvencyProofVerifier.sol#62-174) calls Groth16Verifier.verifyProof.asm_0.checkPairing() (contracts/SolvencyProofVerifier.sol#97-156) which halt the execution return(uint256,uint256)(0,0x20) (contracts/SolvencyProofVerifier.sol#83)
+Groth16Verifier.verifyProof.asm_0.checkPairing() (contracts/SolvencyProofVerifier.sol#97-156) calls Groth16Verifier.verifyProof.asm_0.g1_mulAccC() (contracts/SolvencyProofVerifier.sol#72-95) which halt the execution return(uint256,uint256)(0,0x20) (contracts/SolvencyProofVerifier.sol#83)
+Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[2]) (contracts/TrustThresholdVerifier.sol#62-174) calls Groth16Verifier.verifyProof.asm_0.checkPairing() (contracts/TrustThresholdVerifier.sol#97-156) which halt the execution return(uint256,uint256)(0,0x20) (contracts/TrustThresholdVerifier.sol#93)
+Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[2]) (contracts/TrustThresholdVerifier.sol#62-174) calls Groth16Verifier.verifyProof.asm_0.checkField() (contracts/TrustThresholdVerifier.sol#64-69) which halt the execution return(uint256,uint256)(0,0x20) (contracts/TrustThresholdVerifier.sol#67)
+Groth16Verifier.verifyProof.asm_0.checkPairing() (contracts/TrustThresholdVerifier.sol#97-156) calls Groth16Verifier.verifyProof.asm_0.g1_mulAccC() (contracts/TrustThresholdVerifier.sol#72-95) which halt the execution return(uint256,uint256)(0,0x20) (contracts/TrustThresholdVerifier.sol#83)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#incorrect-return-in-assembly
+
+Detector: reentrancy-eth
+Reentrancy in DisputeArbitration._settleArbitratorBondsAndFees(uint256,address,uint256) (contracts/DisputeArbitration.sol#399-450):
+	External calls:
+	- _releasePayment(token,arb,bond.bondAmount) (contracts/DisputeArbitration.sol#429)
+		- (ok,None) = to.call{value: amount}() (contracts/DisputeArbitration.sol#392)
+	- _releasePayment(token,arb,feePerArbitrator) (contracts/DisputeArbitration.sol#432)
+		- (ok,None) = to.call{value: amount}() (contracts/DisputeArbitration.sol#392)
+	- _releasePayment(token,treasury,bond.bondAmount) (contracts/DisputeArbitration.sol#438)
+		- (ok,None) = to.call{value: amount}() (contracts/DisputeArbitration.sol#392)
+	- ITrustRegistry(trustRegistry).recordArbitratorSlash(arb,missed-deadline) (contracts/DisputeArbitration.sol#441)
+	External calls sending eth:
+	- _releasePayment(token,arb,bond.bondAmount) (contracts/DisputeArbitration.sol#429)
+		- (ok,None) = to.call{value: amount}() (contracts/DisputeArbitration.sol#392)
+	- _releasePayment(token,arb,feePerArbitrator) (contracts/DisputeArbitration.sol#432)
+		- (ok,None) = to.call{value: amount}() (contracts/DisputeArbitration.sol#392)
+	- _releasePayment(token,treasury,bond.bondAmount) (contracts/DisputeArbitration.sol#438)
+		- (ok,None) = to.call{value: amount}() (contracts/DisputeArbitration.sol#392)
+	State variables written after the call(s):
+	- bond.returned = true (contracts/DisputeArbitration.sol#428)
+	DisputeArbitration._bonds (contracts/DisputeArbitration.sol#64) can be used in cross function reentrancies:
+	- DisputeArbitration.getArbitratorBondState(address,uint256) (contracts/DisputeArbitration.sol#305-310)
+	- bond.slashed = true (contracts/DisputeArbitration.sol#437)
+	DisputeArbitration._bonds (contracts/DisputeArbitration.sol#64) can be used in cross function reentrancies:
+	- DisputeArbitration.getArbitratorBondState(address,uint256) (contracts/DisputeArbitration.sol#305-310)
+Reentrancy in DisputeArbitration.acceptAssignment(uint256) (contracts/DisputeArbitration.sol#237-256):
+	External calls:
+	- _collectPayment(fs.token,msg.sender,bondRequired) (contracts/DisputeArbitration.sol#244)
+		- (ok,None) = from.call{value: msg.value - amount}() (contracts/DisputeArbitration.sol#381)
+	State variables written after the call(s):
+	- _accepted[agreementId].push(msg.sender) (contracts/DisputeArbitration.sol#253)
+	DisputeArbitration._accepted (contracts/DisputeArbitration.sol#65) can be used in cross function reentrancies:
+	- DisputeArbitration.getAcceptedArbitrators(uint256) (contracts/DisputeArbitration.sol#322-324)
+	- _bonds[agreementId][msg.sender] = ArbitratorBondState({bondAmount:bondRequired,lockedAt:block.timestamp,locked:true,slashed:false,returned:false}) (contracts/DisputeArbitration.sol#246-252)
+	DisputeArbitration._bonds (contracts/DisputeArbitration.sol#64) can be used in cross function reentrancies:
+	- DisputeArbitration.getArbitratorBondState(address,uint256) (contracts/DisputeArbitration.sol#305-310)
+Reentrancy in DisputeArbitration.joinMutualDispute(uint256) (contracts/DisputeArbitration.sol#170-186):
+	External calls:
+	- _collectPayment(fs.token,respondent,halfFee) (contracts/DisputeArbitration.sol#182)
+		- (ok,None) = from.call{value: msg.value - amount}() (contracts/DisputeArbitration.sol#381)
+	State variables written after the call(s):
+	- fs.respondentPaid = halfFee (contracts/DisputeArbitration.sol#183)
+	DisputeArbitration._fees (contracts/DisputeArbitration.sol#63) can be used in cross function reentrancies:
+	- DisputeArbitration.getDisputeFeeState(uint256) (contracts/DisputeArbitration.sol#301-303)
+Reentrancy in DisputeArbitration.openDispute(uint256,IDisputeArbitration.DisputeMode,IDisputeArbitration.DisputeClass,address,address,address,uint256,address) (contracts/DisputeArbitration.sol#131-167):
+	External calls:
+	- _collectPayment(token,opener,openerOwes) (contracts/DisputeArbitration.sol#148)
+		- (ok,None) = from.call{value: msg.value - amount}() (contracts/DisputeArbitration.sol#381)
+	State variables written after the call(s):
+	- _fees[agreementId] = DisputeFeeState({mode:mode,disputeClass:disputeClass,opener:opener,client:client,provider:provider,token:token,agreementPrice:agreementPrice,feeRequired:feeRequired,openerPaid:openerOwes,respondentPaid:0,openedAt:block.timestamp,active:true,resolved:false}) (contracts/DisputeArbitration.sol#150-164)
+	DisputeArbitration._fees (contracts/DisputeArbitration.sol#63) can be used in cross function reentrancies:
+	- DisputeArbitration.getDisputeFeeState(uint256) (contracts/DisputeArbitration.sol#301-303)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#reentrancy-vulnerabilities-1
+
+Detector: uninitialized-state
+TrustRegistryV2._capabilitySlots (contracts/TrustRegistryV2.sol#46) is never initialized. It is used in:
+	- TrustRegistryV2.getCapabilityScore(address,string) (contracts/TrustRegistryV2.sol#236-245)
+	- TrustRegistryV2.meetsCapabilityThreshold(address,uint256,string) (contracts/TrustRegistryV2.sol#262-275)
+	- TrustRegistryV2.getCapabilitySlots(address) (contracts/TrustRegistryV2.sol#278-280)
+	- TrustRegistryV2._updateCapabilitySlot(address,bytes32,uint256) (contracts/TrustRegistryV2.sol#313-349)
+	- TrustRegistryV2._deductCapabilitySlot(address,bytes32,uint256) (contracts/TrustRegistryV2.sol#352-361)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#uninitialized-state-variables
+
+Detector: divide-before-multiply
+DisputeArbitration._calcFee(uint256,address,IDisputeArbitration.DisputeClass) (contracts/DisputeArbitration.sol#328-358) performs a multiplication on the result of a division:
+	- agreementPriceUsd = (agreementPrice * rate) / 1e18 (contracts/DisputeArbitration.sol#339)
+	- rawFeeUsd = (agreementPriceUsd * 3) / 100 (contracts/DisputeArbitration.sol#342)
+DisputeArbitration._calcFee(uint256,address,IDisputeArbitration.DisputeClass) (contracts/DisputeArbitration.sol#328-358) performs a multiplication on the result of a division:
+	- rawFeeUsd = (agreementPriceUsd * 3) / 100 (contracts/DisputeArbitration.sol#342)
+	- classFeeUsd = (clampedFeeUsd * multiplierBps) / 10000 (contracts/DisputeArbitration.sol#351)
+	- clampedFeeUsd = rawFeeUsd (contracts/DisputeArbitration.sol#345-347)
+DisputeArbitration._calcFee(uint256,address,IDisputeArbitration.DisputeClass) (contracts/DisputeArbitration.sol#328-358) performs a multiplication on the result of a division:
+	- classFeeUsd = (clampedFeeUsd * multiplierBps) / 10000 (contracts/DisputeArbitration.sol#351)
+	- (finalFeeUsd * 1e18) / rate (contracts/DisputeArbitration.sol#357)
+	- finalFeeUsd = classFeeUsd (contracts/DisputeArbitration.sol#354)
+Math.mulDiv(uint256,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#206-277) performs a multiplication on the result of a division:
+	- denominator = denominator / twos (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#244)
+	- inverse = (3 * denominator) ^ 2 (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#259)
+Math.mulDiv(uint256,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#206-277) performs a multiplication on the result of a division:
+	- denominator = denominator / twos (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#244)
+	- inverse *= 2 - denominator * inverse (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#263)
+Math.mulDiv(uint256,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#206-277) performs a multiplication on the result of a division:
+	- denominator = denominator / twos (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#244)
+	- inverse *= 2 - denominator * inverse (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#264)
+Math.mulDiv(uint256,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#206-277) performs a multiplication on the result of a division:
+	- denominator = denominator / twos (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#244)
+	- inverse *= 2 - denominator * inverse (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#265)
+Math.mulDiv(uint256,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#206-277) performs a multiplication on the result of a division:
+	- denominator = denominator / twos (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#244)
+	- inverse *= 2 - denominator * inverse (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#266)
+Math.mulDiv(uint256,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#206-277) performs a multiplication on the result of a division:
+	- denominator = denominator / twos (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#244)
+	- inverse *= 2 - denominator * inverse (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#267)
+Math.mulDiv(uint256,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#206-277) performs a multiplication on the result of a division:
+	- denominator = denominator / twos (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#244)
+	- inverse *= 2 - denominator * inverse (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#268)
+Math.mulDiv(uint256,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#206-277) performs a multiplication on the result of a division:
+	- low = low / twos (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#247)
+	- result = low * inverse (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#274)
+Math.invMod(uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#317-363) performs a multiplication on the result of a division:
+	- quotient = gcd / remainder (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#339)
+	- (gcd,remainder) = (remainder,gcd - remainder * quotient) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#341-348)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#divide-before-multiply
+
+Detector: incorrect-equality
+AgentRegistry._applyMissedHeartbeats(IAgentRegistry.OperationalMetrics) (contracts/AgentRegistry.sol#324-333) uses a dangerous strict equality:
+	- missed == 0 (contracts/AgentRegistry.sol#328)
+AgentRegistry._latencyToScore(uint256) (contracts/AgentRegistry.sol#344-351) uses a dangerous strict equality:
+	- latencyMs == 0 || latencyMs <= 250 (contracts/AgentRegistry.sol#345)
+IntentAttestation.isExpired(bytes32) (contracts/IntentAttestation.sol#92-97) uses a dangerous strict equality:
+	- exp == 0 (contracts/IntentAttestation.sol#95)
+ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793) uses a dangerous strict equality:
+	- require(bool,string)(providerAward + clientAward == ag.price || outcome == DisputeOutcome.HUMAN_REVIEW_REQUIRED,ServiceAgreement: invalid split) (contracts/ServiceAgreement.sol#742)
+ServiceAgreement._releaseEscrow(address,address,uint256) (contracts/ServiceAgreement.sol#813-821) uses a dangerous strict equality:
+	- amount == 0 (contracts/ServiceAgreement.sol#814)
+ServiceAgreement._releaseEscrowWithFee(address,address,uint256) (contracts/ServiceAgreement.sol#827-838) uses a dangerous strict equality:
+	- amount == 0 (contracts/ServiceAgreement.sol#828)
+TrustRegistryV2.getEffectiveScore(address) (contracts/TrustRegistryV2.sol#215-232) uses a dangerous strict equality:
+	- elapsed == 0 (contracts/TrustRegistryV2.sol#220)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#dangerous-strict-equalities
+
+Detector: reentrancy-no-eth
+Reentrancy in ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554):
+	External calls:
+	- IDisputeArbitration(disputeArbitration).recordArbitratorVote(agreementId,msg.sender) (contracts/ServiceAgreement.sol#520)
+	State variables written after the call(s):
+	- ac.providerVotes += 1 (contracts/ServiceAgreement.sol#525)
+	ServiceAgreement._arbitrationCases (contracts/ServiceAgreement.sol#57) can be used in cross function reentrancies:
+	- ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793)
+	- ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554)
+	- ServiceAgreement.getArbitrationCase(uint256) (contracts/ServiceAgreement.sol#643-645)
+	- ServiceAgreement.nominateArbitrator(uint256,address) (contracts/ServiceAgreement.sol#473-504)
+	- ServiceAgreement.requestHumanEscalation(uint256,string) (contracts/ServiceAgreement.sol#556-566)
+	- ac.clientVotes += 1 (contracts/ServiceAgreement.sol#528)
+	ServiceAgreement._arbitrationCases (contracts/ServiceAgreement.sol#57) can be used in cross function reentrancies:
+	- ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793)
+	- ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554)
+	- ServiceAgreement.getArbitrationCase(uint256) (contracts/ServiceAgreement.sol#643-645)
+	- ServiceAgreement.nominateArbitrator(uint256,address) (contracts/ServiceAgreement.sol#473-504)
+	- ServiceAgreement.requestHumanEscalation(uint256,string) (contracts/ServiceAgreement.sol#556-566)
+	- ac.splitProviderAward = providerAward (contracts/ServiceAgreement.sol#532)
+	ServiceAgreement._arbitrationCases (contracts/ServiceAgreement.sol#57) can be used in cross function reentrancies:
+	- ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793)
+	- ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554)
+	- ServiceAgreement.getArbitrationCase(uint256) (contracts/ServiceAgreement.sol#643-645)
+	- ServiceAgreement.nominateArbitrator(uint256,address) (contracts/ServiceAgreement.sol#473-504)
+	- ServiceAgreement.requestHumanEscalation(uint256,string) (contracts/ServiceAgreement.sol#556-566)
+	- ac.splitClientAward = clientAward (contracts/ServiceAgreement.sol#533)
+	ServiceAgreement._arbitrationCases (contracts/ServiceAgreement.sol#57) can be used in cross function reentrancies:
+	- ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793)
+	- ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554)
+	- ServiceAgreement.getArbitrationCase(uint256) (contracts/ServiceAgreement.sol#643-645)
+	- ServiceAgreement.nominateArbitrator(uint256,address) (contracts/ServiceAgreement.sol#473-504)
+	- ServiceAgreement.requestHumanEscalation(uint256,string) (contracts/ServiceAgreement.sol#556-566)
+	- ac.splitVotes += 1 (contracts/ServiceAgreement.sol#537)
+	ServiceAgreement._arbitrationCases (contracts/ServiceAgreement.sol#57) can be used in cross function reentrancies:
+	- ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793)
+	- ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554)
+	- ServiceAgreement.getArbitrationCase(uint256) (contracts/ServiceAgreement.sol#643-645)
+	- ServiceAgreement.nominateArbitrator(uint256,address) (contracts/ServiceAgreement.sol#473-504)
+	- ServiceAgreement.requestHumanEscalation(uint256,string) (contracts/ServiceAgreement.sol#556-566)
+	- ac.humanVotes += 1 (contracts/ServiceAgreement.sol#540)
+	ServiceAgreement._arbitrationCases (contracts/ServiceAgreement.sol#57) can be used in cross function reentrancies:
+	- ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793)
+	- ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554)
+	- ServiceAgreement.getArbitrationCase(uint256) (contracts/ServiceAgreement.sol#643-645)
+	- ServiceAgreement.nominateArbitrator(uint256,address) (contracts/ServiceAgreement.sol#473-504)
+	- ServiceAgreement.requestHumanEscalation(uint256,string) (contracts/ServiceAgreement.sol#556-566)
+Reentrancy in ARC402Wallet.executeSpend(address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#267-317):
+	External calls:
+	- _policyEngine().recordSpend(address(this),category,amount,activeContextId) (contracts/ARC402Wallet.sol#294)
+	State variables written after the call(s):
+	- frozen = true (contracts/ARC402Wallet.sol#306)
+	ARC402Wallet.frozen (contracts/ARC402Wallet.sol#53) can be used in cross function reentrancies:
+	- ARC402Wallet.executeSpend(address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#267-317)
+	- ARC402Wallet.executeTokenSpend(address,address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#329-379)
+	- ARC402Wallet.freeze(string) (contracts/ARC402Wallet.sol#181-187)
+	- ARC402Wallet.frozen (contracts/ARC402Wallet.sol#53)
+	- ARC402Wallet.notFrozen() (contracts/ARC402Wallet.sol#112-115)
+	- ARC402Wallet.unfreeze() (contracts/ARC402Wallet.sol#189-193)
+Reentrancy in ARC402Wallet.executeTokenSpend(address,address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#329-379):
+	External calls:
+	- _policyEngine().recordSpend(address(this),category,amount,activeContextId) (contracts/ARC402Wallet.sol#354)
+	State variables written after the call(s):
+	- frozen = true (contracts/ARC402Wallet.sol#367)
+	ARC402Wallet.frozen (contracts/ARC402Wallet.sol#53) can be used in cross function reentrancies:
+	- ARC402Wallet.executeSpend(address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#267-317)
+	- ARC402Wallet.executeTokenSpend(address,address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#329-379)
+	- ARC402Wallet.freeze(string) (contracts/ARC402Wallet.sol#181-187)
+	- ARC402Wallet.frozen (contracts/ARC402Wallet.sol#53)
+	- ARC402Wallet.notFrozen() (contracts/ARC402Wallet.sol#112-115)
+	- ARC402Wallet.unfreeze() (contracts/ARC402Wallet.sol#189-193)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#reentrancy-vulnerabilities-2
+
+Detector: uninitialized-local
+ReputationOracle.getReputation(address).negativeWeight (contracts/ReputationOracle.sol#213) is a local variable never initialized
+ReputationOracle.getReputation(address).positiveWeight (contracts/ReputationOracle.sol#212) is a local variable never initialized
+ReputationOracle.getCapabilityReputation(address,bytes32).negativeWeight (contracts/ReputationOracle.sol#237) is a local variable never initialized
+ReputationOracle.getCapabilityReputation(address,bytes32).positiveWeight (contracts/ReputationOracle.sol#236) is a local variable never initialized
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#uninitialized-local-variables
+
+Detector: unused-return
+ARC402Wallet.proposeMASSettlement(address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#383-411) ignores return value by _settlementCoordinator().propose(address(this),recipientWallet,amount,address(0),attestationId,block.timestamp + 86400) (contracts/ARC402Wallet.sol#403-410)
+ARC402Wallet.executeContractCall(ARC402Wallet.ContractCallParams) (contracts/ARC402Wallet.sol#448-487) ignores return value by IERC20(params.approvalToken).approve(params.target,params.maxApprovalAmount) (contracts/ARC402Wallet.sol#465)
+ARC402Wallet.executeContractCall(ARC402Wallet.ContractCallParams) (contracts/ARC402Wallet.sol#448-487) ignores return value by IERC20(params.approvalToken).approve(params.target,0) (contracts/ARC402Wallet.sol#475)
+CapabilityRegistry.claim(string) (contracts/CapabilityRegistry.sol#91-111) ignores return value by _capabilityAgents[capabilityId].add(msg.sender) (contracts/CapabilityRegistry.sol#108)
+CapabilityRegistry.revoke(string) (contracts/CapabilityRegistry.sol#113-131) ignores return value by _capabilityAgents[capabilityId].remove(msg.sender) (contracts/CapabilityRegistry.sol#118)
+PolicyEngine.whitelistContract(address,address) (contracts/PolicyEngine.sol#285-289) ignores return value by _whitelistedContracts[wallet].add(target) (contracts/PolicyEngine.sol#287)
+PolicyEngine.removeWhitelistedContract(address,address) (contracts/PolicyEngine.sol#292-295) ignores return value by _whitelistedContracts[wallet].remove(target) (contracts/PolicyEngine.sol#293)
+PolicyEngine.allowNFTContract(address,address) (contracts/PolicyEngine.sol#332-336) ignores return value by _allowedNFTContracts[wallet].add(nftContract) (contracts/PolicyEngine.sol#334)
+PolicyEngine.disallowNFTContract(address,address) (contracts/PolicyEngine.sol#339-342) ignores return value by _allowedNFTContracts[wallet].remove(nftContract) (contracts/PolicyEngine.sol#340)
+ServiceAgreement._openFormalDispute(uint256,string,bool,IServiceAgreement.DirectDisputeReason,IDisputeArbitration.DisputeMode,IDisputeArbitration.DisputeClass) (contracts/ServiceAgreement.sol#651-692) ignores return value by IDisputeArbitration(disputeArbitration).openDispute{value: msg.value}(agreementId,daMode,daClass,msg.sender,ag.client,ag.provider,ag.price,ag.token) (contracts/ServiceAgreement.sol#678-690)
+WatchtowerRegistry._requireChannelClient(bytes32) (contracts/WatchtowerRegistry.sol#119-123) ignores return value by (client,None,None,None,None,None,None,None,None) = serviceAgreement.channels(channelId) (contracts/WatchtowerRegistry.sol#120)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#unused-return
+
+Detector: shadowing-local
+AgreementTree.constructor(address,address)._owner (contracts/AgreementTree.sol#43) shadows:
+	- Ownable._owner (lib/openzeppelin-contracts/contracts/access/Ownable.sol#21) (state variable)
+CapabilityRegistry.constructor(address,address)._owner (contracts/CapabilityRegistry.sol#60) shadows:
+	- Ownable._owner (lib/openzeppelin-contracts/contracts/access/Ownable.sol#21) (state variable)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#local-variable-shadowing
+
+Detector: events-access
+DisputeArbitration.setServiceAgreement(address) (contracts/DisputeArbitration.sol#109-111) should emit an event for: 
+	- serviceAgreement = sa (contracts/DisputeArbitration.sol#110) 
+DisputeArbitration.transferOwnership(address) (contracts/DisputeArbitration.sol#123-126) should emit an event for: 
+	- owner = newOwner (contracts/DisputeArbitration.sol#125) 
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#missing-events-access-control
+
+Detector: events-maths
+DisputeArbitration.setFeeFloorUsd(uint256) (contracts/DisputeArbitration.sol#95-98) should emit an event for: 
+	- feeFloorUsd18 = floorUsd18 (contracts/DisputeArbitration.sol#97) 
+DisputeArbitration.setFeeCapUsd(uint256) (contracts/DisputeArbitration.sol#100-103) should emit an event for: 
+	- feeCapUsd18 = capUsd18 (contracts/DisputeArbitration.sol#102) 
+DisputeArbitration.setMinBondFloorUsd(uint256) (contracts/DisputeArbitration.sol#105-107) should emit an event for: 
+	- minBondFloorUsd18 = floorUsd18 (contracts/DisputeArbitration.sol#106) 
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#missing-events-arithmetic
+
+Detector: missing-zero-check
+Ownable2Step.transferOwnership(address).newOwner (lib/openzeppelin-contracts/contracts/access/Ownable2Step.sol#43) lacks a zero-check on :
+		- _pendingOwner = newOwner (lib/openzeppelin-contracts/contracts/access/Ownable2Step.sol#44)
+DisputeArbitration.constructor(address,address)._trustRegistry (contracts/DisputeArbitration.sol#82) lacks a zero-check on :
+		- trustRegistry = _trustRegistry (contracts/DisputeArbitration.sol#84)
+DisputeArbitration.setServiceAgreement(address).sa (contracts/DisputeArbitration.sol#109) lacks a zero-check on :
+		- serviceAgreement = sa (contracts/DisputeArbitration.sol#110)
+DisputeArbitration.setTrustRegistry(address).tr (contracts/DisputeArbitration.sol#113) lacks a zero-check on :
+		- trustRegistry = tr (contracts/DisputeArbitration.sol#114)
+ReputationOracle.constructor(address,address)._serviceAgreement (contracts/ReputationOracle.sol#76) lacks a zero-check on :
+		- serviceAgreement = _serviceAgreement (contracts/ReputationOracle.sol#79)
+ServiceAgreement.constructor(address)._trustRegistry (contracts/ServiceAgreement.sol#147) lacks a zero-check on :
+		- trustRegistry = _trustRegistry (contracts/ServiceAgreement.sol#149)
+ServiceAgreement.setDisputeArbitration(address).da (contracts/ServiceAgreement.sol#203) lacks a zero-check on :
+		- disputeArbitration = da (contracts/ServiceAgreement.sol#204)
+ServiceAgreement.setWatchtowerRegistry(address)._watchtowerRegistry (contracts/ServiceAgreement.sol#213) lacks a zero-check on :
+		- watchtowerRegistry = _watchtowerRegistry (contracts/ServiceAgreement.sol#214)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#missing-zero-address-validation
+
+Detector: calls-loop
+AgreementTree.allChildrenSettled(uint256) (contracts/AgreementTree.sol#132-139) has external calls inside a loop: ag = serviceAgreement.getAgreement(kids[i]) (contracts/AgreementTree.sol#135)
+DisputeArbitration._settleArbitratorBondsAndFees(uint256,address,uint256) (contracts/DisputeArbitration.sol#399-450) has external calls inside a loop: ITrustRegistry(trustRegistry).recordArbitratorSlash(arb,missed-deadline) (contracts/DisputeArbitration.sol#441)
+	Calls stack containing the loop:
+		DisputeArbitration.resolveDisputeFee(uint256,uint8)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation/#calls-inside-a-loop
+
+Detector: reentrancy-benign
+Reentrancy in ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554):
+	External calls:
+	- IDisputeArbitration(disputeArbitration).recordArbitratorVote(agreementId,msg.sender) (contracts/ServiceAgreement.sol#520)
+	State variables written after the call(s):
+	- _markHumanEscalation(agreementId) (contracts/ServiceAgreement.sol#552)
+		- dc.agreementId = agreementId (contracts/ServiceAgreement.sol#722)
+		- dc.openedAt = block.timestamp (contracts/ServiceAgreement.sol#723)
+		- dc.responseDeadlineAt = block.timestamp + DISPUTE_TIMEOUT (contracts/ServiceAgreement.sol#724)
+		- dc.outcome = DisputeOutcome.PENDING (contracts/ServiceAgreement.sol#725)
+		- dc.humanReviewRequested = humanReviewRequested (contracts/ServiceAgreement.sol#726)
+		- dc.evidenceCount = _disputeEvidence[agreementId].length (contracts/ServiceAgreement.sol#727)
+		- dc.humanReviewRequested = true (contracts/ServiceAgreement.sol#729)
+Reentrancy in WalletFactory.createWallet() (contracts/WalletFactory.sol#26-37):
+	External calls:
+	- wallet = new ARC402Wallet(registry,msg.sender) (contracts/WalletFactory.sol#27)
+	- ITrustRegistry(reg.trustRegistry()).initWallet(address(wallet)) (contracts/WalletFactory.sol#30)
+	State variables written after the call(s):
+	- allWallets.push(address(wallet)) (contracts/WalletFactory.sol#33)
+	- ownerWallets[msg.sender].push(address(wallet)) (contracts/WalletFactory.sol#32)
+Reentrancy in ARC402Wallet.executeSpend(address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#267-317):
+	External calls:
+	- _policyEngine().recordSpend(address(this),category,amount,activeContextId) (contracts/ARC402Wallet.sol#294)
+	State variables written after the call(s):
+	- ethSpendingInWindow = 0 (contracts/ARC402Wallet.sol#299)
+	- ethSpendingInWindow += amount (contracts/ARC402Wallet.sol#302)
+	- frozenAt = block.timestamp (contracts/ARC402Wallet.sol#307)
+	- spendingWindowStart = block.timestamp (contracts/ARC402Wallet.sol#298)
+	- tokenSpendingInWindow = 0 (contracts/ARC402Wallet.sol#300)
+Reentrancy in ARC402Wallet.executeTokenSpend(address,address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#329-379):
+	External calls:
+	- _policyEngine().recordSpend(address(this),category,amount,activeContextId) (contracts/ARC402Wallet.sol#354)
+	State variables written after the call(s):
+	- ethSpendingInWindow = 0 (contracts/ARC402Wallet.sol#360)
+	- frozenAt = block.timestamp (contracts/ARC402Wallet.sol#368)
+	- spendingWindowStart = block.timestamp (contracts/ARC402Wallet.sol#359)
+	- tokenSpendingInWindow = 0 (contracts/ARC402Wallet.sol#361)
+	- tokenSpendingInWindow += amount (contracts/ARC402Wallet.sol#363)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#reentrancy-vulnerabilities-3
+
+Detector: reentrancy-events
+Reentrancy in ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793):
+	External calls:
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#762)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _updateTrust(agreementId,ag,true) (contracts/ServiceAgreement.sol#763)
+		- ITrustRegistry(trustRegistry).recordSuccess(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#845-847)
+		- ITrustRegistry(trustRegistry).recordAnomaly(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#850-852)
+		- reputationOracle.autoRecordSuccess(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#857)
+		- reputationOracle.autoWarn(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#859)
+	External calls sending eth:
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#762)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	Event emitted after the call(s):
+	- TrustUpdateFailed(agreementId,ag.provider,fulfill) (contracts/ServiceAgreement.sol#846)
+		- _updateTrust(agreementId,ag,true) (contracts/ServiceAgreement.sol#763)
+	- TrustUpdateFailed(agreementId,ag.provider,resolveDispute:anomaly) (contracts/ServiceAgreement.sol#851)
+		- _updateTrust(agreementId,ag,true) (contracts/ServiceAgreement.sol#763)
+Reentrancy in ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793):
+	External calls:
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#766)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _updateTrust(agreementId,ag,false) (contracts/ServiceAgreement.sol#767)
+		- ITrustRegistry(trustRegistry).recordSuccess(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#845-847)
+		- ITrustRegistry(trustRegistry).recordAnomaly(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#850-852)
+		- reputationOracle.autoRecordSuccess(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#857)
+		- reputationOracle.autoWarn(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#859)
+	External calls sending eth:
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#766)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	Event emitted after the call(s):
+	- TrustUpdateFailed(agreementId,ag.provider,fulfill) (contracts/ServiceAgreement.sol#846)
+		- _updateTrust(agreementId,ag,false) (contracts/ServiceAgreement.sol#767)
+	- TrustUpdateFailed(agreementId,ag.provider,resolveDispute:anomaly) (contracts/ServiceAgreement.sol#851)
+		- _updateTrust(agreementId,ag,false) (contracts/ServiceAgreement.sol#767)
+Reentrancy in ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793):
+	External calls:
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#762)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _updateTrust(agreementId,ag,true) (contracts/ServiceAgreement.sol#763)
+		- ITrustRegistry(trustRegistry).recordSuccess(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#845-847)
+		- ITrustRegistry(trustRegistry).recordAnomaly(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#850-852)
+		- reputationOracle.autoRecordSuccess(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#857)
+		- reputationOracle.autoWarn(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#859)
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#766)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _updateTrust(agreementId,ag,false) (contracts/ServiceAgreement.sol#767)
+		- ITrustRegistry(trustRegistry).recordSuccess(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#845-847)
+		- ITrustRegistry(trustRegistry).recordAnomaly(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#850-852)
+		- reputationOracle.autoRecordSuccess(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#857)
+		- reputationOracle.autoWarn(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#859)
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#770)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#771)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#774)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#775)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	External calls sending eth:
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#762)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#766)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#770)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#771)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#774)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#775)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	Event emitted after the call(s):
+	- DetailedDisputeResolved(agreementId,outcome,providerAward,clientAward) (contracts/ServiceAgreement.sol#782)
+Reentrancy in ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793):
+	External calls:
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#762)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _updateTrust(agreementId,ag,true) (contracts/ServiceAgreement.sol#763)
+		- ITrustRegistry(trustRegistry).recordSuccess(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#845-847)
+		- ITrustRegistry(trustRegistry).recordAnomaly(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#850-852)
+		- reputationOracle.autoRecordSuccess(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#857)
+		- reputationOracle.autoWarn(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#859)
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#766)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _updateTrust(agreementId,ag,false) (contracts/ServiceAgreement.sol#767)
+		- ITrustRegistry(trustRegistry).recordSuccess(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#845-847)
+		- ITrustRegistry(trustRegistry).recordAnomaly(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#850-852)
+		- reputationOracle.autoRecordSuccess(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#857)
+		- reputationOracle.autoWarn(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#859)
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#770)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#771)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#774)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#775)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- IDisputeArbitration(disputeArbitration).resolveDisputeFee(agreementId,uint8(outcome)) (contracts/ServiceAgreement.sol#786-791)
+	External calls sending eth:
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#762)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#766)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#770)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#771)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.client,clientAward) (contracts/ServiceAgreement.sol#774)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- _releaseEscrow(ag.token,ag.provider,providerAward) (contracts/ServiceAgreement.sol#775)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	Event emitted after the call(s):
+	- DisputeFeeResolutionFailed(agreementId) (contracts/ServiceAgreement.sol#790)
+Reentrancy in ServiceAgreement._updateTrust(uint256,IServiceAgreement.Agreement,bool) (contracts/ServiceAgreement.sol#840-862):
+	External calls:
+	- ITrustRegistry(trustRegistry).recordSuccess(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#845-847)
+	Event emitted after the call(s):
+	- TrustUpdateFailed(agreementId,ag.provider,fulfill) (contracts/ServiceAgreement.sol#846)
+Reentrancy in ServiceAgreement._updateTrust(uint256,IServiceAgreement.Agreement,bool) (contracts/ServiceAgreement.sol#840-862):
+	External calls:
+	- ITrustRegistry(trustRegistry).recordAnomaly(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#850-852)
+	Event emitted after the call(s):
+	- TrustUpdateFailed(agreementId,ag.provider,resolveDispute:anomaly) (contracts/ServiceAgreement.sol#851)
+Reentrancy in ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554):
+	External calls:
+	- IDisputeArbitration(disputeArbitration).recordArbitratorVote(agreementId,msg.sender) (contracts/ServiceAgreement.sol#520)
+	Event emitted after the call(s):
+	- ArbitrationVoteCast(agreementId,msg.sender,vote,providerAward,clientAward) (contracts/ServiceAgreement.sol#543)
+Reentrancy in ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554):
+	External calls:
+	- IDisputeArbitration(disputeArbitration).recordArbitratorVote(agreementId,msg.sender) (contracts/ServiceAgreement.sol#520)
+	- _finalizeDispute(agreementId,DisputeOutcome.PROVIDER_WINS,ag.price,0,false) (contracts/ServiceAgreement.sol#546)
+		- ITrustRegistry(trustRegistry).recordSuccess(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#845-847)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+		- ITrustRegistry(trustRegistry).recordAnomaly(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#850-852)
+		- reputationOracle.autoRecordSuccess(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#857)
+		- reputationOracle.autoWarn(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#859)
+		- IDisputeArbitration(disputeArbitration).resolveDisputeFee(agreementId,uint8(outcome)) (contracts/ServiceAgreement.sol#786-791)
+	External calls sending eth:
+	- _finalizeDispute(agreementId,DisputeOutcome.PROVIDER_WINS,ag.price,0,false) (contracts/ServiceAgreement.sol#546)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	Event emitted after the call(s):
+	- DetailedDisputeResolved(agreementId,outcome,providerAward,clientAward) (contracts/ServiceAgreement.sol#782)
+		- _finalizeDispute(agreementId,DisputeOutcome.PROVIDER_WINS,ag.price,0,false) (contracts/ServiceAgreement.sol#546)
+	- DisputeFeeResolutionFailed(agreementId) (contracts/ServiceAgreement.sol#790)
+		- _finalizeDispute(agreementId,DisputeOutcome.PROVIDER_WINS,ag.price,0,false) (contracts/ServiceAgreement.sol#546)
+	- TrustUpdateFailed(agreementId,ag.provider,fulfill) (contracts/ServiceAgreement.sol#846)
+		- _finalizeDispute(agreementId,DisputeOutcome.PROVIDER_WINS,ag.price,0,false) (contracts/ServiceAgreement.sol#546)
+	- TrustUpdateFailed(agreementId,ag.provider,resolveDispute:anomaly) (contracts/ServiceAgreement.sol#851)
+		- _finalizeDispute(agreementId,DisputeOutcome.PROVIDER_WINS,ag.price,0,false) (contracts/ServiceAgreement.sol#546)
+Reentrancy in ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554):
+	External calls:
+	- IDisputeArbitration(disputeArbitration).recordArbitratorVote(agreementId,msg.sender) (contracts/ServiceAgreement.sol#520)
+	- _finalizeDispute(agreementId,DisputeOutcome.CLIENT_REFUND,0,ag.price,false) (contracts/ServiceAgreement.sol#548)
+		- ITrustRegistry(trustRegistry).recordSuccess(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#845-847)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+		- ITrustRegistry(trustRegistry).recordAnomaly(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#850-852)
+		- reputationOracle.autoRecordSuccess(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#857)
+		- reputationOracle.autoWarn(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#859)
+		- IDisputeArbitration(disputeArbitration).resolveDisputeFee(agreementId,uint8(outcome)) (contracts/ServiceAgreement.sol#786-791)
+	External calls sending eth:
+	- _finalizeDispute(agreementId,DisputeOutcome.CLIENT_REFUND,0,ag.price,false) (contracts/ServiceAgreement.sol#548)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	Event emitted after the call(s):
+	- DetailedDisputeResolved(agreementId,outcome,providerAward,clientAward) (contracts/ServiceAgreement.sol#782)
+		- _finalizeDispute(agreementId,DisputeOutcome.CLIENT_REFUND,0,ag.price,false) (contracts/ServiceAgreement.sol#548)
+	- DisputeFeeResolutionFailed(agreementId) (contracts/ServiceAgreement.sol#790)
+		- _finalizeDispute(agreementId,DisputeOutcome.CLIENT_REFUND,0,ag.price,false) (contracts/ServiceAgreement.sol#548)
+	- TrustUpdateFailed(agreementId,ag.provider,fulfill) (contracts/ServiceAgreement.sol#846)
+		- _finalizeDispute(agreementId,DisputeOutcome.CLIENT_REFUND,0,ag.price,false) (contracts/ServiceAgreement.sol#548)
+	- TrustUpdateFailed(agreementId,ag.provider,resolveDispute:anomaly) (contracts/ServiceAgreement.sol#851)
+		- _finalizeDispute(agreementId,DisputeOutcome.CLIENT_REFUND,0,ag.price,false) (contracts/ServiceAgreement.sol#548)
+Reentrancy in ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554):
+	External calls:
+	- IDisputeArbitration(disputeArbitration).recordArbitratorVote(agreementId,msg.sender) (contracts/ServiceAgreement.sol#520)
+	- _finalizeDispute(agreementId,DisputeOutcome.PARTIAL_PROVIDER,ac.splitProviderAward,ac.splitClientAward,false) (contracts/ServiceAgreement.sol#550)
+		- ITrustRegistry(trustRegistry).recordSuccess(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#845-847)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+		- ITrustRegistry(trustRegistry).recordAnomaly(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#850-852)
+		- reputationOracle.autoRecordSuccess(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#857)
+		- reputationOracle.autoWarn(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#859)
+		- IDisputeArbitration(disputeArbitration).resolveDisputeFee(agreementId,uint8(outcome)) (contracts/ServiceAgreement.sol#786-791)
+	External calls sending eth:
+	- _finalizeDispute(agreementId,DisputeOutcome.PARTIAL_PROVIDER,ac.splitProviderAward,ac.splitClientAward,false) (contracts/ServiceAgreement.sol#550)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	Event emitted after the call(s):
+	- DetailedDisputeResolved(agreementId,outcome,providerAward,clientAward) (contracts/ServiceAgreement.sol#782)
+		- _finalizeDispute(agreementId,DisputeOutcome.PARTIAL_PROVIDER,ac.splitProviderAward,ac.splitClientAward,false) (contracts/ServiceAgreement.sol#550)
+	- DisputeFeeResolutionFailed(agreementId) (contracts/ServiceAgreement.sol#790)
+		- _finalizeDispute(agreementId,DisputeOutcome.PARTIAL_PROVIDER,ac.splitProviderAward,ac.splitClientAward,false) (contracts/ServiceAgreement.sol#550)
+	- TrustUpdateFailed(agreementId,ag.provider,fulfill) (contracts/ServiceAgreement.sol#846)
+		- _finalizeDispute(agreementId,DisputeOutcome.PARTIAL_PROVIDER,ac.splitProviderAward,ac.splitClientAward,false) (contracts/ServiceAgreement.sol#550)
+	- TrustUpdateFailed(agreementId,ag.provider,resolveDispute:anomaly) (contracts/ServiceAgreement.sol#851)
+		- _finalizeDispute(agreementId,DisputeOutcome.PARTIAL_PROVIDER,ac.splitProviderAward,ac.splitClientAward,false) (contracts/ServiceAgreement.sol#550)
+Reentrancy in WalletFactory.createWallet() (contracts/WalletFactory.sol#26-37):
+	External calls:
+	- wallet = new ARC402Wallet(registry,msg.sender) (contracts/WalletFactory.sol#27)
+	- ITrustRegistry(reg.trustRegistry()).initWallet(address(wallet)) (contracts/WalletFactory.sol#30)
+	Event emitted after the call(s):
+	- WalletCreated(msg.sender,address(wallet)) (contracts/WalletFactory.sol#35)
+Reentrancy in ARC402Wallet.executeSpend(address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#267-317):
+	External calls:
+	- _policyEngine().recordSpend(address(this),category,amount,activeContextId) (contracts/ARC402Wallet.sol#294)
+	Event emitted after the call(s):
+	- WalletFrozen(address(this),velocity limit exceeded,block.timestamp) (contracts/ARC402Wallet.sol#308)
+Reentrancy in ARC402Wallet.executeSpend(address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#267-317):
+	External calls:
+	- _policyEngine().recordSpend(address(this),category,amount,activeContextId) (contracts/ARC402Wallet.sol#294)
+	- _intentAttestation().consume(attestationId) (contracts/ARC402Wallet.sol#313)
+	Event emitted after the call(s):
+	- SpendExecuted(recipient,amount,category,attestationId) (contracts/ARC402Wallet.sol#314)
+Reentrancy in ARC402WalletTest.executeSpend(address,uint256,string,bytes32) (contracts/ARC402WalletTest.sol#113-132):
+	External calls:
+	- intentAttestation.consume(attestationId) (contracts/ARC402WalletTest.sol#128)
+	Event emitted after the call(s):
+	- SpendExecuted(recipient,amount,category,attestationId) (contracts/ARC402WalletTest.sol#129)
+Reentrancy in ARC402Wallet.executeTokenSpend(address,address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#329-379):
+	External calls:
+	- _policyEngine().recordSpend(address(this),category,amount,activeContextId) (contracts/ARC402Wallet.sol#354)
+	Event emitted after the call(s):
+	- WalletFrozen(address(this),velocity limit exceeded,block.timestamp) (contracts/ARC402Wallet.sol#369)
+Reentrancy in ARC402Wallet.executeTokenSpend(address,address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#329-379):
+	External calls:
+	- _policyEngine().recordSpend(address(this),category,amount,activeContextId) (contracts/ARC402Wallet.sol#354)
+	- _intentAttestation().consume(attestationId) (contracts/ARC402Wallet.sol#374)
+	Event emitted after the call(s):
+	- TokenSpendExecuted(token,recipient,amount,category,attestationId) (contracts/ARC402Wallet.sol#375)
+Reentrancy in ARC402Governance.executeTransaction(uint256) (contracts/ARC402Governance.sol#90-100):
+	External calls:
+	- (ok,result) = txn.target.call{value: txn.value}(txn.data) (contracts/ARC402Governance.sol#95)
+	Event emitted after the call(s):
+	- TransactionExecuted(txId,msg.sender,result) (contracts/ARC402Governance.sol#98)
+Reentrancy in X402Interceptor.executeX402Payment(address,uint256,bytes32,string) (contracts/X402Interceptor.sol#44-58):
+	External calls:
+	- IARC402Wallet(arc402Wallet).executeTokenSpend(usdcToken,recipient,amount,api_call,attestationId) (contracts/X402Interceptor.sol#50-56)
+	Event emitted after the call(s):
+	- X402PaymentExecuted(recipient,amount,attestationId,requestUrl) (contracts/X402Interceptor.sol#57)
+Reentrancy in ARC402Wallet.proposeMASSettlement(address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#383-411):
+	External calls:
+	- _policyEngine().recordSpend(address(this),category,amount,activeContextId) (contracts/ARC402Wallet.sol#400)
+	- _intentAttestation().consume(attestationId) (contracts/ARC402Wallet.sol#401)
+	Event emitted after the call(s):
+	- SettlementProposed(recipientWallet,amount,attestationId) (contracts/ARC402Wallet.sol#402)
+Reentrancy in ARC402WalletTest.proposeMASSettlement(address,uint256,string,bytes32) (contracts/ARC402WalletTest.sol#136-152):
+	External calls:
+	- intentAttestation.consume(attestationId) (contracts/ARC402WalletTest.sol#150)
+	Event emitted after the call(s):
+	- SettlementProposed(recipientWallet,amount,attestationId) (contracts/ARC402WalletTest.sol#151)
+Reentrancy in ServiceAgreement.resolveDispute(uint256,bool) (contracts/ServiceAgreement.sol#568-576):
+	External calls:
+	- resolveDisputeDetailed(agreementId,DisputeOutcome.PROVIDER_WINS,_get(agreementId).price,0) (contracts/ServiceAgreement.sol#569-574)
+		- ITrustRegistry(trustRegistry).recordSuccess(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#845-847)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+		- ITrustRegistry(trustRegistry).recordAnomaly(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#850-852)
+		- reputationOracle.autoRecordSuccess(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#857)
+		- reputationOracle.autoWarn(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#859)
+		- IDisputeArbitration(disputeArbitration).resolveDisputeFee(agreementId,uint8(outcome)) (contracts/ServiceAgreement.sol#786-791)
+	- resolveDisputeDetailed(agreementId,DisputeOutcome.CLIENT_REFUND,0,_get(agreementId).price) (contracts/ServiceAgreement.sol#569-574)
+		- ITrustRegistry(trustRegistry).recordSuccess(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#845-847)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+		- ITrustRegistry(trustRegistry).recordAnomaly(ag.provider,ag.client,ag.serviceType,ag.price) (contracts/ServiceAgreement.sol#850-852)
+		- reputationOracle.autoRecordSuccess(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#857)
+		- reputationOracle.autoWarn(ag.client,ag.provider,capabilityHash) (contracts/ServiceAgreement.sol#859)
+		- IDisputeArbitration(disputeArbitration).resolveDisputeFee(agreementId,uint8(outcome)) (contracts/ServiceAgreement.sol#786-791)
+	External calls sending eth:
+	- resolveDisputeDetailed(agreementId,DisputeOutcome.PROVIDER_WINS,_get(agreementId).price,0) (contracts/ServiceAgreement.sol#569-574)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	- resolveDisputeDetailed(agreementId,DisputeOutcome.CLIENT_REFUND,0,_get(agreementId).price) (contracts/ServiceAgreement.sol#569-574)
+		- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+	Event emitted after the call(s):
+	- DisputeResolved(agreementId,favorProvider) (contracts/ServiceAgreement.sol#575)
+Reentrancy in WatchtowerRegistry.submitChallenge(bytes32,bytes) (contracts/WatchtowerRegistry.sol#98-102):
+	External calls:
+	- serviceAgreement.challengeChannel(channelId,latestState) (contracts/WatchtowerRegistry.sol#100)
+	Event emitted after the call(s):
+	- WatchtowerChallengeSubmitted(channelId,msg.sender) (contracts/WatchtowerRegistry.sol#101)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#reentrancy-vulnerabilities-4
+
+Detector: timestamp
+ARC402Guardian.unpause() (contracts/ARC402Guardian.sol#48-52) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(block.timestamp >= unpauseAvailableAt,Guardian: timelock not expired) (contracts/ARC402Guardian.sol#49)
+ARC402Wallet.executeRegistryUpdate() (contracts/ARC402Wallet.sol#144-152) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(block.timestamp >= registryUpdateUnlockAt,ARC402: timelock not elapsed) (contracts/ARC402Wallet.sol#146)
+ARC402Wallet.executeSpend(address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#267-317) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > spendingWindowStart + SPEND_WINDOW (contracts/ARC402Wallet.sol#297)
+ARC402Wallet.executeTokenSpend(address,address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#329-379) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > spendingWindowStart + SPEND_WINDOW (contracts/ARC402Wallet.sol#358)
+AgentRegistry.update(string,string[],string,string,string) (contracts/AgentRegistry.sol#108-145) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(_agents[msg.sender].active,AgentRegistry: agent not active) (contracts/AgentRegistry.sol#116)
+AgentRegistry.deactivate() (contracts/AgentRegistry.sol#151-156) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(_agents[msg.sender].active,AgentRegistry: already inactive) (contracts/AgentRegistry.sol#153)
+AgentRegistry.reactivate() (contracts/AgentRegistry.sol#162-167) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(! _agents[msg.sender].active,AgentRegistry: already active) (contracts/AgentRegistry.sol#164)
+AgentRegistry.submitHeartbeat(uint32) (contracts/AgentRegistry.sol#174-200) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(_agents[msg.sender].active,AgentRegistry: agent not active) (contracts/AgentRegistry.sol#176)
+AgentRegistry.setHeartbeatPolicy(uint64,uint64) (contracts/AgentRegistry.sol#202-213) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(_agents[msg.sender].active,AgentRegistry: agent not active) (contracts/AgentRegistry.sol#204)
+AgentRegistry.getOperationalMetrics(address) (contracts/AgentRegistry.sol#225-239) uses timestamp for comparisons
+	Dangerous comparisons:
+	- missed > 0 (contracts/AgentRegistry.sol#232)
+	- penalty >= ops.uptimeScore (contracts/AgentRegistry.sol#235)
+AgentRegistry.isActive(address) (contracts/AgentRegistry.sol#251-253) uses timestamp for comparisons
+	Dangerous comparisons:
+	- _registered[wallet] && _agents[wallet].active (contracts/AgentRegistry.sol#252)
+AgentRegistry.getEndpointStability(address) (contracts/AgentRegistry.sol#278-299) uses timestamp for comparisons
+	Dangerous comparisons:
+	- daysSinceChange >= 90 (contracts/AgentRegistry.sol#284)
+	- daysSinceChange >= 30 (contracts/AgentRegistry.sol#286)
+	- daysSinceChange >= 7 (contracts/AgentRegistry.sol#288)
+AgentRegistry._applyMissedHeartbeats(IAgentRegistry.OperationalMetrics) (contracts/AgentRegistry.sol#324-333) uses timestamp for comparisons
+	Dangerous comparisons:
+	- missed == 0 (contracts/AgentRegistry.sol#328)
+	- penalty >= ops.uptimeScore (contracts/AgentRegistry.sol#332)
+AgentRegistry._missedHeartbeats(IAgentRegistry.OperationalMetrics,uint256) (contracts/AgentRegistry.sol#335-342) uses timestamp for comparisons
+	Dangerous comparisons:
+	- ops.lastHeartbeatAt == 0 || allowedGap == 0 || timestamp <= ops.lastHeartbeatAt + allowedGap (contracts/AgentRegistry.sol#337)
+AgentRegistry._latencyToScore(uint256) (contracts/AgentRegistry.sol#344-351) uses timestamp for comparisons
+	Dangerous comparisons:
+	- latencyMs == 0 || latencyMs <= 250 (contracts/AgentRegistry.sol#345)
+	- latencyMs <= 500 (contracts/AgentRegistry.sol#346)
+	- latencyMs <= 1000 (contracts/AgentRegistry.sol#347)
+	- latencyMs <= 2000 (contracts/AgentRegistry.sol#348)
+	- latencyMs <= 5000 (contracts/AgentRegistry.sol#349)
+AgentRegistry._increaseScore(uint32,uint32) (contracts/AgentRegistry.sol#353-356) uses timestamp for comparisons
+	Dangerous comparisons:
+	- next > MAX_SCORE (contracts/AgentRegistry.sol#355)
+CapabilityRegistry.registerRoot(string) (contracts/CapabilityRegistry.sol#66-78) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(bytes(config.name).length == 0,CapabilityRegistry: root exists) (contracts/CapabilityRegistry.sol#70)
+CapabilityRegistry.setRootStatus(string,bool) (contracts/CapabilityRegistry.sol#80-89) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(bytes(config.name).length != 0,CapabilityRegistry: unknown root) (contracts/CapabilityRegistry.sol#83)
+	- require(bool,string)(config.active != active,CapabilityRegistry: status unchanged) (contracts/CapabilityRegistry.sol#84)
+CapabilityRegistry.claim(string) (contracts/CapabilityRegistry.sol#91-111) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(config.active,CapabilityRegistry: root not active) (contracts/CapabilityRegistry.sol#101)
+DisputeArbitration.openDispute(uint256,IDisputeArbitration.DisputeMode,IDisputeArbitration.DisputeClass,address,address,address,uint256,address) (contracts/DisputeArbitration.sol#131-167) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(! _fees[agreementId].active,DisputeArbitration: dispute already open) (contracts/DisputeArbitration.sol#141)
+DisputeArbitration.joinMutualDispute(uint256) (contracts/DisputeArbitration.sol#170-186) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(fs.active && ! fs.resolved,DisputeArbitration: not active) (contracts/DisputeArbitration.sol#172)
+	- require(bool,string)(fs.mode == DisputeMode.MUTUAL,DisputeArbitration: not mutual) (contracts/DisputeArbitration.sol#173)
+	- require(bool,string)(fs.respondentPaid == 0,DisputeArbitration: already funded) (contracts/DisputeArbitration.sol#174)
+	- require(bool,string)(block.timestamp <= fs.openedAt + MUTUAL_FUNDING_WINDOW,DisputeArbitration: funding window closed) (contracts/DisputeArbitration.sol#175)
+	- require(bool,string)(msg.sender != fs.opener,DisputeArbitration: opener cannot join) (contracts/DisputeArbitration.sol#178)
+	- require(bool,string)(msg.sender == fs.client || msg.sender == fs.provider,DisputeArbitration: not a party) (contracts/DisputeArbitration.sol#179)
+DisputeArbitration.resolveDisputeFee(uint256,uint8) (contracts/DisputeArbitration.sol#189-219) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(fs.active && ! fs.resolved,DisputeArbitration: not active or already resolved) (contracts/DisputeArbitration.sol#191)
+DisputeArbitration.acceptAssignment(uint256) (contracts/DisputeArbitration.sol#237-256) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(fs.active,DisputeArbitration: dispute not active) (contracts/DisputeArbitration.sol#239)
+DisputeArbitration.triggerFallback(uint256) (contracts/DisputeArbitration.sol#259-277) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(fs.active && ! fs.resolved,DisputeArbitration: not active) (contracts/DisputeArbitration.sol#261)
+	- mutualUnfunded = fs.mode == DisputeMode.MUTUAL && fs.respondentPaid == 0 && block.timestamp > fs.openedAt + MUTUAL_FUNDING_WINDOW (contracts/DisputeArbitration.sol#263-265)
+IntentAttestation.attest(bytes32,string,string,address,uint256,address,uint256) (contracts/IntentAttestation.sol#40-64) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(expiresAt == 0 || expiresAt > block.timestamp,IA: expiry in past) (contracts/IntentAttestation.sol#50)
+IntentAttestation.verify(bytes32,address,address,uint256,address) (contracts/IntentAttestation.sol#66-82) uses timestamp for comparisons
+	Dangerous comparisons:
+	- attestations[attestationId].expiresAt != 0 && block.timestamp > attestations[attestationId].expiresAt (contracts/IntentAttestation.sol#75-76)
+IntentAttestation.consume(bytes32) (contracts/IntentAttestation.sol#84-90) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(attestations[attestationId].wallet == msg.sender,IA: not wallet) (contracts/IntentAttestation.sol#87)
+IntentAttestation.isExpired(bytes32) (contracts/IntentAttestation.sol#92-97) uses timestamp for comparisons
+	Dangerous comparisons:
+	- exp == 0 (contracts/IntentAttestation.sol#95)
+	- block.timestamp > exp (contracts/IntentAttestation.sol#96)
+PolicyEngine.validateSpend(address,string,uint256,bytes32) (contracts/PolicyEngine.sol#124-162) uses timestamp for comparisons
+	Dangerous comparisons:
+	- (block.timestamp > periodStart[wallet][category] + 86400) (contracts/PolicyEngine.sol#153-155)
+PolicyEngine.recordSpend(address,string,uint256,bytes32) (contracts/PolicyEngine.sol#166-189) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > periodStart[wallet][category] + 86400 (contracts/PolicyEngine.sol#175)
+ReputationOracle.autoWarn(address,address,bytes32) (contracts/ReputationOracle.sol#128-173) uses timestamp for comparisons
+	Dangerous comparisons:
+	- lastAutoWarnAt[client][provider] != 0 && block.timestamp < lastAutoWarnAt[client][provider] + AUTO_WARN_COOLDOWN (contracts/ReputationOracle.sol#140)
+	- window.windowStartedAt == 0 || block.timestamp >= uint256(window.windowStartedAt) + AUTO_WARN_WINDOW (contracts/ReputationOracle.sol#146)
+ServiceAgreement.propose(address,string,string,uint256,address,uint256,bytes32) (contracts/ServiceAgreement.sol#232-270) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(deadline > block.timestamp,ServiceAgreement: deadline in past) (contracts/ServiceAgreement.sol#238)
+ServiceAgreement.fulfill(uint256,bytes32) (contracts/ServiceAgreement.sol#280-294) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(msg.sender == ag.provider,ServiceAgreement: not provider) (contracts/ServiceAgreement.sol#282)
+	- require(bool,string)(ag.status == Status.ACCEPTED || ag.status == Status.REVISED,ServiceAgreement: not ACCEPTED) (contracts/ServiceAgreement.sol#285)
+	- require(bool,string)(block.timestamp <= ag.deadline,ServiceAgreement: past deadline) (contracts/ServiceAgreement.sol#286)
+ServiceAgreement.commitDeliverable(uint256,bytes32) (contracts/ServiceAgreement.sol#296-307) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(msg.sender == ag.provider,ServiceAgreement: not provider) (contracts/ServiceAgreement.sol#298)
+	- require(bool,string)(ag.status == Status.ACCEPTED || ag.status == Status.REVISED,ServiceAgreement: not ACCEPTED) (contracts/ServiceAgreement.sol#299)
+	- require(bool,string)(block.timestamp <= ag.deadline,ServiceAgreement: past deadline) (contracts/ServiceAgreement.sol#300)
+ServiceAgreement.verifyDeliverable(uint256) (contracts/ServiceAgreement.sol#309-319) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(msg.sender == ag.client,ServiceAgreement: not client) (contracts/ServiceAgreement.sol#311)
+	- require(bool,string)(ag.status == Status.PENDING_VERIFICATION,ServiceAgreement: not PENDING_VERIFICATION) (contracts/ServiceAgreement.sol#312)
+ServiceAgreement.autoRelease(uint256) (contracts/ServiceAgreement.sol#321-332) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(ag.status == Status.PENDING_VERIFICATION,ServiceAgreement: not PENDING_VERIFICATION) (contracts/ServiceAgreement.sol#323)
+	- require(bool,string)(block.timestamp > ag.verifyWindowEnd,ServiceAgreement: verify window open) (contracts/ServiceAgreement.sol#324)
+ServiceAgreement.requestRevision(uint256,bytes32,string,bytes32) (contracts/ServiceAgreement.sol#355-395) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(block.timestamp <= rc.deadlineAt,ServiceAgreement: remediation window elapsed) (contracts/ServiceAgreement.sol#368)
+	- require(bool,string)(rc.cycleCount < MAX_REMEDIATION_CYCLES,ServiceAgreement: max remediation cycles) (contracts/ServiceAgreement.sol#369)
+	- require(bool,string)(previousTranscriptHash == rc.latestTranscriptHash,ServiceAgreement: transcript chain mismatch) (contracts/ServiceAgreement.sol#370)
+ServiceAgreement.respondToRevision(uint256,IServiceAgreement.ProviderResponseType,uint256,bytes32,string,bytes32) (contracts/ServiceAgreement.sol#397-440) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(rc.active,ServiceAgreement: remediation inactive) (contracts/ServiceAgreement.sol#404)
+	- require(bool,string)(block.timestamp <= rc.deadlineAt,ServiceAgreement: remediation window elapsed) (contracts/ServiceAgreement.sol#405)
+	- require(bool,string)(previousTranscriptHash == rc.latestTranscriptHash,ServiceAgreement: transcript chain mismatch) (contracts/ServiceAgreement.sol#406)
+ServiceAgreement.cancel(uint256) (contracts/ServiceAgreement.sol#450-459) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(msg.sender == ag.client,ServiceAgreement: not client) (contracts/ServiceAgreement.sol#452)
+	- require(bool,string)(ag.status == Status.PROPOSED,ServiceAgreement: not PROPOSED) (contracts/ServiceAgreement.sol#453)
+ServiceAgreement.expiredCancel(uint256) (contracts/ServiceAgreement.sol#461-471) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(msg.sender == ag.client,ServiceAgreement: not client) (contracts/ServiceAgreement.sol#463)
+	- require(bool,string)(ag.status == Status.ACCEPTED || ag.status == Status.REVISED || ag.status == Status.REVISION_REQUESTED || ag.status == Status.PARTIAL_SETTLEMENT || ag.status == Status.ESCALATED_TO_HUMAN,ServiceAgreement: not ACCEPTED) (contracts/ServiceAgreement.sol#464)
+	- require(bool,string)(block.timestamp > ag.deadline,ServiceAgreement: not past deadline) (contracts/ServiceAgreement.sol#465)
+ServiceAgreement.nominateArbitrator(uint256,address) (contracts/ServiceAgreement.sol#473-504) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(block.timestamp <= ac.selectionDeadlineAt,ServiceAgreement: arbitration selection closed) (contracts/ServiceAgreement.sol#489)
+	- require(bool,string)(ac.arbitratorCount < ARBITRATOR_PANEL_SIZE,ServiceAgreement: arbitration panel full) (contracts/ServiceAgreement.sol#491)
+ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(ac.arbitratorCount == ARBITRATOR_PANEL_SIZE,ServiceAgreement: panel incomplete) (contracts/ServiceAgreement.sol#510)
+	- require(bool,string)(_isPanelArbitrator(ac,msg.sender),ServiceAgreement: not panel arbitrator) (contracts/ServiceAgreement.sol#511)
+	- require(bool,string)(block.timestamp <= ac.decisionDeadlineAt,ServiceAgreement: arbitration deadline passed) (contracts/ServiceAgreement.sol#513)
+	- require(bool,string)(ac.splitProviderAward == providerAward && ac.splitClientAward == clientAward,ServiceAgreement: split mismatch) (contracts/ServiceAgreement.sol#535)
+ServiceAgreement.requestHumanEscalation(uint256,string) (contracts/ServiceAgreement.sol#556-566) uses timestamp for comparisons
+	Dangerous comparisons:
+	- arbitrationStalled = (ac.selectionDeadlineAt != 0 && ac.arbitratorCount < ARBITRATOR_PANEL_SIZE && block.timestamp > ac.selectionDeadlineAt) || (ac.decisionDeadlineAt != 0 && block.timestamp > ac.decisionDeadlineAt) (contracts/ServiceAgreement.sol#561-562)
+	- require(bool,string)(arbitrationStalled || ag.status == Status.ESCALATED_TO_HUMAN,ServiceAgreement: arbitration still active) (contracts/ServiceAgreement.sol#563)
+ServiceAgreement.resolveDisputeDetailed(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256) (contracts/ServiceAgreement.sol#593-599) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(_disputeCases[agreementId].humanReviewRequested,ServiceAgreement: human review not requested) (contracts/ServiceAgreement.sol#596)
+ServiceAgreement.expiredDisputeRefund(uint256) (contracts/ServiceAgreement.sol#601-611) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_HUMAN || ag.status == Status.ESCALATED_TO_ARBITRATION,ServiceAgreement: not DISPUTED) (contracts/ServiceAgreement.sol#603)
+	- require(bool,string)(block.timestamp > ag.resolvedAt + DISPUTE_TIMEOUT,ServiceAgreement: dispute timeout not reached) (contracts/ServiceAgreement.sol#604)
+ServiceAgreement.getAgreement(uint256) (contracts/ServiceAgreement.sol#618-621) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(_agreements[id].id != 0,ServiceAgreement: not found) (contracts/ServiceAgreement.sol#619)
+ServiceAgreement._openFormalDispute(uint256,string,bool,IServiceAgreement.DirectDisputeReason,IDisputeArbitration.DisputeMode,IDisputeArbitration.DisputeClass) (contracts/ServiceAgreement.sol#651-692) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(msg.sender == ag.client || msg.sender == ag.provider,ServiceAgreement: not a party) (contracts/ServiceAgreement.sol#661)
+	- require(bool,string)(ag.status == Status.ACCEPTED || ag.status == Status.PENDING_VERIFICATION || ag.status == Status.REVISED || ag.status == Status.REVISION_REQUESTED || ag.status == Status.PARTIAL_SETTLEMENT || ag.status == Status.ESCALATED_TO_HUMAN,ServiceAgreement: not ACCEPTED) (contracts/ServiceAgreement.sol#662)
+	- require(bool,string)(_eligibleForEscalation(ag,agreementId),ServiceAgreement: remediation first) (contracts/ServiceAgreement.sol#664)
+	- require(bool,string)(_canDirectDispute(ag,directReason),ServiceAgreement: direct dispute not allowed) (contracts/ServiceAgreement.sol#666)
+ServiceAgreement._canDirectDispute(IServiceAgreement.Agreement,IServiceAgreement.DirectDisputeReason) (contracts/ServiceAgreement.sol#694-708) uses timestamp for comparisons
+	Dangerous comparisons:
+	- ag.status == Status.ACCEPTED && block.timestamp > ag.deadline (contracts/ServiceAgreement.sol#696)
+	- block.timestamp > ag.deadline (contracts/ServiceAgreement.sol#699)
+ServiceAgreement._eligibleForEscalation(IServiceAgreement.Agreement,uint256) (contracts/ServiceAgreement.sol#710-717) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > rc.deadlineAt (contracts/ServiceAgreement.sol#714)
+ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_HUMAN || ag.status == Status.ESCALATED_TO_ARBITRATION,ServiceAgreement: not DISPUTED) (contracts/ServiceAgreement.sol#741)
+	- require(bool,string)(providerAward + clientAward == ag.price || outcome == DisputeOutcome.HUMAN_REVIEW_REQUIRED,ServiceAgreement: invalid split) (contracts/ServiceAgreement.sol#742)
+	- providerAward > 0 (contracts/ServiceAgreement.sol#762)
+	- clientAward > 0 (contracts/ServiceAgreement.sol#766)
+	- providerAward > 0 (contracts/ServiceAgreement.sol#770)
+	- clientAward > 0 (contracts/ServiceAgreement.sol#771)
+	- clientAward > 0 (contracts/ServiceAgreement.sol#774)
+	- providerAward > 0 (contracts/ServiceAgreement.sol#775)
+ServiceAgreement._get(uint256) (contracts/ServiceAgreement.sol#808-811) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(_agreements[id].id != 0,ServiceAgreement: not found) (contracts/ServiceAgreement.sol#809)
+ServiceAgreement._releaseEscrow(address,address,uint256) (contracts/ServiceAgreement.sol#813-821) uses timestamp for comparisons
+	Dangerous comparisons:
+	- amount == 0 (contracts/ServiceAgreement.sol#814)
+	- token == address(0) (contracts/ServiceAgreement.sol#815)
+	- require(bool,string)(ok,ServiceAgreement: ETH transfer failed) (contracts/ServiceAgreement.sol#817)
+ServiceAgreement._releaseEscrowWithFee(address,address,uint256) (contracts/ServiceAgreement.sol#827-838) uses timestamp for comparisons
+	Dangerous comparisons:
+	- amount == 0 (contracts/ServiceAgreement.sol#828)
+	- fee > 0 (contracts/ServiceAgreement.sol#831)
+ServiceAgreement.resolveFromArbitration(uint256,address,uint256) (contracts/ServiceAgreement.sol#866-878) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_HUMAN || ag.status == Status.ESCALATED_TO_ARBITRATION,ServiceAgreement: not in dispute) (contracts/ServiceAgreement.sol#870)
+	- require(bool,string)(recipient == ag.client || recipient == ag.provider,ServiceAgreement: invalid recipient) (contracts/ServiceAgreement.sol#871)
+	- require(bool,string)(amount <= ag.price,ServiceAgreement: amount exceeds escrow) (contracts/ServiceAgreement.sol#872)
+	- _updateTrust(agreementId,ag,recipient == ag.provider) (contracts/ServiceAgreement.sol#877)
+	- recipient == ag.client (contracts/ServiceAgreement.sol#875)
+ServiceAgreement.openSessionChannel(address,address,uint256,uint256,uint256) (contracts/ServiceAgreement.sol#882-916) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(deadline > block.timestamp,ServiceAgreement: deadline in past) (contracts/ServiceAgreement.sol#891)
+ServiceAgreement.closeChannel(bytes32,bytes) (contracts/ServiceAgreement.sol#918-934) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(ch.client != address(0),ServiceAgreement: channel not found) (contracts/ServiceAgreement.sol#920)
+	- require(bool,string)(ch.status == ChannelStatus.OPEN,ServiceAgreement: channel not OPEN) (contracts/ServiceAgreement.sol#921)
+	- require(bool,string)(msg.sender == ch.client || msg.sender == ch.provider,ServiceAgreement: not a party) (contracts/ServiceAgreement.sol#922)
+	- require(bool,string)(state.token == ch.token,ServiceAgreement: token mismatch) (contracts/ServiceAgreement.sol#925)
+	- require(bool,string)(state.cumulativePayment <= ch.depositAmount,ServiceAgreement: payment exceeds deposit) (contracts/ServiceAgreement.sol#926)
+ServiceAgreement.challengeChannel(bytes32,bytes) (contracts/ServiceAgreement.sol#936-971) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(ch.client != address(0),ServiceAgreement: channel not found) (contracts/ServiceAgreement.sol#938)
+	- require(bool,string)(ch.status == ChannelStatus.CLOSING || ch.status == ChannelStatus.OPEN,ServiceAgreement: not challengeable) (contracts/ServiceAgreement.sol#939)
+	- require(bool,string)(msg.sender == ch.client || msg.sender == ch.provider || (watchtowerRegistry != address(0) && (IWatchtowerRegistry(watchtowerRegistry).channelWatchtower(channelId) == msg.sender || msg.sender == watchtowerRegistry)),ServiceAgreement: not authorized to challenge) (contracts/ServiceAgreement.sol#940-948)
+	- require(bool,string)(block.timestamp <= ch.challengeExpiry,ServiceAgreement: challenge window expired) (contracts/ServiceAgreement.sol#950)
+	- require(bool,string)(state.token == ch.token,ServiceAgreement: token mismatch) (contracts/ServiceAgreement.sol#954)
+	- require(bool,string)(state.cumulativePayment <= ch.depositAmount,ServiceAgreement: payment exceeds deposit) (contracts/ServiceAgreement.sol#955)
+	- require(bool,string)(state.sequenceNumber > ch.lastSequenceNumber,ServiceAgreement: sequence not higher) (contracts/ServiceAgreement.sol#956)
+ServiceAgreement.finaliseChallenge(bytes32) (contracts/ServiceAgreement.sol#973-983) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(ch.client != address(0),ServiceAgreement: channel not found) (contracts/ServiceAgreement.sol#975)
+	- require(bool,string)(ch.status == ChannelStatus.CLOSING,ServiceAgreement: not CLOSING) (contracts/ServiceAgreement.sol#976)
+	- require(bool,string)(block.timestamp > ch.challengeExpiry,ServiceAgreement: challenge window open) (contracts/ServiceAgreement.sol#977)
+ServiceAgreement.reclaimExpiredChannel(bytes32) (contracts/ServiceAgreement.sol#985-1002) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(ch.client != address(0),ServiceAgreement: channel not found) (contracts/ServiceAgreement.sol#987)
+	- require(bool,string)(msg.sender == ch.client,ServiceAgreement: not client) (contracts/ServiceAgreement.sol#988)
+	- require(bool,string)(ch.status == ChannelStatus.OPEN,ServiceAgreement: channel not OPEN) (contracts/ServiceAgreement.sol#989)
+	- require(bool,string)(block.timestamp > ch.deadline,ServiceAgreement: deadline not passed) (contracts/ServiceAgreement.sol#990)
+ServiceAgreement.getChannel(bytes32) (contracts/ServiceAgreement.sol#1004-1007) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(channels[channelId].client != address(0),ServiceAgreement: channel not found) (contracts/ServiceAgreement.sol#1005)
+ServiceAgreement._verifyChannelStateSigs(ServiceAgreement.Channel,ServiceAgreement.ChannelState) (contracts/ServiceAgreement.sol#1035-1049) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(clientSigner == ch.client,ServiceAgreement: invalid client sig) (contracts/ServiceAgreement.sol#1047)
+	- require(bool,string)(providerSigner == ch.provider,ServiceAgreement: invalid provider sig) (contracts/ServiceAgreement.sol#1048)
+SettlementCoordinator.propose(address,address,uint256,address,bytes32,uint256) (contracts/SettlementCoordinator.sol#44-75) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(! proposalExists[proposalId],SettlementCoordinator: proposal exists) (contracts/SettlementCoordinator.sol#57)
+SettlementCoordinator.accept(bytes32) (contracts/SettlementCoordinator.sol#77-87) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(p.status == ProposalStatus.PENDING,SettlementCoordinator: not pending) (contracts/SettlementCoordinator.sol#80)
+	- require(bool,string)(block.timestamp <= p.expiresAt,SettlementCoordinator: expired) (contracts/SettlementCoordinator.sol#81)
+	- require(bool,string)(msg.sender == p.toWallet,SettlementCoordinator: not recipient) (contracts/SettlementCoordinator.sol#82)
+SettlementCoordinator.expireAccepted(bytes32) (contracts/SettlementCoordinator.sol#94-104) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(p.status == ProposalStatus.ACCEPTED,SettlementCoordinator: not accepted) (contracts/SettlementCoordinator.sol#97)
+	- require(bool,string)(block.timestamp > p.acceptedAt + EXECUTION_WINDOW,SettlementCoordinator: execution window open) (contracts/SettlementCoordinator.sol#98-101)
+SettlementCoordinator.reject(bytes32,string) (contracts/SettlementCoordinator.sol#106-115) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(p.status == ProposalStatus.PENDING,SettlementCoordinator: not pending) (contracts/SettlementCoordinator.sol#109)
+	- require(bool,string)(msg.sender == p.toWallet,SettlementCoordinator: not recipient) (contracts/SettlementCoordinator.sol#110)
+SettlementCoordinator.execute(bytes32) (contracts/SettlementCoordinator.sol#117-143) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(p.status == ProposalStatus.ACCEPTED,SettlementCoordinator: not accepted) (contracts/SettlementCoordinator.sol#120)
+	- require(bool,string)(block.timestamp <= p.expiresAt,SettlementCoordinator: expired) (contracts/SettlementCoordinator.sol#121)
+	- require(bool,string)(block.timestamp <= p.acceptedAt + EXECUTION_WINDOW,SettlementCoordinator: execution window expired) (contracts/SettlementCoordinator.sol#122-125)
+	- require(bool,string)(msg.sender == p.fromWallet,SettlementCoordinator: not sender) (contracts/SettlementCoordinator.sol#126)
+	- require(bool,string)(msg.value == p.amount,SettlementCoordinator: wrong amount) (contracts/SettlementCoordinator.sol#133)
+SettlementCoordinator.checkExpiry(bytes32) (contracts/SettlementCoordinator.sol#161-168) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(p.status == ProposalStatus.PENDING,SettlementCoordinator: not pending) (contracts/SettlementCoordinator.sol#164)
+	- require(bool,string)(block.timestamp > p.expiresAt,SettlementCoordinator: not expired) (contracts/SettlementCoordinator.sol#165)
+SponsorshipAttestation.publishWithTier(address,uint256,SponsorshipAttestation.IdentityTier,string) (contracts/SponsorshipAttestation.sol#56-86) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(expiresAt == 0 || expiresAt > block.timestamp,SponsorshipAttestation: already expired) (contracts/SponsorshipAttestation.sol#64)
+SponsorshipAttestation.revoke(bytes32) (contracts/SponsorshipAttestation.sol#88-97) uses timestamp for comparisons
+	Dangerous comparisons:
+	- require(bool,string)(att.sponsor == msg.sender,SponsorshipAttestation: not sponsor) (contracts/SponsorshipAttestation.sol#90)
+	- require(bool,string)(! att.revoked,SponsorshipAttestation: already revoked) (contracts/SponsorshipAttestation.sol#91)
+SponsorshipAttestation.isActive(bytes32) (contracts/SponsorshipAttestation.sol#101-107) uses timestamp for comparisons
+	Dangerous comparisons:
+	- att.expiresAt != 0 && block.timestamp > att.expiresAt (contracts/SponsorshipAttestation.sol#105)
+SponsorshipAttestation.getActiveAttestation(address,address) (contracts/SponsorshipAttestation.sol#109-116) uses timestamp for comparisons
+	Dangerous comparisons:
+	- att.expiresAt != 0 && block.timestamp > att.expiresAt (contracts/SponsorshipAttestation.sol#114)
+SponsorshipAttestation.activeSponsorCount(address) (contracts/SponsorshipAttestation.sol#130-138) uses timestamp for comparisons
+	Dangerous comparisons:
+	- ! att.revoked && (att.expiresAt == 0 || block.timestamp <= att.expiresAt) (contracts/SponsorshipAttestation.sol#134)
+SponsorshipAttestation.getHighestTier(address) (contracts/SponsorshipAttestation.sol#140-150) uses timestamp for comparisons
+	Dangerous comparisons:
+	- att.expiresAt != 0 && block.timestamp > att.expiresAt (contracts/SponsorshipAttestation.sol#145)
+TrustRegistryV2.getEffectiveScore(address) (contracts/TrustRegistryV2.sol#215-232) uses timestamp for comparisons
+	Dangerous comparisons:
+	- elapsed == 0 (contracts/TrustRegistryV2.sol#220)
+	- halvings >= 10 (contracts/TrustRegistryV2.sol#227)
+TrustRegistryV2.meetsThreshold(address,uint256) (contracts/TrustRegistryV2.sol#248-259) uses timestamp for comparisons
+	Dangerous comparisons:
+	- halvings >= 10 (contracts/TrustRegistryV2.sol#256)
+	- effective >= minScore (contracts/TrustRegistryV2.sol#258)
+TrustRegistryV2._ensureInitialized(address) (contracts/TrustRegistryV2.sol#286-306) uses timestamp for comparisons
+	Dangerous comparisons:
+	- profiles[wallet].lastUpdated != 0 (contracts/TrustRegistryV2.sol#287)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#block-timestamp
+
+Detector: assembly
+ARC402Governance._getRevertMsg(bytes) (contracts/ARC402Governance.sol#117-123) uses assembly
+	- INLINE ASM (contracts/ARC402Governance.sol#119-121)
+Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[3]) (contracts/CapabilityProofVerifier.sol#65-181) uses assembly
+	- INLINE ASM (contracts/CapabilityProofVerifier.sol#66-180)
+Groth16Verifier.verifyProof.asm_0.checkField() (contracts/CapabilityProofVerifier.sol#67-72) uses assembly
+	- INLINE ASM (contracts/CapabilityProofVerifier.sol#67-72)
+Groth16Verifier.verifyProof.asm_0.g1_mulAccC() (contracts/CapabilityProofVerifier.sol#75-98) uses assembly
+	- INLINE ASM (contracts/CapabilityProofVerifier.sol#75-98)
+Groth16Verifier.verifyProof.asm_0.checkPairing() (contracts/CapabilityProofVerifier.sol#100-161) uses assembly
+	- INLINE ASM (contracts/CapabilityProofVerifier.sol#100-161)
+ServiceAgreement._recoverSigner(bytes32,bytes) (contracts/ServiceAgreement.sol#1051-1063) uses assembly
+	- INLINE ASM (contracts/ServiceAgreement.sol#1056-1060)
+Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[2]) (contracts/SolvencyProofVerifier.sol#62-174) uses assembly
+	- INLINE ASM (contracts/SolvencyProofVerifier.sol#63-173)
+Groth16Verifier.verifyProof.asm_0.checkField() (contracts/SolvencyProofVerifier.sol#64-69) uses assembly
+	- INLINE ASM (contracts/SolvencyProofVerifier.sol#64-69)
+Groth16Verifier.verifyProof.asm_0.g1_mulAccC() (contracts/SolvencyProofVerifier.sol#72-95) uses assembly
+	- INLINE ASM (contracts/SolvencyProofVerifier.sol#72-95)
+Groth16Verifier.verifyProof.asm_0.checkPairing() (contracts/SolvencyProofVerifier.sol#97-156) uses assembly
+	- INLINE ASM (contracts/SolvencyProofVerifier.sol#97-156)
+Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[2]) (contracts/TrustThresholdVerifier.sol#62-174) uses assembly
+	- INLINE ASM (contracts/TrustThresholdVerifier.sol#63-173)
+Groth16Verifier.verifyProof.asm_0.checkField() (contracts/TrustThresholdVerifier.sol#64-69) uses assembly
+	- INLINE ASM (contracts/TrustThresholdVerifier.sol#64-69)
+Groth16Verifier.verifyProof.asm_0.g1_mulAccC() (contracts/TrustThresholdVerifier.sol#72-95) uses assembly
+	- INLINE ASM (contracts/TrustThresholdVerifier.sol#72-95)
+Groth16Verifier.verifyProof.asm_0.checkPairing() (contracts/TrustThresholdVerifier.sol#97-156) uses assembly
+	- INLINE ASM (contracts/TrustThresholdVerifier.sol#97-156)
+SafeERC20._safeTransfer(IERC20,address,uint256,bool) (lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol#176-200) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol#179-199)
+SafeERC20._safeTransferFrom(IERC20,address,address,uint256,bool) (lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol#212-244) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol#221-243)
+SafeERC20._safeApprove(IERC20,address,uint256,bool) (lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol#255-279) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol#258-278)
+Arrays._begin(uint256[]) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#142-146) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#143-145)
+Arrays._mload(uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#161-165) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#162-164)
+Arrays._swap(uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#170-177) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#171-176)
+Arrays._castToUint256Array(address[]) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#180-184) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#181-183)
+Arrays._castToUint256Array(bytes32[]) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#187-191) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#188-190)
+Arrays._castToUint256Comp(function(address,address) returns(bool)) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#194-200) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#197-199)
+Arrays._castToUint256Comp(function(bytes32,bytes32) returns(bool)) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#203-209) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#206-208)
+Arrays.slice(address[],uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#394-406) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#401-403)
+Arrays.slice(bytes32[],uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#424-436) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#431-433)
+Arrays.slice(uint256[],uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#454-466) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#461-463)
+Arrays.splice(address[],uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#485-497) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#491-494)
+Arrays.replace(address[],uint256,address[],uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#526-548) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#539-545)
+Arrays.splice(bytes32[],uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#567-579) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#573-576)
+Arrays.replace(bytes32[],uint256,bytes32[],uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#608-630) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#621-627)
+Arrays.splice(uint256[],uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#649-661) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#655-658)
+Arrays.replace(uint256[],uint256,uint256[],uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#690-712) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#703-709)
+Arrays.unsafeAccess(address[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#719-725) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#721-723)
+Arrays.unsafeAccess(bytes32[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#732-738) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#734-736)
+Arrays.unsafeAccess(uint256[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#745-751) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#747-749)
+Arrays.unsafeAccess(bytes[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#758-764) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#760-762)
+Arrays.unsafeAccess(string[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#771-777) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#773-775)
+Arrays.unsafeMemoryAccess(address[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#784-788) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#785-787)
+Arrays.unsafeMemoryAccess(bytes32[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#795-799) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#796-798)
+Arrays.unsafeMemoryAccess(uint256[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#806-810) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#807-809)
+Arrays.unsafeMemoryAccess(bytes[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#817-821) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#818-820)
+Arrays.unsafeMemoryAccess(string[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#828-832) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#829-831)
+Arrays.unsafeSetLength(address[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#839-843) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#840-842)
+Arrays.unsafeSetLength(bytes32[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#850-854) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#851-853)
+Arrays.unsafeSetLength(uint256[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#861-865) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#862-864)
+Arrays.unsafeSetLength(bytes[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#872-876) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#873-875)
+Arrays.unsafeSetLength(string[],uint256) (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#883-887) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#884-886)
+Panic.panic(uint256) (lib/openzeppelin-contracts/contracts/utils/Panic.sol#50-56) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/Panic.sol#51-55)
+SlotDerivation.erc7201Slot(string) (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#45-50) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#46-49)
+SlotDerivation.deriveArray(bytes32) (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#64-69) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#65-68)
+SlotDerivation.deriveMapping(bytes32,address) (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#74-80) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#75-79)
+SlotDerivation.deriveMapping(bytes32,bool) (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#85-91) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#86-90)
+SlotDerivation.deriveMapping(bytes32,bytes32) (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#96-102) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#97-101)
+SlotDerivation.deriveMapping(bytes32,uint256) (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#107-113) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#108-112)
+SlotDerivation.deriveMapping(bytes32,int256) (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#118-124) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#119-123)
+SlotDerivation.deriveMapping(bytes32,string) (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#129-139) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#130-138)
+SlotDerivation.deriveMapping(bytes32,bytes) (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#144-154) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#145-153)
+StorageSlot.getAddressSlot(bytes32) (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#66-70) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#67-69)
+StorageSlot.getBooleanSlot(bytes32) (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#75-79) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#76-78)
+StorageSlot.getBytes32Slot(bytes32) (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#84-88) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#85-87)
+StorageSlot.getUint256Slot(bytes32) (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#93-97) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#94-96)
+StorageSlot.getInt256Slot(bytes32) (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#102-106) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#103-105)
+StorageSlot.getStringSlot(bytes32) (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#111-115) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#112-114)
+StorageSlot.getStringSlot(string) (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#120-124) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#121-123)
+StorageSlot.getBytesSlot(bytes32) (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#129-133) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#130-132)
+StorageSlot.getBytesSlot(bytes) (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#138-142) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#139-141)
+Math.add512(uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#25-30) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#26-29)
+Math.mul512(uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#37-46) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#41-45)
+Math.tryMul(uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#73-84) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#76-80)
+Math.tryDiv(uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#89-97) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#92-95)
+Math.tryMod(uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#102-110) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#105-108)
+Math.mulDiv(uint256,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#206-277) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#229-236)
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#242-251)
+Math.tryModExp(uint256,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#411-435) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#413-434)
+Math.tryModExp(bytes,bytes,bytes) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#451-473) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#463-472)
+Math._zeroBytes(bytes) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#478-490) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#482-484)
+Math.log2(uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#619-658) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#655-657)
+SafeCast.toUint(bool) (lib/openzeppelin-contracts/contracts/utils/math/SafeCast.sol#1157-1161) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/math/SafeCast.sol#1158-1160)
+EnumerableSet.values(EnumerableSet.Bytes32Set) (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#276-285) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#280-282)
+EnumerableSet.values(EnumerableSet.Bytes32Set,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#295-304) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#299-301)
+EnumerableSet.values(EnumerableSet.Bytes4Set) (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#378-387) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#382-384)
+EnumerableSet.values(EnumerableSet.Bytes4Set,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#397-406) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#401-403)
+EnumerableSet.values(EnumerableSet.AddressSet) (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#480-489) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#484-486)
+EnumerableSet.values(EnumerableSet.AddressSet,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#499-508) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#503-505)
+EnumerableSet.values(EnumerableSet.UintSet) (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#582-591) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#586-588)
+EnumerableSet.values(EnumerableSet.UintSet,uint256,uint256) (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#601-610) uses assembly
+	- INLINE ASM (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#605-607)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#assembly-usage
+
+Detector: pragma
+5 different versions of Solidity are used:
+	- Version constraint ^0.8.24 is used by:
+		-^0.8.24 (contracts/ARC402Governance.sol#2)
+		-^0.8.24 (contracts/ARC402Guardian.sol#2)
+		-^0.8.24 (contracts/ARC402Registry.sol#2)
+		-^0.8.24 (contracts/ARC402Wallet.sol#2)
+		-^0.8.24 (contracts/ARC402WalletTest.sol#2)
+		-^0.8.24 (contracts/AgentRegistry.sol#2)
+		-^0.8.24 (contracts/AgreementTree.sol#2)
+		-^0.8.24 (contracts/CapabilityRegistry.sol#2)
+		-^0.8.24 (contracts/DisputeArbitration.sol#2)
+		-^0.8.24 (contracts/GovernedTokenWhitelist.sol#2)
+		-^0.8.24 (contracts/IAgentRegistry.sol#2)
+		-^0.8.24 (contracts/IAgreementTree.sol#2)
+		-^0.8.24 (contracts/IArc402Guardian.sol#2)
+		-^0.8.24 (contracts/IDisputeArbitration.sol#2)
+		-^0.8.24 (contracts/IIntentAttestation.sol#2)
+		-^0.8.24 (contracts/IPolicyEngine.sol#2)
+		-^0.8.24 (contracts/IServiceAgreement.sol#2)
+		-^0.8.24 (contracts/ITrustRegistry.sol#2)
+		-^0.8.24 (contracts/ITrustRegistryV2.sol#2)
+		-^0.8.24 (contracts/IWatchtowerRegistry.sol#2)
+		-^0.8.24 (contracts/IntentAttestation.sol#2)
+		-^0.8.24 (contracts/PolicyEngine.sol#2)
+		-^0.8.24 (contracts/ReputationOracle.sol#2)
+		-^0.8.24 (contracts/ServiceAgreement.sol#2)
+		-^0.8.24 (contracts/SettlementCoordinator.sol#2)
+		-^0.8.24 (contracts/SponsorshipAttestation.sol#2)
+		-^0.8.24 (contracts/TrustRegistry.sol#2)
+		-^0.8.24 (contracts/TrustRegistryV2.sol#2)
+		-^0.8.24 (contracts/WalletFactory.sol#2)
+		-^0.8.24 (contracts/WatchtowerRegistry.sol#2)
+		-^0.8.24 (contracts/X402Interceptor.sol#2)
+		-^0.8.24 (contracts/ZKCapabilityGate.sol#2)
+		-^0.8.24 (contracts/ZKSolvencyGate.sol#2)
+		-^0.8.24 (contracts/ZKTrustGate.sol#2)
+		-^0.8.24 (lib/openzeppelin-contracts/contracts/utils/Arrays.sol#5)
+		-^0.8.24 (lib/openzeppelin-contracts/contracts/utils/structs/EnumerableSet.sol#5)
+	- Version constraint >=0.7.0<0.9.0 is used by:
+		->=0.7.0<0.9.0 (contracts/CapabilityProofVerifier.sol#21)
+		->=0.7.0<0.9.0 (contracts/SolvencyProofVerifier.sol#21)
+		->=0.7.0<0.9.0 (contracts/TrustThresholdVerifier.sol#21)
+	- Version constraint ^0.8.20 is used by:
+		-^0.8.20 (lib/openzeppelin-contracts/contracts/access/Ownable.sol#4)
+		-^0.8.20 (lib/openzeppelin-contracts/contracts/access/Ownable2Step.sol#4)
+		-^0.8.20 (lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol#4)
+		-^0.8.20 (lib/openzeppelin-contracts/contracts/utils/Comparators.sol#4)
+		-^0.8.20 (lib/openzeppelin-contracts/contracts/utils/Context.sol#4)
+		-^0.8.20 (lib/openzeppelin-contracts/contracts/utils/Panic.sol#4)
+		-^0.8.20 (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol#4)
+		-^0.8.20 (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#5)
+		-^0.8.20 (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#5)
+		-^0.8.20 (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#4)
+		-^0.8.20 (lib/openzeppelin-contracts/contracts/utils/math/SafeCast.sol#5)
+	- Version constraint >=0.6.2 is used by:
+		->=0.6.2 (lib/openzeppelin-contracts/contracts/interfaces/IERC1363.sol#4)
+	- Version constraint >=0.4.16 is used by:
+		->=0.4.16 (lib/openzeppelin-contracts/contracts/interfaces/IERC165.sol#4)
+		->=0.4.16 (lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol#4)
+		->=0.4.16 (lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol#4)
+		->=0.4.16 (lib/openzeppelin-contracts/contracts/utils/introspection/IERC165.sol#4)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#different-pragma-directives-are-used
+
+Detector: cyclomatic-complexity
+DisputeArbitration._settleArbitratorBondsAndFees(uint256,address,uint256) (contracts/DisputeArbitration.sol#399-450) has a high cyclomatic complexity (12).
+ServiceAgreement.castArbitrationVote(uint256,IServiceAgreement.ArbitrationVote,uint256,uint256) (contracts/ServiceAgreement.sol#506-554) has a high cyclomatic complexity (13).
+ServiceAgreement._finalizeDispute(uint256,IServiceAgreement.DisputeOutcome,uint256,uint256,bool) (contracts/ServiceAgreement.sol#739-793) has a high cyclomatic complexity (16).
+ServiceAgreement._updateTrust(uint256,IServiceAgreement.Agreement,bool) (contracts/ServiceAgreement.sol#840-862) has a high cyclomatic complexity (14).
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#cyclomatic-complexity
+
+Detector: solc-version
+Version constraint >=0.7.0<0.9.0 is too complex.
+It is used by:
+	- >=0.7.0<0.9.0 (contracts/CapabilityProofVerifier.sol#21)
+	- >=0.7.0<0.9.0 (contracts/SolvencyProofVerifier.sol#21)
+	- >=0.7.0<0.9.0 (contracts/TrustThresholdVerifier.sol#21)
+Version constraint ^0.8.20 contains known severe issues (https://solidity.readthedocs.io/en/latest/bugs.html)
+	- VerbatimInvalidDeduplication
+	- FullInlinerNonExpressionSplitArgumentEvaluationOrder
+	- MissingSideEffectsOnSelectorAccess.
+It is used by:
+	- ^0.8.20 (lib/openzeppelin-contracts/contracts/access/Ownable.sol#4)
+	- ^0.8.20 (lib/openzeppelin-contracts/contracts/access/Ownable2Step.sol#4)
+	- ^0.8.20 (lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol#4)
+	- ^0.8.20 (lib/openzeppelin-contracts/contracts/utils/Comparators.sol#4)
+	- ^0.8.20 (lib/openzeppelin-contracts/contracts/utils/Context.sol#4)
+	- ^0.8.20 (lib/openzeppelin-contracts/contracts/utils/Panic.sol#4)
+	- ^0.8.20 (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol#4)
+	- ^0.8.20 (lib/openzeppelin-contracts/contracts/utils/SlotDerivation.sol#5)
+	- ^0.8.20 (lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol#5)
+	- ^0.8.20 (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#4)
+	- ^0.8.20 (lib/openzeppelin-contracts/contracts/utils/math/SafeCast.sol#5)
+Version constraint >=0.6.2 contains known severe issues (https://solidity.readthedocs.io/en/latest/bugs.html)
+	- MissingSideEffectsOnSelectorAccess
+	- AbiReencodingHeadOverflowWithStaticArrayCleanup
+	- DirtyBytesArrayToStorage
+	- NestedCalldataArrayAbiReencodingSizeValidation
+	- ABIDecodeTwoDimensionalArrayMemory
+	- KeccakCaching
+	- EmptyByteArrayCopy
+	- DynamicArrayCleanup
+	- MissingEscapingInFormatting
+	- ArraySliceDynamicallyEncodedBaseType
+	- ImplicitConstructorCallvalueCheck
+	- TupleAssignmentMultiStackSlotComponents
+	- MemoryArrayCreationOverflow.
+It is used by:
+	- >=0.6.2 (lib/openzeppelin-contracts/contracts/interfaces/IERC1363.sol#4)
+Version constraint >=0.4.16 contains known severe issues (https://solidity.readthedocs.io/en/latest/bugs.html)
+	- DirtyBytesArrayToStorage
+	- ABIDecodeTwoDimensionalArrayMemory
+	- KeccakCaching
+	- EmptyByteArrayCopy
+	- DynamicArrayCleanup
+	- ImplicitConstructorCallvalueCheck
+	- TupleAssignmentMultiStackSlotComponents
+	- MemoryArrayCreationOverflow
+	- privateCanBeOverridden
+	- SignedArrayStorageCopy
+	- ABIEncoderV2StorageArrayWithMultiSlotElement
+	- DynamicConstructorArgumentsClippedABIV2
+	- UninitializedFunctionPointerInConstructor_0.4.x
+	- IncorrectEventSignatureInLibraries_0.4.x
+	- ExpExponentCleanup
+	- NestedArrayFunctionCallDecoder
+	- ZeroFunctionSelector.
+It is used by:
+	- >=0.4.16 (lib/openzeppelin-contracts/contracts/interfaces/IERC165.sol#4)
+	- >=0.4.16 (lib/openzeppelin-contracts/contracts/interfaces/IERC20.sol#4)
+	- >=0.4.16 (lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol#4)
+	- >=0.4.16 (lib/openzeppelin-contracts/contracts/utils/introspection/IERC165.sol#4)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#incorrect-versions-of-solidity
+
+Detector: low-level-calls
+Low level call in ARC402Governance.executeTransaction(uint256) (contracts/ARC402Governance.sol#90-100):
+	- (ok,result) = txn.target.call{value: txn.value}(txn.data) (contracts/ARC402Governance.sol#95)
+Low level call in ARC402Wallet.executeSpend(address,uint256,string,bytes32) (contracts/ARC402Wallet.sol#267-317):
+	- (success,None) = recipient.call{value: amount}() (contracts/ARC402Wallet.sol#315)
+Low level call in ARC402Wallet.executeContractCall(ARC402Wallet.ContractCallParams) (contracts/ARC402Wallet.sol#448-487):
+	- (success,returnData) = params.target.call{value: params.value}(params.data) (contracts/ARC402Wallet.sol#470)
+Low level call in ARC402WalletTest.relayCategoryLimit(string,uint256) (contracts/ARC402WalletTest.sol#83-93):
+	- (success,None) = address(policyEngine).call(abi.encodeWithSignature(setCategoryLimit(string,uint256),category,limitPerTx)) (contracts/ARC402WalletTest.sol#89-91)
+Low level call in ARC402WalletTest.executeSpend(address,uint256,string,bytes32) (contracts/ARC402WalletTest.sol#113-132):
+	- (success,None) = recipient.call{value: amount}() (contracts/ARC402WalletTest.sol#130)
+Low level call in DisputeArbitration._collectPayment(address,address,uint256) (contracts/DisputeArbitration.sol#375-387):
+	- (ok,None) = from.call{value: msg.value - amount}() (contracts/DisputeArbitration.sol#381)
+Low level call in DisputeArbitration._releasePayment(address,address,uint256) (contracts/DisputeArbitration.sol#389-397):
+	- (ok,None) = to.call{value: amount}() (contracts/DisputeArbitration.sol#392)
+Low level call in ServiceAgreement._releaseEscrow(address,address,uint256) (contracts/ServiceAgreement.sol#813-821):
+	- (ok,None) = recipient.call{value: amount}() (contracts/ServiceAgreement.sol#816)
+Low level call in SettlementCoordinator.execute(bytes32) (contracts/SettlementCoordinator.sol#117-143):
+	- (success,None) = p.toWallet.call{value: p.amount}() (contracts/SettlementCoordinator.sol#134)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#low-level-calls
+
+Detector: missing-inheritance
+ARC402Wallet (contracts/ARC402Wallet.sol#31-529) should inherit from IARC402Wallet (contracts/X402Interceptor.sol#61-69)
+PolicyEngine (contracts/PolicyEngine.sol#12-348) should inherit from IDefiPolicy (contracts/ARC402Wallet.sol#23-29)
+Groth16Verifier (contracts/SolvencyProofVerifier.sol#23-175) should inherit from ICapabilityProofVerifier (contracts/ZKCapabilityGate.sol#4-11)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#missing-inheritance
+
+Detector: naming-convention
+Parameter ARC402Registry.update(address,address,address,address,string)._policyEngine (contracts/ARC402Registry.sol#50) is not in mixedCase
+Parameter ARC402Registry.update(address,address,address,address,string)._trustRegistry (contracts/ARC402Registry.sol#51) is not in mixedCase
+Parameter ARC402Registry.update(address,address,address,address,string)._intentAttestation (contracts/ARC402Registry.sol#52) is not in mixedCase
+Parameter ARC402Registry.update(address,address,address,address,string)._settlementCoordinator (contracts/ARC402Registry.sol#53) is not in mixedCase
+Parameter ARC402Registry.update(address,address,address,address,string)._version (contracts/ARC402Registry.sol#54) is not in mixedCase
+Parameter Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[3])._pA (contracts/CapabilityProofVerifier.sol#65) is not in mixedCase
+Parameter Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[3])._pB (contracts/CapabilityProofVerifier.sol#65) is not in mixedCase
+Parameter Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[3])._pC (contracts/CapabilityProofVerifier.sol#65) is not in mixedCase
+Parameter Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[3])._pubSignals (contracts/CapabilityProofVerifier.sol#65) is not in mixedCase
+Parameter Groth16Verifier.verifyProof.asm_0.checkField().v_verifyProof_asm_0_checkField (contracts/CapabilityProofVerifier.sol#67) is not in mixedCase
+Function Groth16Verifier.verifyProof.asm_0.g1_mulAccC() (contracts/CapabilityProofVerifier.sol#75-98) is not in mixedCase
+Parameter Groth16Verifier.verifyProof.asm_0.g1_mulAccC().pR_verifyProof_asm_0_g1_mulAccC (contracts/CapabilityProofVerifier.sol#75) is not in mixedCase
+Parameter Groth16Verifier.verifyProof.asm_0.g1_mulAccC().x_verifyProof_asm_0_g1_mulAccC (contracts/CapabilityProofVerifier.sol#75) is not in mixedCase
+Parameter Groth16Verifier.verifyProof.asm_0.g1_mulAccC().y_verifyProof_asm_0_g1_mulAccC (contracts/CapabilityProofVerifier.sol#75) is not in mixedCase
+Parameter Groth16Verifier.verifyProof.asm_0.g1_mulAccC().s_verifyProof_asm_0_g1_mulAccC (contracts/CapabilityProofVerifier.sol#75) is not in mixedCase
+Parameter Groth16Verifier.verifyProof.asm_0.checkPairing().pA_verifyProof_asm_0_checkPairing (contracts/CapabilityProofVerifier.sol#100) is not in mixedCase
+Parameter Groth16Verifier.verifyProof.asm_0.checkPairing().pB_verifyProof_asm_0_checkPairing (contracts/CapabilityProofVerifier.sol#100) is not in mixedCase
+Parameter Groth16Verifier.verifyProof.asm_0.checkPairing().pC_verifyProof_asm_0_checkPairing (contracts/CapabilityProofVerifier.sol#100) is not in mixedCase
+Parameter Groth16Verifier.verifyProof.asm_0.checkPairing().pubSignals_verifyProof_asm_0_checkPairing (contracts/CapabilityProofVerifier.sol#100) is not in mixedCase
+Parameter Groth16Verifier.verifyProof.asm_0.checkPairing().pMem_verifyProof_asm_0_checkPairing (contracts/CapabilityProofVerifier.sol#100) is not in mixedCase
+Constant Groth16Verifier.r (contracts/CapabilityProofVerifier.sol#25) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.q (contracts/CapabilityProofVerifier.sol#27) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.alphax (contracts/CapabilityProofVerifier.sol#30) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.alphay (contracts/CapabilityProofVerifier.sol#31) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.betax1 (contracts/CapabilityProofVerifier.sol#32) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.betax2 (contracts/CapabilityProofVerifier.sol#33) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.betay1 (contracts/CapabilityProofVerifier.sol#34) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.betay2 (contracts/CapabilityProofVerifier.sol#35) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.gammax1 (contracts/CapabilityProofVerifier.sol#36) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.gammax2 (contracts/CapabilityProofVerifier.sol#37) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.gammay1 (contracts/CapabilityProofVerifier.sol#38) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.gammay2 (contracts/CapabilityProofVerifier.sol#39) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.deltax1 (contracts/CapabilityProofVerifier.sol#40) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.deltax2 (contracts/CapabilityProofVerifier.sol#41) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.deltay1 (contracts/CapabilityProofVerifier.sol#42) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.deltay2 (contracts/CapabilityProofVerifier.sol#43) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.IC0x (contracts/CapabilityProofVerifier.sol#46) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.IC0y (contracts/CapabilityProofVerifier.sol#47) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.IC1x (contracts/CapabilityProofVerifier.sol#49) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.IC1y (contracts/CapabilityProofVerifier.sol#50) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.IC2x (contracts/CapabilityProofVerifier.sol#52) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.IC2y (contracts/CapabilityProofVerifier.sol#53) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.IC3x (contracts/CapabilityProofVerifier.sol#55) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.IC3y (contracts/CapabilityProofVerifier.sol#56) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.pVk (contracts/CapabilityProofVerifier.sol#60) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.pPairing (contracts/CapabilityProofVerifier.sol#61) is not in UPPER_CASE_WITH_UNDERSCORES
+Constant Groth16Verifier.pLastMem (contracts/CapabilityProofVerifier.sol#63) is not in UPPER_CASE_WITH_UNDERSCORES
+Parameter DisputeArbitration.setTreasury(address)._treasury (contracts/DisputeArbitration.sol#117) is not in mixedCase
+Parameter ServiceAgreement.setGuardian(address)._guardian (contracts/ServiceAgreement.sol#208) is not in mixedCase
+Parameter ServiceAgreement.setWatchtowerRegistry(address)._watchtowerRegistry (contracts/ServiceAgreement.sol#213) is not in mixedCase
+Parameter Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[2])._pA (contracts/SolvencyProofVerifier.sol#62) is not in mixedCase
+Parameter Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[2])._pB (contracts/SolvencyProofVerifier.sol#62) is not in mixedCase
+Parameter Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[2])._pC (contracts/SolvencyProofVerifier.sol#62) is not in mixedCase
+Parameter Groth16Verifier.verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[2])._pubSignals (contracts/SolvencyProofVerifier.sol#62) is not in mixedCase
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#conformance-to-solidity-naming-conventions
+
+Detector: redundant-statements
+Redundant expression "counterparty (contracts/TrustRegistryV2.sol#182)" inTrustRegistryV2 (contracts/TrustRegistryV2.sol#25-424)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#redundant-statements
+
+Detector: too-many-digits
+Math.log2(uint256) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#619-658) uses literals with too many digits:
+	- r = r | byte(uint256,uint256)(x >> r,0x0000010102020202030303030303030300000000000000000000000000000000) (lib/openzeppelin-contracts/contracts/utils/math/Math.sol#656)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#too-many-digits
+
+Detector: unindexed-event-address
+Event ARC402Registry.ContractsUpdated(string,address,address,address,address) (contracts/ARC402Registry.sol#23) has address parameters but no indexed parameters
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#unindexed-event-address-parameters
+. analyzed (61 contracts with 101 detectors), 338 result(s) found

@@ -1,58 +1,20 @@
-/**
- * ARC-402 TypeScript SDK
- *
- * @packageDocumentation
- */
-
-// Main client
-export { ARC402WalletClient, ARC402Wallet, ContextBinding } from "./wallet";
-
-// Sub-clients
+export { ARC402WalletClient, ARC402Wallet, type ContextBinding } from "./wallet";
 export { PolicyClient, PolicyObject, PolicyValidator } from "./policy";
 export { TrustClient, TrustPrimitive } from "./trust";
 export { IntentAttestationClient, IntentAttestation } from "./intent";
 export { SettlementClient, MultiAgentSettlement } from "./settlement";
-export { AgentRegistryClient } from "./agent";
-export { ServiceAgreementClient, AgreementStatus } from "./agreement";
-
-// Contract helpers
-export {
-  getPolicyEngine,
-  getTrustRegistry,
-  getIntentAttestation,
-  getARC402Wallet,
-  getSettlementCoordinator,
-  getWalletFactory,
-  getAgentRegistry,
-  getServiceAgreement,
-  POLICY_ENGINE_ABI,
-  TRUST_REGISTRY_ABI,
-  INTENT_ATTESTATION_ABI,
-  ARC402_WALLET_ABI,
-  SETTLEMENT_COORDINATOR_ABI,
-  WALLET_FACTORY_ABI,
-  AGENT_REGISTRY_ABI,
-  SERVICE_AGREEMENT_ABI,
-} from "./contracts";
-
-// Types & constants
-export { NETWORKS } from "./types";
-export type {
-  Policy,
-  PolicyCategory,
-  CategoryLimit,
-  EscalationConfig,
-  Context,
-  TrustScore,
-  TrustThreshold,
-  Intent,
-  Attestation,
-  SettlementProposal,
-  AcceptanceProof,
-  RejectionProof,
-  RejectionCode,
-  ContractAddresses,
-} from "./types";
-
-export type { AgentInfo } from "./agent";
-export type { Agreement, ProposeParams } from "./agreement";
+export { AgentRegistryClient, type AgentRegistrationInput } from "./agent";
+export { ServiceAgreementClient } from "./agreement";
+export { DisputeArbitrationClient } from "./dispute-arbitration";
+export { ReputationOracleClient } from "./reputation";
+export { SponsorshipAttestationClient } from "./sponsorship";
+export { CapabilityRegistryClient } from "./capability";
+export { GovernanceClient } from "./governance";
+export { signNegotiationMessage, createSignedProposal, createSignedCounter, createSignedAccept, createSignedReject, createNegotiationProposal, createNegotiationCounter, createNegotiationAccept, createNegotiationReject, parseNegotiationMessage } from "./negotiation";
+export { NegotiationGuard } from "./negotiation-guard";
+export { SessionManager } from "./session-manager";
+export { ChannelClient } from "./channel";
+export type { NegotiationVerificationResult, NegotiationVerificationError, SignedNegotiationMessage } from "./types";
+export type { ChannelState, Channel, ChannelStatus, OpenChannelParams } from "./types";
+export * from "./contracts";
+export * from "./types";

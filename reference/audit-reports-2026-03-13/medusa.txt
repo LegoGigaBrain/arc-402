@@ -1,0 +1,103 @@
+[1m[32m⇾[0m[0m [1mReading the configuration file at: [1m/home/lego/.openclaw/workspace-engineering/products/arc-402/reference/medusa.json[0m[0m
+[1m[32m⇾[0m[0m [1mCompiling targets with [1mcrytic-compile[0m[0m
+[1m[32m⇾[0m[0m [1mRunning command:
+/home/lego/.local/bin/crytic-compile . --export-format solc --foundry-compile-all[0m
+[1m[32m⇾[0m[0m [1mFinished compiling targets in 22s[0m
+[1m[32m⇾[0m[0m [1mRunning with a timeout of [1m120[0m[1m seconds[0m[0m
+[1m[32m⇾[0m[0m [1mInitializing corpus[0m
+[1m[32m⇾[0m[0m [1mSetting up test chain[0m
+[1m[32m⇾[0m[0m [1mFinished setting up test chain[0m
+[1m[32m⇾[0m[0m [1mFuzzing with [1m2[0m workers[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.autoRelease(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.challengeChannel(bytes32,bytes)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.resolveDisputeDetailed(uint256,uint8,uint256,uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.acceptOwnership()[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.closeChannel(bytes32,bytes)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.echidna_agreement_id_monotonic()[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setLegacyFulfillMode(bool)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.allowToken(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.echidna_status_terminal_states_final()[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setLegacyFulfillProvider(address,bool)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.expiredCancel(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setGuardian(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setProtocolFee(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.propose(address,string,string,uint256,address,uint256,bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.resolveDispute(uint256,bool)[0m[0m
+[1m[32m⇾[0m[0m [1m[1mfuzz: [0melapsed: [1m0s[0m, calls: [1m0 (0/sec)[0m, seq/s: [1m0[0m, coverage: [1m127[0m, corpus: [1m0[0m, failures: [1m0/0[0m, gas/s: [1m0[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.accept(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.openSessionChannel(address,address,uint256,uint256,uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.submitDisputeEvidence(uint256,uint8,bytes32,string)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.expiredDisputeRefund(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.dispute(uint256,string)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.finaliseChallenge(bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.requestHumanEscalation(uint256,string)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setDisputeArbitration(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.directDispute(uint256,uint8,string)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setWatchtowerRegistry(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setProtocolTreasury(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.reclaimExpiredChannel(bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.respondToRevision(uint256,uint8,uint256,bytes32,string,bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setReputationOracle(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.nominateArbitrator(uint256,address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.transferOwnership(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.escalateToDispute(uint256,string)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.fulfill(uint256,bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.verifyDeliverable(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.cancel(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.castArbitrationVote(uint256,uint8,uint256,uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.commitDeliverable(uint256,bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.disallowToken(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.requestRevision(uint256,bytes32,string,bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.openDisputeWithMode(uint256,uint8,uint8,string)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.resolveFromArbitration(uint256,address,uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setApprovedArbitrator(address,bool)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[NOT STARTED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setMinimumTrustValue(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1mfuzz: [0melapsed: [1m3s[0m, calls: [1m23313 (7770/sec)[0m, seq/s: [1m77[0m, coverage: [1m5200[0m, corpus: [1m88[0m, failures: [1m0/232[0m, gas/s: [1m284037432[0m[0m
+[1m[32m⇾[0m[0m [1mTransaction test limit reached, halting now...[0m
+[1m[32m⇾[0m[0m [1mFuzzer stopped, test results follow below ...[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.accept(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.acceptOwnership()[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.allowToken(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.autoRelease(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.cancel(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.castArbitrationVote(uint256,uint8,uint256,uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.challengeChannel(bytes32,bytes)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.closeChannel(bytes32,bytes)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.commitDeliverable(uint256,bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.directDispute(uint256,uint8,string)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.disallowToken(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.dispute(uint256,string)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.echidna_agreement_id_monotonic()[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.echidna_status_terminal_states_final()[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.escalateToDispute(uint256,string)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.expiredCancel(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.expiredDisputeRefund(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.finaliseChallenge(bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.fulfill(uint256,bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.nominateArbitrator(uint256,address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.openDisputeWithMode(uint256,uint8,uint8,string)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.openSessionChannel(address,address,uint256,uint256,uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.propose(address,string,string,uint256,address,uint256,bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.reclaimExpiredChannel(bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.requestHumanEscalation(uint256,string)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.requestRevision(uint256,bytes32,string,bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.resolveDispute(uint256,bool)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.resolveDisputeDetailed(uint256,uint8,uint256,uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.resolveFromArbitration(uint256,address,uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.respondToRevision(uint256,uint8,uint256,bytes32,string,bytes32)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setApprovedArbitrator(address,bool)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setDisputeArbitration(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setGuardian(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setLegacyFulfillMode(bool)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setLegacyFulfillProvider(address,bool)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setMinimumTrustValue(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setProtocolFee(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setProtocolTreasury(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setReputationOracle(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.setWatchtowerRegistry(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.submitDisputeEvidence(uint256,uint8,bytes32,string)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.transferOwnership(address)[0m[0m
+[1m[32m⇾[0m[0m [1m[1m[32m[PASSED] [0m[0m[1mAssertion Test: ServiceAgreementInvariants.verifyDeliverable(uint256)[0m[0m
+[1m[32m⇾[0m[0m [1mTest summary: [1m[32m43[0m[0m test(s) passed, [1m[31m0[0m[0m test(s) failed[0m
+[1m[32m⇾[0m[0m [1mhtml report(s) saved to: corpus/coverage/coverage_report.html[0m
+[1m[32m⇾[0m[0m [1mlcov report(s) saved to: corpus/coverage/lcov.info[0m

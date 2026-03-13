@@ -125,4 +125,113 @@ contract CapabilityRegistryTest is Test {
 
         assertEq(capabilityRegistry.capabilityCount(bob), 0);
     }
+
+    // ─── Reverse index: getAgentsWithCapability ───────────────────────────────
+
+    function _registerBob() internal {
+        string[] memory bobCaps = new string[](1);
+        bobCaps[0] = "legacy-freeform";
+        vm.prank(bob);
+        agentRegistry.register("Bob", bobCaps, "LLM", "https://bob.example", "ipfs://bob");
+    }
+
+    function test_GetAgentsWithCapability_returns_agent_after_claim() public {
+        vm.prank(gov);
+        capabilityRegistry.registerRoot("compute");
+
+        vm.prank(alice);
+        capabilityRegistry.claim("compute.gpu.inference.v1");
+
+        address[] memory agents = capabilityRegistry.getAgentsWithCapability("compute.gpu.inference.v1");
+        assertEq(agents.length, 1);
+        assertEq(agents[0], alice);
+    }
+
+    function test_GetAgentsWithCapability_excludes_agent_after_revoke() public {
+        vm.prank(gov);
+        capabilityRegistry.registerRoot("compute");
+
+        vm.prank(alice);
+        capabilityRegistry.claim("compute.gpu.inference.v1");
+
+        vm.prank(alice);
+        capabilityRegistry.revoke("compute.gpu.inference.v1");
+
+        address[] memory agents = capabilityRegistry.getAgentsWithCapability("compute.gpu.inference.v1");
+        assertEq(agents.length, 0, "revoked agent should be removed from reverse index");
+        assertFalse(capabilityRegistry.isCapabilityClaimed(alice, "compute.gpu.inference.v1"));
+    }
+
+    function test_ReverseIndex_clean_after_claim_and_revoke() public {
+        vm.prank(gov);
+        capabilityRegistry.registerRoot("legal");
+
+        vm.prank(alice);
+        capabilityRegistry.claim("legal.contract-review.en.v1");
+
+        // Verify in index
+        address[] memory before = capabilityRegistry.getAgentsWithCapability("legal.contract-review.en.v1");
+        assertEq(before.length, 1);
+
+        // Revoke
+        vm.prank(alice);
+        capabilityRegistry.revoke("legal.contract-review.en.v1");
+
+        // Index clean
+        address[] memory after_ = capabilityRegistry.getAgentsWithCapability("legal.contract-review.en.v1");
+        assertEq(after_.length, 0);
+
+        // agentCapabilityIds also cleaned
+        assertEq(capabilityRegistry.capabilityCount(alice), 0);
+    }
+
+    function test_MultipleAgents_same_capability_all_returned() public {
+        _registerBob();
+
+        vm.prank(gov);
+        capabilityRegistry.registerRoot("compute");
+
+        vm.prank(alice);
+        capabilityRegistry.claim("compute.gpu.inference.v1");
+        vm.prank(bob);
+        capabilityRegistry.claim("compute.gpu.inference.v1");
+
+        address[] memory agents = capabilityRegistry.getAgentsWithCapability("compute.gpu.inference.v1");
+        assertEq(agents.length, 2, "both agents should appear");
+
+        bool foundAlice;
+        bool foundBob;
+        for (uint256 i = 0; i < agents.length; i++) {
+            if (agents[i] == alice) foundAlice = true;
+            if (agents[i] == bob)   foundBob   = true;
+        }
+        assertTrue(foundAlice, "alice should be in result");
+        assertTrue(foundBob,   "bob should be in result");
+    }
+
+    function test_GetAgentsWithCapability_unknown_capability_returns_empty() public view {
+        // No revert for unknown capability — returns empty array
+        address[] memory agents = capabilityRegistry.getAgentsWithCapability("unknown.cap.v99");
+        assertEq(agents.length, 0, "unknown capability should return empty, not revert");
+    }
+
+    function test_GetAgentsWithCapability_partial_revoke_removes_only_revoker() public {
+        _registerBob();
+
+        vm.prank(gov);
+        capabilityRegistry.registerRoot("legal");
+
+        vm.prank(alice);
+        capabilityRegistry.claim("legal.ip-analysis.us.v1");
+        vm.prank(bob);
+        capabilityRegistry.claim("legal.ip-analysis.us.v1");
+
+        // Alice revokes
+        vm.prank(alice);
+        capabilityRegistry.revoke("legal.ip-analysis.us.v1");
+
+        address[] memory agents = capabilityRegistry.getAgentsWithCapability("legal.ip-analysis.us.v1");
+        assertEq(agents.length, 1, "only bob should remain");
+        assertEq(agents[0], bob);
+    }
 }

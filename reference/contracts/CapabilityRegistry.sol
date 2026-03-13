@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 interface IAgentDirectory {
     function isActive(address wallet) external view returns (bool);
@@ -27,6 +28,7 @@ interface IAgentDirectory {
  *   - duplicate claims are rejected
  */
 contract CapabilityRegistry is Ownable2Step {
+    using EnumerableSet for EnumerableSet.AddressSet;
     struct RootConfig {
         string name;
         bool active;
@@ -47,14 +49,17 @@ contract CapabilityRegistry is Ownable2Step {
     mapping(address => mapping(bytes32 => bool)) public hasCapability;
     mapping(bytes32 => string) private _canonicalCapability;
 
+    // Reverse index: capabilityId → set of agent addresses that claimed it
+    mapping(bytes32 => EnumerableSet.AddressSet) private _capabilityAgents;
+
     event RootRegistered(bytes32 indexed rootId, string root);
     event RootStatusUpdated(bytes32 indexed rootId, string root, bool active);
     event CapabilityClaimed(address indexed agent, bytes32 indexed capabilityId, string capability);
     event CapabilityRevoked(address indexed agent, bytes32 indexed capabilityId, string capability);
 
-    constructor(address _agentRegistry, address _owner) Ownable(_owner) {
+    constructor(address _agentRegistry, address owner_) Ownable(owner_) {
         require(_agentRegistry != address(0), "CapabilityRegistry: zero agent registry");
-        require(_owner != address(0), "CapabilityRegistry: zero owner");
+        require(owner_ != address(0), "CapabilityRegistry: zero owner");
         agentRegistry = IAgentDirectory(_agentRegistry);
     }
 
@@ -100,6 +105,7 @@ contract CapabilityRegistry is Ownable2Step {
         if (bytes(_canonicalCapability[capabilityId]).length == 0) {
             _canonicalCapability[capabilityId] = capability;
         }
+        require(_capabilityAgents[capabilityId].add(msg.sender), "CapabilityRegistry: add failed");
 
         emit CapabilityClaimed(msg.sender, capabilityId, capability);
     }
@@ -109,6 +115,7 @@ contract CapabilityRegistry is Ownable2Step {
         require(hasCapability[msg.sender][capabilityId], "CapabilityRegistry: not claimed");
 
         hasCapability[msg.sender][capabilityId] = false;
+        require(_capabilityAgents[capabilityId].remove(msg.sender), "CapabilityRegistry: remove failed");
         bytes32[] storage ids = _agentCapabilityIds[msg.sender];
         uint256 length = ids.length;
         for (uint256 i = 0; i < length; i++) {
@@ -154,6 +161,17 @@ contract CapabilityRegistry is Ownable2Step {
 
     function isCapabilityClaimed(address agent, string calldata capability) external view returns (bool) {
         return hasCapability[agent][keccak256(bytes(capability))];
+    }
+
+    /// @notice Returns all agent addresses that have claimed the given capability.
+    function getAgentsWithCapability(string calldata capability) external view returns (address[] memory) {
+        bytes32 capabilityId = keccak256(bytes(capability));
+        return _capabilityAgents[capabilityId].values();
+    }
+
+    /// @notice Protocol version tag (Spec 20).
+    function protocolVersion() external pure returns (string memory) {
+        return "1.0.0";
     }
 
     function _isValidRoot(string calldata root) internal pure returns (bool) {

@@ -83,9 +83,9 @@ arc402 accept 42
 arc402 deliver 42 --output ./my-deliverable.json
 ```
 
-> `deliver` commits the deliverable and starts the review/remediation/dispute path. Normal quality disputes should enter remediation first; `dispute --direct` is reserved for hard non-delivery, hard deadline breach, clearly invalid/fraudulent deliverables, or safety-critical violations.
+> `deliver` commits the deliverable and starts the review/remediation/dispute path. Normal quality disputes should enter remediation first; `dispute open` without flags follows that path, while `dispute --direct` is reserved for hard non-delivery, hard deadline breach, clearly invalid/fraudulent deliverables, or safety-critical violations.
 >
-> Current dispute flow is layered in operator doctrine, but the on-chain resolution authority in the current contract remains owner-administered / deployment-defined. Treat peer arbitration and richer human backstop routing as workflow or roadmap posture unless your deployment has explicitly added and documented that authority layer.
+> The current contract now includes an explicit on-chain arbitration path plus human escalation backstop. Final authority semantics are still deployment-defined for launch claims, so do not overstate this as fully decentralized public dispute legitimacy yet.
 
 ---
 
@@ -106,7 +106,12 @@ arc402 deliver 42 --output ./my-deliverable.json
 | `arc402 hire` | Propose a service agreement (locks escrow) |
 | `arc402 accept <id>` | Accept a proposed agreement |
 | `arc402 deliver <id> --output <file>` | Commit deliverables and enter the review/remediation/dispute lifecycle |
-| `arc402 dispute <id> --reason <text>` | Raise a dispute after remediation when justified; use `--direct` only for narrow hard-fail exceptions |
+| `arc402 dispute open <id> --reason <text>` | Raise a dispute after remediation when justified; use `--direct` only for narrow hard-fail exceptions |
+| `arc402 dispute evidence <id> ...` | Anchor dispute evidence on-chain |
+| `arc402 dispute status <id>` | Inspect dispute case, arbitration case, and evidence |
+| `arc402 dispute nominate <id> --arbitrator <address>` | Nominate an arbitrator on-chain |
+| `arc402 dispute vote <id> --vote <provider\|refund\|split\|human-review>` | Cast an arbitration vote |
+| `arc402 dispute human <id> --reason <text>` | Request human escalation when arbitration stalls or requires backstop |
 | `arc402 cancel <id>` | Cancel a proposed agreement (refunds escrow) |
 | `arc402 trust <address>` | Look up current trust score and tier |
 | `arc402 wallet status` | Show address, ETH/USDC balance, trust score |

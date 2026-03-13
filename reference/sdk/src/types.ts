@@ -246,6 +246,30 @@ export interface DisputeEvidence {
   timestamp: bigint;
 }
 
+export enum ArbitrationVote {
+  NONE = 0,
+  PROVIDER_WINS = 1,
+  CLIENT_REFUND = 2,
+  SPLIT = 3,
+  HUMAN_REVIEW_REQUIRED = 4,
+}
+
+export interface ArbitrationCase {
+  agreementId: bigint;
+  arbitrators: Address[];
+  arbitratorCount: number;
+  providerVotes: number;
+  clientVotes: number;
+  splitVotes: number;
+  humanVotes: number;
+  selectionDeadlineAt: bigint;
+  decisionDeadlineAt: bigint;
+  splitProviderAward: bigint;
+  splitClientAward: bigint;
+  finalized: boolean;
+  humanBackstopUsed: boolean;
+}
+
 export enum ReputationSignalType {
   ENDORSE = 0,
   WARN = 1,
@@ -304,6 +328,8 @@ export interface GovernanceTransaction {
 export interface NegotiationMessageBase {
   from: Address;
   to: Address;
+  timestamp: number;  // Unix seconds — receiver rejects if |now - timestamp| > 60
+  sig: Hex;           // ECDSA signature over message digest (see signNegotiationMessage)
 }
 
 export interface NegotiationProposal extends NegotiationMessageBase {
@@ -315,6 +341,7 @@ export interface NegotiationProposal extends NegotiationMessageBase {
   spec: string;
   specHash: Hex;
   nonce: Hex;
+  expiresAt: number;  // Unix seconds, required, max timestamp + 86400
 }
 
 export interface NegotiationCounter extends NegotiationMessageBase {
@@ -343,3 +370,108 @@ export type NegotiationMessage =
   | NegotiationCounter
   | NegotiationAccept
   | NegotiationReject;
+
+export interface NegotiationSession {
+  sessionId: Hex;              // keccak256(initiator + responder + timestamp + nonce)
+  initiator: Address;
+  responder: Address;
+  createdAt: number;           // Unix seconds
+  messages: NegotiationMessage[];
+  state: "OPEN" | "ACCEPTED" | "REJECTED" | "EXPIRED";
+  transcriptHash?: Hex;        // set after session closes
+  agreedPrice?: string;
+  agreedDeadline?: string;
+  onChainAgreementId?: string; // set after propose() is called
+}
+
+export interface SignedNegotiationMessage<T extends NegotiationMessage = NegotiationMessage> {
+  message: T;
+  recoveredSigner: Address;
+}
+
+export type NegotiationVerificationError =
+  | "INVALID_SIGNATURE"
+  | "SIGNER_NOT_REGISTERED"
+  | "TIMESTAMP_TOO_OLD"
+  | "TIMESTAMP_IN_FUTURE"
+  | "NONCE_REPLAYED"
+  | "MESSAGE_EXPIRED"
+  | "MESSAGE_TOO_LARGE"
+  | "SCHEMA_INVALID";
+
+export interface NegotiationVerificationResult {
+  valid: boolean;
+  error?: NegotiationVerificationError;
+  recoveredSigner?: Address;
+}
+
+
+// ─── DisputeArbitration types ─────────────────────────────────────────────────
+
+export enum DisputeMode {
+  UNILATERAL = 0,
+  MUTUAL = 1,
+}
+
+export enum DisputeClass {
+  HARD_FAILURE = 0,
+  AMBIGUITY_QUALITY = 1,
+  HIGH_SENSITIVITY = 2,
+}
+
+export interface DisputeFeeState {
+  mode: DisputeMode;
+  disputeClass: DisputeClass;
+  opener: string;
+  client: string;
+  provider: string;
+  token: string;
+  agreementPrice: bigint;
+  feeRequired: bigint;
+  openerPaid: bigint;
+  respondentPaid: bigint;
+  openedAt: bigint;
+  active: boolean;
+  resolved: boolean;
+}
+
+export interface ArbitratorBondState {
+  bondAmount: bigint;
+  lockedAt: bigint;
+  locked: boolean;
+  slashed: boolean;
+  returned: boolean;
+}
+
+export type ChannelStatus = 'OPEN' | 'CLOSING' | 'CHALLENGED' | 'SETTLED';
+
+export interface ChannelState {
+  channelId: string
+  sequenceNumber: number
+  callCount: number
+  cumulativePayment: bigint
+  token: string
+  timestamp: number
+  clientSig?: string
+  providerSig?: string
+}
+
+export interface Channel {
+  client: string
+  provider: string
+  token: string
+  depositAmount: bigint
+  settledAmount: bigint
+  lastSequenceNumber: number
+  deadline: number
+  challengeExpiry: number
+  status: ChannelStatus
+}
+
+export interface OpenChannelParams {
+  provider: string
+  token: string
+  maxAmount: bigint
+  ratePerCall: bigint
+  deadline: number
+}

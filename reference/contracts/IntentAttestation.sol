@@ -92,7 +92,8 @@ contract IntentAttestation is IIntentAttestation {
     function isExpired(bytes32 attestationId) external view returns (bool) {
         if (!exists[attestationId]) return false;
         uint256 exp = attestations[attestationId].expiresAt;
-        if (exp == 0) return false;
+        // slither-disable-next-line incorrect-equality
+        if (exp == 0) return false; // exp == 0 means "no expiry set" — intentional sentinel value
         return block.timestamp > exp;
     }
 

@@ -1,0 +1,8 @@
+                                                                                
+ Usage: wake detect abi-encode-with-signature [OPTIONS] [PATHS]...              
+                                                                                
+ Try 'wake detect abi-encode-with-signature -h' for help                        
+╭─ Error ──────────────────────────────────────────────────────────────────────╮
+│ No such option: --export                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+                                                                                

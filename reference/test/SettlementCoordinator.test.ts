@@ -23,6 +23,7 @@ describe("SettlementCoordinator", function () {
         fromWallet.address,
         toWallet.address,
         hre.ethers.parseEther("0.5"),
+        hre.ethers.ZeroAddress,
         intentId,
         expiresAt
       );
@@ -36,6 +37,7 @@ describe("SettlementCoordinator", function () {
           fromWallet.address,
           toWallet.address,
           hre.ethers.parseEther("0.5"),
+          hre.ethers.ZeroAddress,
           intentId,
           expiresAt
         )
@@ -51,12 +53,13 @@ describe("SettlementCoordinator", function () {
         fromWallet.address,
         toWallet.address,
         hre.ethers.parseEther("0.5"),
+        hre.ethers.ZeroAddress,
         intentId,
         expiresAt
       );
       const receipt = await tx.wait();
       const iface = new hre.ethers.Interface([
-        "event ProposalCreated(bytes32 indexed proposalId, address indexed from, address indexed to, uint256 amount)",
+        "event ProposalCreated(bytes32 indexed proposalId, address indexed from, address indexed to, uint256 amount, address token)",
       ]);
       for (const log of receipt!.logs) {
         try {
@@ -89,12 +92,13 @@ describe("SettlementCoordinator", function () {
         fromWallet.address,
         toWallet.address,
         hre.ethers.parseEther("0.5"),
+        hre.ethers.ZeroAddress,
         intentId,
         expiresAt
       );
       const receipt = await tx.wait();
       const iface = new hre.ethers.Interface([
-        "event ProposalCreated(bytes32 indexed proposalId, address indexed from, address indexed to, uint256 amount)",
+        "event ProposalCreated(bytes32 indexed proposalId, address indexed from, address indexed to, uint256 amount, address token)",
       ]);
       for (const log of receipt!.logs) {
         try {
@@ -124,12 +128,13 @@ describe("SettlementCoordinator", function () {
         fromWallet.address,
         toWallet.address,
         amount,
+        hre.ethers.ZeroAddress,
         intentId,
         expiresAt
       );
       const receipt = await tx.wait();
       const iface = new hre.ethers.Interface([
-        "event ProposalCreated(bytes32 indexed proposalId, address indexed from, address indexed to, uint256 amount)",
+        "event ProposalCreated(bytes32 indexed proposalId, address indexed from, address indexed to, uint256 amount, address token)",
       ]);
       for (const log of receipt!.logs) {
         try {

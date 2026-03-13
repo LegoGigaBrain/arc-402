@@ -378,6 +378,48 @@ class DisputeCase(BaseModel):
         )
 
 
+class ArbitrationVote(IntEnum):
+    NONE = 0
+    PROVIDER_WINS = 1
+    CLIENT_REFUND = 2
+    SPLIT = 3
+    HUMAN_REVIEW_REQUIRED = 4
+
+
+class ArbitrationCase(BaseModel):
+    agreement_id: int
+    arbitrators: list[str]
+    arbitrator_count: int
+    provider_votes: int
+    client_votes: int
+    split_votes: int
+    human_votes: int
+    selection_deadline_at: int
+    decision_deadline_at: int
+    split_provider_award: int
+    split_client_award: int
+    finalized: bool
+    human_backstop_used: bool
+
+    @classmethod
+    def from_raw(cls, raw: tuple) -> "ArbitrationCase":
+        return cls(
+            agreement_id=raw[0],
+            arbitrators=list(raw[1]),
+            arbitrator_count=raw[2],
+            provider_votes=raw[3],
+            client_votes=raw[4],
+            split_votes=raw[5],
+            human_votes=raw[6],
+            selection_deadline_at=raw[7],
+            decision_deadline_at=raw[8],
+            split_provider_award=raw[9],
+            split_client_award=raw[10],
+            finalized=raw[11],
+            human_backstop_used=raw[12],
+        )
+
+
 class SignalType(IntEnum):
     ENDORSE = 0
     WARN = 1
@@ -503,4 +545,69 @@ class OperationalMetrics(BaseModel):
             missed_heartbeat_count=raw[5],
             uptime_score=raw[6],
             response_score=raw[7],
+        )
+
+
+# ─── DisputeArbitration types ────────────────────────────────────────────────
+
+class DisputeMode(IntEnum):
+    UNILATERAL = 0  # opener pays full fee; win = 50% refund, lose = consumed
+    MUTUAL = 1      # each party pays 50%; no winner reimbursement
+
+
+class DisputeClass(IntEnum):
+    HARD_FAILURE = 0      # 1.0x fee multiplier
+    AMBIGUITY_QUALITY = 1 # 1.25x fee multiplier
+    HIGH_SENSITIVITY = 2  # 1.5x fee multiplier
+
+
+class DisputeFeeState(BaseModel):
+    mode: DisputeMode
+    dispute_class: DisputeClass
+    opener: str
+    client: str
+    provider: str
+    token: str
+    agreement_price: int
+    fee_required: int
+    opener_paid: int
+    respondent_paid: int
+    opened_at: int
+    active: bool
+    resolved: bool
+
+    @classmethod
+    def from_raw(cls, raw: tuple) -> "DisputeFeeState":
+        return cls(
+            mode=DisputeMode(raw[0]),
+            dispute_class=DisputeClass(raw[1]),
+            opener=raw[2],
+            client=raw[3],
+            provider=raw[4],
+            token=raw[5],
+            agreement_price=raw[6],
+            fee_required=raw[7],
+            opener_paid=raw[8],
+            respondent_paid=raw[9],
+            opened_at=raw[10],
+            active=raw[11],
+            resolved=raw[12],
+        )
+
+
+class ArbitratorBondState(BaseModel):
+    bond_amount: int
+    locked_at: int
+    locked: bool
+    slashed: bool
+    returned: bool
+
+    @classmethod
+    def from_raw(cls, raw: tuple) -> "ArbitratorBondState":
+        return cls(
+            bond_amount=raw[0],
+            locked_at=raw[1],
+            locked=raw[2],
+            slashed=raw[3],
+            returned=raw[4],
         )

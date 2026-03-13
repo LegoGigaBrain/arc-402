@@ -1,71 +1,28 @@
 import { Command } from "commander";
-import chalk from "chalk";
-import ora from "ora";
-import { ethers } from "ethers";
+import { ServiceAgreementClient } from "@arc402/sdk";
 import { loadConfig } from "../config";
 import { requireSigner } from "../client";
+import { hashFile, hashString } from "../utils/hash";
+import { printSenderInfo, executeContractWriteViaWallet } from "../wallet-router";
 import { SERVICE_AGREEMENT_ABI } from "../abis";
-import { hashFile } from "../utils/hash";
 
 export function registerDeliverCommand(program: Command): void {
-  program
-    .command("deliver <id>")
-    .description("Fulfill an agreement and commit deliverables hash (provider only)")
-    .requiredOption("--output <filepath>", "Path to the deliverable file to hash and commit")
-    .option("--json", "Output raw JSON")
-    .action(async (idStr: string, opts) => {
-      const id = parseInt(idStr, 10);
-
-      // Hash the output file
-      let hash: string;
-      try {
-        hash = hashFile(opts.output);
-      } catch (err: unknown) {
-        console.error(
-          chalk.red(`Cannot read output file: ${err instanceof Error ? err.message : String(err)}`)
-        );
-        process.exit(1);
-      }
-
-      const config = loadConfig();
-      const { signer } = await requireSigner(config);
-
-      const contract = new ethers.Contract(
-        config.serviceAgreementAddress,
-        SERVICE_AGREEMENT_ABI,
-        signer
+  program.command("deliver <id>").description("Provider commits a deliverable for verification; legacy fulfill mode is compatibility-only").option("--output <filepath>").option("--message <text>").option("--fulfill", "Use legacy trusted-only fulfill() instead of commitDeliverable()", false).action(async (id, opts) => {
+    const config = loadConfig();
+    if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+    const { signer } = await requireSigner(config);
+    const hash = opts.output ? hashFile(opts.output) : hashString(opts.message ?? `agreement:${id}`);
+    printSenderInfo(config);
+    if (config.walletContractAddress) {
+      const fn = opts.fulfill ? "fulfill" : "commitDeliverable";
+      await executeContractWriteViaWallet(
+        config.walletContractAddress, signer, config.serviceAgreementAddress,
+        SERVICE_AGREEMENT_ABI, fn, [BigInt(id), hash],
       );
-
-      const spinner = ora(`Delivering agreement #${id}…`).start();
-      try {
-        const tx = await contract.fulfill(id, hash);
-        spinner.text = "Waiting for confirmation…";
-        const receipt = await tx.wait();
-
-        spinner.succeed(chalk.green(`✓ Agreement #${id} fulfilled — payment released`));
-
-        if (opts.json) {
-          console.log(
-            JSON.stringify(
-              {
-                agreementId: id,
-                deliverablesHash: hash,
-                txHash: tx.hash,
-                gasUsed: receipt.gasUsed.toString(),
-              },
-              null,
-              2
-            )
-          );
-        } else {
-          console.log(`  Deliverables hash: ${chalk.bold(hash)}`);
-          console.log(`  Payment released ✓`);
-          console.log(`  tx: ${tx.hash}`);
-        }
-      } catch (err: unknown) {
-        spinner.fail(chalk.red("Deliver failed"));
-        console.error(err instanceof Error ? err.message : String(err));
-        process.exit(1);
-      }
-    });
+    } else {
+      const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+      if (opts.fulfill) await client.fulfill(BigInt(id), hash); else await client.commitDeliverable(BigInt(id), hash);
+    }
+    console.log(`${opts.fulfill ? 'fulfilled' : 'committed'} ${id} hash=${hash}`);
+  });
 }

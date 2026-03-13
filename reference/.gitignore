@@ -24,3 +24,18 @@ circuits/build/**/witness_calculator.js
 circuits/ptau/*.ptau
 circuits/node_modules/
 circuits/package-lock.json
+
+# Build artifacts
+artifacts/
+dist/
+out/
+typechain-types/
+
+# Tool state
+.wake/
+crytic-export/
+corpus/
+cache/
+
+# Audit tool outputs (generated, not source)
+audit-reports*/

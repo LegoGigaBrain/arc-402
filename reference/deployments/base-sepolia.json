@@ -1,13 +1,52 @@
 {
   "network": "Base Sepolia",
   "chainId": 84532,
-  "deployedAt": "2026-03-10",
+  "deployedAt": "2026-03-13",
   "deployer": "0x59A32A792d0f25B0E0a4A4aFbFDf514b94B102fB",
   "contracts": {
-    "PolicyEngine":          "0x6B89621c94a7105c3D8e0BD8Fb06814931CA2CB2",
-    "TrustRegistry":         "0xdA1D377991B2E580991B0DD381CdD635dd71aC39",
-    "IntentAttestation":     "0xbB5E1809D4a94D08Bf1143131312858143D018f1",
-    "SettlementCoordinator": "0x7ad8db6C5f394542E8e9658F86C85cC99Cf6D460"
+    "PolicyEngine":          "0x44102e70c2A366632d98Fe40d892a2501fC7fFF2",
+    "TrustRegistry":         "0x1D38Cf67686820D970C146ED1CC98fc83613f02B",
+    "IntentAttestation":     "0x942c807Cc6E0240A061e074b61345618aBadc457",
+    "SettlementCoordinator": "0x52b565797975781f069368Df40d6633b2aD03390",
+    "ARC402Registry":        "0x638C7d106a2B7beC9ef4e0eA7d64ed8ab656A7e6",
+    "WalletFactory":         "0xD560C22aD5372Aa830ee5ffBFa4a5D9f528e7B87",
+    "AgentRegistry":         "0x07D526f8A8e148570509aFa249EFF295045A0cc9",
+    "TrustRegistryV2":       "0xfCc2CDC42654e05Dad5F6734cE5caFf3dAE0E94F",
+    "SponsorshipAttestation":"0xc0d927745AcF8DEeE551BE11A12c97c492DDC989",
+    "TrustRegistryV3":       "0xbd3f2F15F794FDE8B3A59B6643e4b7e985Ee1389",
+    "ServiceAgreement":      "0xa214D30906A934358f451514dA1ba732AD79f158",
+    "SessionChannels":       "0x21340f81F5ddc9C213ff2AC45F0f34FB2449386d",
+    "DisputeModule":         "0xcAcf606374E29bbC573620afFd7f9f739D25317F",
+    "ReputationOracle":      "UNDEPLOYED — not required for initial release"
   },
-  "note": "Canonical deployment. Users deploy ARC402Wallet pointing to these addresses."
+  "gasReport": {
+    "PolicyEngine":          { "gasUsed": 2885127 },
+    "TrustRegistry":         { "gasUsed": 802554 },
+    "IntentAttestation":     { "gasUsed": 713569 },
+    "SettlementCoordinator": { "gasUsed": 1136103 },
+    "ARC402Registry":        { "gasUsed": 595550 },
+    "WalletFactory":         { "gasUsed": 3310377 },
+    "AgentRegistry":         { "gasUsed": 2219728 },
+    "TrustRegistryV2":       { "gasUsed": 1513748 },
+    "SponsorshipAttestation":{ "gasUsed": 1090454 },
+    "TrustRegistryV3":       { "gasUsed": 791108 },
+    "ServiceAgreement":      { "gasUsed": 5381740 },
+    "SessionChannels":       { "gasUsed": 2399314 },
+    "DisputeModule":         { "gasUsed": 3774764 },
+    "totalGasUsed":          26686836,
+    "totalEthSpent":         "0.00016012 ETH",
+    "gasPrice":              "0.006 gwei"
+  },
+  "basescanVerified": [
+    "PolicyEngine",
+    "TrustRegistry",
+    "IntentAttestation",
+    "SettlementCoordinator",
+    "ARC402Registry",
+    "WalletFactory",
+    "AgentRegistry",
+    "TrustRegistryV2",
+    "SponsorshipAttestation"
+  ],
+  "note": "SA split into 3 contracts (SA 23,759B + DisputeModule + SessionChannels) to meet EIP-170 24KB limit. All ARC-402 core contracts now live on Base Sepolia."
 }

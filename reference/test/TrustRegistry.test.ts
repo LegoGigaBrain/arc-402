@@ -22,7 +22,7 @@ describe("TrustRegistry", function () {
 
     it("should not reinitialize an already initialized wallet", async function () {
       await trustRegistry.initWallet(wallet.address);
-      await trustRegistry.recordSuccess(wallet.address);
+      await trustRegistry.recordSuccess(wallet.address, hre.ethers.ZeroAddress, "", 0);
       await trustRegistry.initWallet(wallet.address);
       const score = await trustRegistry.getScore(wallet.address);
       expect(score).to.equal(105);
@@ -32,7 +32,7 @@ describe("TrustRegistry", function () {
   describe("recordSuccess", function () {
     it("should increment score by 5", async function () {
       await trustRegistry.initWallet(wallet.address);
-      await trustRegistry.recordSuccess(wallet.address);
+      await trustRegistry.recordSuccess(wallet.address, hre.ethers.ZeroAddress, "", 0);
       const score = await trustRegistry.getScore(wallet.address);
       expect(score).to.equal(105);
     });
@@ -40,7 +40,7 @@ describe("TrustRegistry", function () {
     it("should not exceed 1000", async function () {
       await trustRegistry.initWallet(wallet.address);
       for (let i = 0; i < 200; i++) {
-        await trustRegistry.recordSuccess(wallet.address);
+        await trustRegistry.recordSuccess(wallet.address, hre.ethers.ZeroAddress, "", 0);
       }
       const score = await trustRegistry.getScore(wallet.address);
       expect(score).to.equal(1000);
@@ -49,7 +49,7 @@ describe("TrustRegistry", function () {
     it("should only be callable by authorized updater", async function () {
       await trustRegistry.initWallet(wallet.address);
       await expect(
-        trustRegistry.connect(wallet).recordSuccess(wallet.address)
+        trustRegistry.connect(wallet).recordSuccess(wallet.address, hre.ethers.ZeroAddress, "", 0)
       ).to.be.revertedWith("TrustRegistry: not authorized updater");
     });
   });
@@ -57,7 +57,7 @@ describe("TrustRegistry", function () {
   describe("recordAnomaly", function () {
     it("should decrement score by 20", async function () {
       await trustRegistry.initWallet(wallet.address);
-      await trustRegistry.recordAnomaly(wallet.address);
+      await trustRegistry.recordAnomaly(wallet.address, hre.ethers.ZeroAddress, "", 0);
       const score = await trustRegistry.getScore(wallet.address);
       expect(score).to.equal(80);
     });
@@ -65,7 +65,7 @@ describe("TrustRegistry", function () {
     it("should not go below 0", async function () {
       await trustRegistry.initWallet(wallet.address);
       for (let i = 0; i < 10; i++) {
-        await trustRegistry.recordAnomaly(wallet.address);
+        await trustRegistry.recordAnomaly(wallet.address, hre.ethers.ZeroAddress, "", 0);
       }
       const score = await trustRegistry.getScore(wallet.address);
       expect(score).to.equal(0);
@@ -76,7 +76,7 @@ describe("TrustRegistry", function () {
     it("score 0-99 should be probationary", async function () {
       await trustRegistry.initWallet(wallet.address);
       for (let i = 0; i < 5; i++) {
-        await trustRegistry.recordAnomaly(wallet.address);
+        await trustRegistry.recordAnomaly(wallet.address, hre.ethers.ZeroAddress, "", 0);
       }
       const level = await trustRegistry.getTrustLevel(wallet.address);
       expect(level).to.equal("probationary");
@@ -91,7 +91,7 @@ describe("TrustRegistry", function () {
     it("score 300-599 should be standard", async function () {
       await trustRegistry.initWallet(wallet.address);
       for (let i = 0; i < 40; i++) {
-        await trustRegistry.recordSuccess(wallet.address);
+        await trustRegistry.recordSuccess(wallet.address, hre.ethers.ZeroAddress, "", 0);
       }
       const score = await trustRegistry.getScore(wallet.address);
       expect(score).to.be.gte(300);
@@ -115,7 +115,7 @@ describe("TrustRegistry", function () {
     it("should not allow non-owner to add updaters", async function () {
       await expect(
         trustRegistry.connect(wallet).addUpdater(wallet.address)
-      ).to.be.revertedWith("TrustRegistry: not owner");
+      ).to.be.revertedWithCustomError(trustRegistry, "OwnableUnauthorizedAccount");
     });
   });
 });

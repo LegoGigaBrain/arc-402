@@ -1,162 +1,153 @@
 import { Command } from "commander";
-import chalk from "chalk";
-import ora from "ora";
+import { ServiceAgreementClient, SessionManager } from "@arc402/sdk";
 import { ethers } from "ethers";
-import { loadConfig, getUsdcAddress } from "../config";
+import { getUsdcAddress, loadConfig } from "../config";
 import { requireSigner } from "../client";
-import { SERVICE_AGREEMENT_ABI, ERC20_ABI } from "../abis";
-import { hashFile } from "../utils/hash";
+import { hashFile, hashString } from "../utils/hash";
 import { parseDuration } from "../utils/time";
+import { printSenderInfo, executeContractWriteViaWallet } from "../wallet-router";
+import { SERVICE_AGREEMENT_ABI } from "../abis";
+
+const sessionManager = new SessionManager();
 
 export function registerHireCommand(program: Command): void {
   program
     .command("hire")
-    .description("Propose a service agreement (locks escrow)")
-    .requiredOption("--agent <address>", "Provider agent address")
-    .requiredOption("--task <description>", "Task description")
-    .requiredOption("--service-type <type>", "Service type")
-    .requiredOption("--max <amount>", "Payment amount (in ETH or USDC units)")
-    .option("--token <token>", "Payment token: usdc or eth", "eth")
-    .requiredOption(
-      "--deadline <duration>",
-      "Deadline duration from now e.g. 2h, 24h, 7d"
-    )
-    .option(
-      "--deliverable-spec <filepath>",
-      "Path to deliverables spec file (will be keccak256 hashed)"
-    )
-    .option("--json", "Output raw JSON")
+    .description("Create the on-chain commitment after off-chain negotiation")
+    .requiredOption("--agent <address>")
+    .requiredOption("--task <description>")
+    .requiredOption("--service-type <type>")
+    .option("--max <amount>", "Max price in wei (e.g. 1000000000000000) or ETH (e.g. 0.001eth) or USDC (e.g. 1USDC). Required unless --session is provided.")
+    .option("--deadline <duration>", "Deadline as duration (1h, 30m, 7d) or absolute ISO date (2026-04-01). Required unless --session is provided.")
+    .option("--token <token>", "eth or usdc", "eth")
+    .option("--deliverable-spec <filepath>")
+    .option("--session <sessionId>", "Load agreed price and deadline from a completed negotiation session")
+    .option("--json")
     .action(async (opts) => {
       const config = loadConfig();
+      if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
       const { signer, address } = await requireSigner(config);
+      const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
 
-      // Resolve token
-      const useUsdc = opts.token.toLowerCase() === "usdc";
-      const tokenAddress = useUsdc
-        ? getUsdcAddress(config)
-        : "0x0000000000000000000000000000000000000000";
+      let maxAmount: string;
+      let deadlineArg: string;
+      let transcriptHash: string | undefined;
 
-      // Parse price
-      let price: bigint;
-      if (useUsdc) {
-        price = BigInt(Math.round(parseFloat(opts.max) * 1_000_000));
+      if (opts.session) {
+        const session = sessionManager.load(opts.session);
+        if (session.state !== "ACCEPTED") throw new Error(`Session ${opts.session} is not in ACCEPTED state (state: ${session.state})`);
+        if (!session.agreedPrice || !session.agreedDeadline) throw new Error(`Session ${opts.session} is missing agreedPrice or agreedDeadline`);
+        maxAmount = session.agreedPrice;
+        deadlineArg = session.agreedDeadline;
+        transcriptHash = session.transcriptHash;
       } else {
-        price = ethers.parseEther(opts.max);
+        if (!opts.max) throw new Error("--max is required when --session is not provided. Examples: 0.001eth, 1000000000000000 (wei), 1USDC");
+        if (!opts.deadline) throw new Error("--deadline is required when --session is not provided. Examples: 1h, 30m, 7d, 2026-04-01");
+        maxAmount = opts.max;
+        deadlineArg = opts.deadline;
       }
 
-      // Parse deadline
-      let deadline: number;
+      // Normalise --max: strip trailing 'eth' or 'USDC' suffix and convert to correct unit
+      const useUsdc = String(opts.token).toLowerCase() === "usdc";
+      const ethSuffix = /^(\d+(?:\.\d+)?)eth$/i.exec(maxAmount);
+      const usdcSuffix = /^(\d+(?:\.\d+)?)usdc$/i.exec(maxAmount);
+      if (ethSuffix) maxAmount = String(BigInt(Math.round(parseFloat(ethSuffix[1]) * 1e18)));
+      else if (usdcSuffix) maxAmount = usdcSuffix[1]; // keep decimal for USDC path
+      const token = useUsdc ? getUsdcAddress(config) : ethers.ZeroAddress;
+      let price: bigint;
       try {
-        deadline = parseDuration(opts.deadline);
-      } catch (err: unknown) {
-        console.error(
-          chalk.red(err instanceof Error ? err.message : String(err))
-        );
-        process.exit(1);
+        price = useUsdc ? BigInt(Math.round(Number(maxAmount) * 1_000_000)) : BigInt(maxAmount);
+      } catch {
+        throw new Error(`Invalid --max value "${opts.max}". Use wei (1000000000000000), ETH (0.001eth), or USDC (1USDC)`);
+      }
+      if (price <= 0n) throw new Error(`--max must be greater than zero`);
+
+      // Use spec hash as deliverables hash; if transcript exists, incorporate it
+      const baseHash = opts.deliverableSpec ? hashFile(opts.deliverableSpec) : hashString(opts.task);
+      const deliverablesHash = transcriptHash
+        ? (ethers.keccak256(ethers.toUtf8Bytes(baseHash + transcriptHash)) as `0x${string}`)
+        : baseHash;
+
+      // Parse deadline: if it looks like an ISO date, convert to seconds from now
+      let deadlineSeconds: number;
+      const isoMatch = deadlineArg.match(/^\d{4}-\d{2}-\d{2}/);
+      if (isoMatch) {
+        const target = Math.floor(new Date(deadlineArg).getTime() / 1000);
+        deadlineSeconds = target - Math.floor(Date.now() / 1000);
+        if (deadlineSeconds <= 0) throw new Error(`Deadline ${deadlineArg} is in the past`);
+      } else {
+        deadlineSeconds = parseDuration(deadlineArg);
       }
 
-      // Hash deliverables spec
-      let deliverablesHash: string =
-        "0x0000000000000000000000000000000000000000000000000000000000000000";
-      if (opts.deliverableSpec) {
-        try {
-          deliverablesHash = hashFile(opts.deliverableSpec);
-          console.log(chalk.gray(`  Deliverables hash: ${deliverablesHash}`));
-        } catch (err: unknown) {
-          console.error(
-            chalk.red(
-              `Could not hash deliverable spec: ${err instanceof Error ? err.message : String(err)}`
-            )
-          );
-          process.exit(1);
-        }
-      }
+      printSenderInfo(config);
 
-      const contract = new ethers.Contract(
-        config.serviceAgreementAddress,
-        SERVICE_AGREEMENT_ABI,
-        signer
-      );
+      let agreementId: bigint;
 
-      const spinner = ora("Proposing agreement…").start();
-
-      try {
-        // If ERC-20, check and handle approval
-        if (useUsdc) {
-          const usdc = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
-          const allowance = await usdc.allowance(address, config.serviceAgreementAddress);
-          if (allowance < price) {
-            spinner.text = "Approving USDC spend…";
-            const approveTx = await usdc.approve(config.serviceAgreementAddress, price);
-            await approveTx.wait();
-            spinner.text = "Proposing agreement…";
-          }
-        }
-
-        const txOpts: { value?: bigint } = {};
-        if (!useUsdc) {
-          txOpts.value = price;
-        }
-
-        const tx = await contract.propose(
-          opts.agent,
-          opts.serviceType,
-          opts.task,
-          price,
-          tokenAddress,
-          deadline,
-          deliverablesHash,
-          txOpts
+      if (config.walletContractAddress) {
+        // Smart wallet path — wallet handles per-tx USDC approval via maxApprovalAmount
+        const tx = await executeContractWriteViaWallet(
+          config.walletContractAddress,
+          signer,
+          config.serviceAgreementAddress,
+          SERVICE_AGREEMENT_ABI,
+          "propose",
+          [opts.agent, opts.serviceType, opts.task, price, token, deadlineSeconds, deliverablesHash],
+          useUsdc ? 0n : price,   // ETH value forwarded to SA; 0 for USDC agreements
+          useUsdc ? token : ethers.ZeroAddress,  // approvalToken for USDC
+          useUsdc ? price : 0n,   // maxApprovalAmount for USDC
         );
-
-        spinner.text = `Waiting for tx confirmation…`;
         const receipt = await tx.wait();
-
-        // Parse the AgreementProposed event to get the ID
-        const iface = new ethers.Interface(SERVICE_AGREEMENT_ABI);
-        let agreementId: number | null = null;
-        for (const log of receipt.logs) {
-          try {
-            const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
-            if (parsed && parsed.name === "AgreementProposed") {
-              agreementId = Number(parsed.args.id);
-              break;
-            }
-          } catch {
-            // not this log
+        const saInterface = new ethers.Interface(SERVICE_AGREEMENT_ABI);
+        let found = false;
+        for (const log of receipt!.logs) {
+          if (log.address.toLowerCase() === config.serviceAgreementAddress.toLowerCase()) {
+            try {
+              const parsed = saInterface.parseLog(log);
+              if (parsed?.name === "AgreementProposed") {
+                agreementId = parsed.args[0] as bigint;
+                found = true;
+                break;
+              }
+            } catch { /* skip unparseable logs */ }
           }
         }
-
-        spinner.succeed(chalk.green("✓ Agreement proposed"));
-
-        if (opts.json) {
-          console.log(
-            JSON.stringify(
-              {
-                agreementId,
-                txHash: tx.hash,
-                agent: opts.agent,
-                price: price.toString(),
-                token: tokenAddress,
-                deadline,
-                deliverablesHash,
-              },
-              null,
-              2
-            )
+        if (!found) throw new Error("AgreementProposed event not found in transaction receipt");
+      } else {
+        // EOA path — existing behaviour
+        if (useUsdc) {
+          const usdc = new ethers.Contract(
+            token,
+            ["function approve(address spender,uint256 amount) external returns (bool)", "function allowance(address owner,address spender) external view returns (uint256)"],
+            signer
           );
-        } else {
-          console.log(`  Agreement ID: ${chalk.bold(String(agreementId))}`);
-          console.log(`  Provider:     ${opts.agent}`);
-          console.log(
-            `  Price:        ${opts.max} ${opts.token.toUpperCase()}`
-          );
-          console.log(`  tx:           ${tx.hash}`);
+          const allowance = await usdc.allowance(address, config.serviceAgreementAddress);
+          if (allowance < price) await (await usdc.approve(config.serviceAgreementAddress, price)).wait();
         }
-      } catch (err: unknown) {
-        spinner.fail(chalk.red("Hire failed"));
-        console.error(err instanceof Error ? err.message : String(err));
-        process.exit(1);
+
+        const result = await client.propose({
+          provider: opts.agent,
+          serviceType: opts.serviceType,
+          description: opts.task,
+          price,
+          token,
+          deadline: deadlineSeconds,
+          deliverablesHash,
+        });
+        agreementId = result.agreementId;
       }
+
+      if (opts.session) {
+        sessionManager.setOnChainId(opts.session, agreementId!.toString());
+      }
+
+      if (opts.json) {
+        const output: Record<string, unknown> = { agreementId: agreementId!.toString(), deliverablesHash };
+        if (transcriptHash) output.transcriptHash = transcriptHash;
+        if (opts.session) output.sessionId = opts.session;
+        return console.log(JSON.stringify(output, null, 2));
+      }
+
+      console.log(`agreementId=${agreementId!} deliverablesHash=${deliverablesHash}`);
+      if (transcriptHash) console.log(`transcriptHash=${transcriptHash}`);
     });
 }

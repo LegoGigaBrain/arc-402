@@ -298,6 +298,11 @@ contract AgentRegistry is IAgentRegistry {
         if (score < 5) score = 5;
     }
 
+    /// @notice Protocol version tag (Spec 20).
+    function protocolVersion() external pure returns (string memory) {
+        return "1.0.0";
+    }
+
     /**
      * @notice Total number of agents ever registered (including inactive).
      */

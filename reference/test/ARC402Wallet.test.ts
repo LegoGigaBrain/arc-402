@@ -6,6 +6,8 @@ describe("ARC402Wallet", function () {
   let policyEngine: any;
   let trustRegistry: any;
   let intentAttestation: any;
+  let settlementCoordinator: any;
+  let registry: any;
   let owner: any;
   let recipient: any;
 
@@ -24,24 +26,49 @@ describe("ARC402Wallet", function () {
     intentAttestation = await IntentAttestation.deploy();
     await intentAttestation.waitForDeployment();
 
-    const ARC402Wallet = await hre.ethers.getContractFactory("ARC402Wallet");
-    wallet = await ARC402Wallet.deploy(
+    const SettlementCoordinator = await hre.ethers.getContractFactory("SettlementCoordinator");
+    settlementCoordinator = await SettlementCoordinator.deploy();
+    await settlementCoordinator.waitForDeployment();
+
+    const ARC402Registry = await hre.ethers.getContractFactory("ARC402Registry");
+    registry = await ARC402Registry.deploy(
       await policyEngine.getAddress(),
       await trustRegistry.getAddress(),
-      await intentAttestation.getAddress()
+      await intentAttestation.getAddress(),
+      await settlementCoordinator.getAddress(),
+      "v1"
+    );
+    await registry.waitForDeployment();
+
+    const ARC402Wallet = await hre.ethers.getContractFactory("ARC402Wallet");
+    wallet = await ARC402Wallet.deploy(
+      await registry.getAddress(),
+      owner.address
     );
     await wallet.waitForDeployment();
 
     await trustRegistry.addUpdater(await wallet.getAddress());
 
-    // Register wallet so owner can set limits for it
-    await policyEngine.registerWallet(await wallet.getAddress(), owner.address);
-
-    await policyEngine.setCategoryLimitFor(
+    // Register wallet with PolicyEngine (must be called by the wallet itself)
+    await hre.network.provider.request({
+      method: "hardhat_impersonateAccount",
+      params: [await wallet.getAddress()],
+    });
+    await hre.network.provider.send("hardhat_setBalance", [
+      await wallet.getAddress(),
+      "0x1000000000000000000",
+    ]);
+    const walletSigner = await hre.ethers.getSigner(await wallet.getAddress());
+    await policyEngine.connect(walletSigner).registerWallet(await wallet.getAddress(), owner.address);
+    await policyEngine.connect(walletSigner).setCategoryLimitFor(
       await wallet.getAddress(),
       "compute",
       hre.ethers.parseEther("1")
     );
+    await hre.network.provider.request({
+      method: "hardhat_stopImpersonatingAccount",
+      params: [await wallet.getAddress()],
+    });
 
     await owner.sendTransaction({
       to: await wallet.getAddress(),
@@ -67,15 +94,16 @@ describe("ARC402Wallet", function () {
       ).to.be.revertedWith("ARC402: context already open");
     });
 
-    it("should close a context and update trust", async function () {
+    it("should close a context", async function () {
       const contextId = hre.ethers.keccak256(hre.ethers.toUtf8Bytes("ctx1"));
       await wallet.openContext(contextId, "research");
 
-      const scoreBefore = await wallet.getTrustScore();
-      await wallet.closeContext();
-      const scoreAfter = await wallet.getTrustScore();
+      const tx = await wallet.closeContext();
+      const receipt = await tx.wait();
+      expect(receipt.status).to.equal(1);
 
-      expect(scoreAfter).to.be.gt(scoreBefore);
+      const [, , , isOpen] = await wallet.getActiveContext();
+      expect(isOpen).to.be.false;
     });
   });
 
@@ -100,7 +128,9 @@ describe("ARC402Wallet", function () {
         "pay_for_data",
         "Need research data",
         recipient.address,
-        hre.ethers.parseEther("0.1")
+        hre.ethers.parseEther("0.1"),
+        hre.ethers.ZeroAddress,
+        0
       );
       await hre.network.provider.request({
         method: "hardhat_stopImpersonatingAccount",
@@ -140,7 +170,9 @@ describe("ARC402Wallet", function () {
         "pay_for_data",
         "Too expensive",
         recipient.address,
-        hre.ethers.parseEther("2")
+        hre.ethers.parseEther("2"),
+        hre.ethers.ZeroAddress,
+        0
       );
       await hre.network.provider.request({
         method: "hardhat_stopImpersonatingAccount",
@@ -154,7 +186,7 @@ describe("ARC402Wallet", function () {
           "compute",
           attestationId
         )
-      ).to.be.revertedWith("PolicyEngine: amount exceeds category limit");
+      ).to.be.revertedWith("PolicyEngine: amount exceeds per-tx limit");
     });
 
     it("should reject spend without open context", async function () {

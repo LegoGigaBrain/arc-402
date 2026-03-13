@@ -1,0 +1,74 @@
+[
+ {
+  "call": {
+   "from": "0x0000000000000000000000000000000000020000",
+   "to": "0xa647ff3c36cfab592509e13860ab8c4f28781a66",
+   "nonce": 0,
+   "value": "0x0",
+   "gasLimit": 12500000,
+   "gasPrice": "0x1",
+   "gasFeeCap": "0x0",
+   "gasTipCap": "0x0",
+   "data": "0xb53472ef0000000000000000000000000000000000000000000000000000000000001001",
+   "dataAbiValues": {
+    "methodSignature": "allowToken(address)",
+    "inputValues": [
+     "0x0000000000000000000000000000000000001001"
+    ]
+   },
+   "AccessList": null,
+   "SkipAccountChecks": true
+  },
+  "blockNumberDelay": 15401,
+  "blockTimestampDelay": 42977
+ },
+ {
+  "call": {
+   "from": "0x0000000000000000000000000000000000020000",
+   "to": "0xa647ff3c36cfab592509e13860ab8c4f28781a66",
+   "nonce": 1,
+   "value": "0x0",
+   "gasLimit": 12500000,
+   "gasPrice": "0x1",
+   "gasFeeCap": "0x0",
+   "gasTipCap": "0x0",
+   "data": "0xb53472ef0000000000000000000000001de5f1ecf258972f324c12502f368ce6ce0036c8",
+   "dataAbiValues": {
+    "methodSignature": "allowToken(address)",
+    "inputValues": [
+     "0x1de5F1ecf258972f324C12502F368cE6cE0036C8"
+    ]
+   },
+   "AccessList": null,
+   "SkipAccountChecks": true
+  },
+  "blockNumberDelay": 13208,
+  "blockTimestampDelay": 403128
+ },
+ {
+  "call": {
+   "from": "0x0000000000000000000000000000000000010000",
+   "to": "0xa647ff3c36cfab592509e13860ab8c4f28781a66",
+   "nonce": 0,
+   "value": "0x2fa14af50b0a",
+   "gasLimit": 12500000,
+   "gasPrice": "0x1",
+   "gasFeeCap": "0x0",
+   "gasTipCap": "0x0",
+   "data": "0xd05635bf000000000000000000000000000000000000000000000000000000000000007a000000000000000000000000000000000000000000000000000000000000004300000000000000000000000000000000000000000000000000000000000000d50000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000001868747470733a2f2f5c65706f6c69612e626173652e6f72670000000000000000",
+   "dataAbiValues": {
+    "methodSignature": "openDisputeWithMode(uint256,uint8,uint8,string)",
+    "inputValues": [
+     "122",
+     "67",
+     "213",
+     "https://\\epolia.base.org"
+    ]
+   },
+   "AccessList": null,
+   "SkipAccountChecks": true
+  },
+  "blockNumberDelay": 10785,
+  "blockTimestampDelay": 203576
+ }
+]

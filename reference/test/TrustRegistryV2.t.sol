@@ -116,6 +116,7 @@ contract TrustRegistryV2Test is Test {
         // Record 8 deals — each gives decreasing but eventually positive gain
         for (uint256 i = 0; i < 8; i++) {
             registry.recordSuccess(WALLET, COUNTERPARTY, "compute", REF_VALUE);
+            vm.roll(block.number + 1);
         }
         uint256 scoreAfter8 = registry.getGlobalScore(WALLET);
 
@@ -126,6 +127,7 @@ contract TrustRegistryV2Test is Test {
 
         // Deal 10: priorCount = 9 → diversityMultiplier = 19
         // gain = (5 * 100 * 19) / 1_000_000 = 9_500 / 1_000_000 = 0
+        vm.roll(block.number + 1);
         registry.recordSuccess(WALLET, COUNTERPARTY, "compute", REF_VALUE);
         uint256 scoreAfter10 = registry.getGlobalScore(WALLET);
 
@@ -140,6 +142,7 @@ contract TrustRegistryV2Test is Test {
     function test_RecordSuccess_DifferentCounterparties_FullGain() public {
         registry.initWallet(WALLET);
         registry.recordSuccess(WALLET, address(0xC1), "compute", REF_VALUE); // gain=5
+        vm.roll(block.number + 1);
         registry.recordSuccess(WALLET, address(0xC2), "compute", REF_VALUE); // gain=5 (new CP)
         assertEq(registry.getGlobalScore(WALLET), 110, "Two unique counterparties: 100+5+5=110");
     }
@@ -164,6 +167,7 @@ contract TrustRegistryV2Test is Test {
     function test_RecordAnomaly_FloorsAtZero() public {
         registry.initWallet(WALLET);
         registry.recordAnomaly(WALLET, COUNTERPARTY, "compute", REF_VALUE); // 100 → 50
+        vm.roll(block.number + 1);
         registry.recordAnomaly(WALLET, COUNTERPARTY, "compute", REF_VALUE); // 50 → 0
         assertEq(registry.getGlobalScore(WALLET), 0);
     }
@@ -180,6 +184,7 @@ contract TrustRegistryV2Test is Test {
         for (uint256 i = 0; i < 32; i++) {
             // Use unique counterparties to avoid diversity decay
             registry.recordSuccess(WALLET, address(uint160(0xC000 + i)), "compute", 1 ether);
+            vm.roll(block.number + 1);
         }
         uint256 storedScore = registry.getGlobalScore(WALLET);
         assertGe(storedScore, 800, "Should have built significant score");
@@ -203,6 +208,7 @@ contract TrustRegistryV2Test is Test {
         // Build a high score
         for (uint256 i = 0; i < 32; i++) {
             registry.recordSuccess(WALLET, address(uint160(0xD000 + i)), "compute", 1 ether);
+            vm.roll(block.number + 1);
         }
         assertGt(registry.getGlobalScore(WALLET), 100);
 
@@ -231,6 +237,7 @@ contract TrustRegistryV2Test is Test {
 
         for (uint256 i = 0; i < 6; i++) {
             registry.recordSuccess(WALLET, COUNTERPARTY, caps[i], REF_VALUE);
+            vm.roll(block.number + 1);
         }
 
         // First 5 should be stored (score 105)
@@ -255,6 +262,7 @@ contract TrustRegistryV2Test is Test {
         // Fill 5 slots at base score (105 each)
         for (uint256 i = 0; i < 5; i++) {
             registry.recordSuccess(WALLET, COUNTERPARTY, base[i], REF_VALUE);
+            vm.roll(block.number + 1);
         }
 
         // Now record a high-value agreement for a 6th capability → score 125 (>105)
@@ -391,6 +399,7 @@ contract TrustRegistryV2Test is Test {
         assertEq(registry.dealCount(WALLET, COUNTERPARTY, capHash), 0);
         registry.recordSuccess(WALLET, COUNTERPARTY, "compute", REF_VALUE);
         assertEq(registry.dealCount(WALLET, COUNTERPARTY, capHash), 1);
+        vm.roll(block.number + 1);
         registry.recordSuccess(WALLET, COUNTERPARTY, "compute", REF_VALUE);
         assertEq(registry.dealCount(WALLET, COUNTERPARTY, capHash), 2);
     }

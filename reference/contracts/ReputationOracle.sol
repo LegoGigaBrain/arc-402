@@ -46,6 +46,9 @@ contract ReputationOracle {
 
     mapping(address => Signal[]) private _signals;
     mapping(address => mapping(address => bool)) public hasManualSignaled;
+
+    /// @dev Flash loan resistance: tracks the last block a subject's reputation was written.
+    mapping(address => uint256) private _lastUpdateBlock;
     mapping(address => mapping(address => bool)) public hasAutoSignaled;
     mapping(address => uint256) public successStreak;
     mapping(address => mapping(address => uint256)) public lastAutoWarnAt;
@@ -72,8 +75,18 @@ contract ReputationOracle {
 
     constructor(address _trustRegistry, address _serviceAgreement) {
         require(_trustRegistry != address(0), "ReputationOracle: zero trust registry");
+        require(_serviceAgreement != address(0), "ReputationOracle: zero service agreement");
         trustRegistry = ITrustRegistry(_trustRegistry);
         serviceAgreement = _serviceAgreement;
+    }
+
+    // ─── Flash Loan Resistance ────────────────────────────────────────────────
+
+    /// @dev Prevents same-block multi-write attacks on a subject's reputation.
+    modifier noFlashLoan(address subject) {
+        require(block.number > _lastUpdateBlock[subject], "ReputationOracle: flash loan protection");
+        _lastUpdateBlock[subject] = block.number;
+        _;
     }
 
     // ─── Manual Signal Publishing ─────────────────────────────────────────────
@@ -83,7 +96,7 @@ contract ReputationOracle {
         SignalType signalType,
         bytes32 capabilityHash,
         string calldata reason
-    ) external {
+    ) external noFlashLoan(subject) {
         require(subject != address(0), "ReputationOracle: zero subject");
         require(subject != msg.sender, "ReputationOracle: cannot signal self");
         require(bytes(reason).length <= 512, "ReputationOracle: reason too long");
@@ -117,7 +130,7 @@ contract ReputationOracle {
         address client,
         address provider,
         bytes32 capabilityHash
-    ) external onlyServiceAgreement {
+    ) external onlyServiceAgreement noFlashLoan(provider) {
         successStreak[provider] = 0;
 
         if (hasAutoSignaled[client][provider]) {
@@ -164,7 +177,7 @@ contract ReputationOracle {
         address client,
         address provider,
         bytes32 capabilityHash
-    ) external onlyServiceAgreement {
+    ) external onlyServiceAgreement noFlashLoan(provider) {
         successStreak[provider] += 1;
 
         if (successStreak[provider] < ENDORSE_STREAK_THRESHOLD) return;

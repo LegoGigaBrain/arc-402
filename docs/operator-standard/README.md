@@ -2,6 +2,8 @@
 
 The ARC-402 Agent Operator Standard defines how an agent should operate around the ARC-402 protocol lifecycle: negotiation, execution, delivery, remediation, evidence handling, and escalation.
 
+It is a behavioral/operator standard, not a claim that every ARC-402 deployment already has public-ready dispute legitimacy, decentralization, or trust convergence.
+
 It is intentionally **platform-agnostic**.
 
 The standard does **not** assume OpenClaw, Claude Code, Codex, any particular SDK, or any specific transport. It defines the operator doctrine that should remain stable across all of them, then describes how different environments can implement that doctrine through adapters.

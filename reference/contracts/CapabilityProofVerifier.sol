@@ -62,6 +62,8 @@ contract Groth16Verifier {
 
     uint16 constant pLastMem = 896;
 
+    /// @dev Uses Yul assembly return for gas-efficient pairing check. Flagged by Slither as incorrect-return — this is a known false positive for Groth16 verifiers.
+    // slither-disable-next-line incorrect-return
     function verifyProof(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public view returns (bool) {
         assembly {
             function checkField(v) {
@@ -97,6 +99,7 @@ contract Groth16Verifier {
                 }
             }
 
+            // slither-disable-next-line incorrect-return
             function checkPairing(pA, pB, pC, pubSignals, pMem) -> isOk {
                 let _pPairing := add(pMem, pPairing)
                 let _pVk := add(pMem, pVk)
@@ -105,11 +108,11 @@ contract Groth16Verifier {
                 mstore(add(_pVk, 32), IC0y)
 
                 // Compute the linear combination vk_x
-                
+
                 g1_mulAccC(_pVk, IC1x, IC1y, calldataload(add(pubSignals, 0)))
-                
+
                 g1_mulAccC(_pVk, IC2x, IC2y, calldataload(add(pubSignals, 32)))
-                
+
                 g1_mulAccC(_pVk, IC3x, IC3y, calldataload(add(pubSignals, 64)))
                 
 

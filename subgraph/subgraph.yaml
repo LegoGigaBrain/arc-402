@@ -1,0 +1,189 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: AgentRegistry
+    network: base-sepolia
+    source:
+      address: "0x07D526f8A8e148570509aFa249EFF295045A0cc9"
+      abi: AgentRegistry
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Agent
+        - ProtocolStats
+      abis:
+        - name: AgentRegistry
+          file: ./abis/AgentRegistry.json
+      eventHandlers:
+        - event: AgentRegistered(address,string,string,uint256)
+          handler: handleAgentRegistered
+        - event: AgentUpdated(address,string,string)
+          handler: handleAgentUpdated
+        - event: AgentDeactivated(address)
+          handler: handleAgentDeactivated
+        - event: AgentReactivated(address)
+          handler: handleAgentReactivated
+        - event: EndpointChanged(address,string,string,uint256)
+          handler: handleEndpointChanged
+        - event: HeartbeatSubmitted(address,uint256,uint256,uint256,uint256,uint256)
+          handler: handleHeartbeatSubmitted
+      file: ./src/agentRegistry.ts
+
+  - kind: ethereum
+    name: WalletFactory
+    network: base-sepolia
+    source:
+      address: "0xD560C22aD5372Aa830ee5ffBFa4a5D9f528e7B87"
+      abi: WalletFactory
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Wallet
+        - ProtocolStats
+      abis:
+        - name: WalletFactory
+          file: ./abis/WalletFactory.json
+      eventHandlers:
+        - event: WalletCreated(address,address)
+          handler: handleWalletCreated
+      file: ./src/walletFactory.ts
+
+  - kind: ethereum
+    name: PolicyEngine
+    network: base-sepolia
+    source:
+      address: "0x44102e70c2A366632d98Fe40d892a2501fC7fFF2"
+      abi: PolicyEngine
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Policy
+        - Wallet
+      abis:
+        - name: PolicyEngine
+          file: ./abis/PolicyEngine.json
+      eventHandlers:
+        - event: CategoryLimitSet(address,string,uint256)
+          handler: handleCategoryLimitSet
+      file: ./src/policyEngine.ts
+
+  - kind: ethereum
+    name: ServiceAgreement
+    network: base-sepolia
+    source:
+      address: "0xa214d30906a934358f451514da1ba732ad79f158"
+      abi: ServiceAgreement
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Agreement
+        - Dispute
+        - ProtocolStats
+      abis:
+        - name: ServiceAgreement
+          file: ./abis/ServiceAgreement.json
+      eventHandlers:
+        - event: AgreementProposed(uint256,address,address,string,uint256,address,uint256)
+          handler: handleAgreementProposed
+        - event: AgreementAccepted(uint256,address)
+          handler: handleAgreementAccepted
+        - event: AgreementFulfilled(uint256,address,bytes32)
+          handler: handleAgreementFulfilled
+        - event: AgreementDisputed(uint256,address,string)
+          handler: handleAgreementDisputed
+        - event: AgreementCancelled(uint256,address)
+          handler: handleAgreementCancelled
+        - event: DetailedDisputeResolved(uint256,uint8,uint256,uint256)
+          handler: handleDisputeResolved
+      file: ./src/serviceAgreement.ts
+
+  - kind: ethereum
+    name: SessionChannels
+    network: base-sepolia
+    source:
+      address: "0x21340f81f5ddc9c213ff2ac45f0f34fb2449386d"
+      abi: SessionChannels
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Channel
+        - ProtocolStats
+      abis:
+        - name: SessionChannels
+          file: ./abis/SessionChannels.json
+      eventHandlers:
+        - event: ChannelOpened(bytes32,address,address,address,uint256,uint256)
+          handler: handleChannelOpened
+        - event: ChannelClosing(bytes32,uint256,uint256,uint256)
+          handler: handleChannelClosing
+        - event: ChannelSettled(bytes32,address,uint256,uint256)
+          handler: handleChannelSettled
+        - event: ChannelChallenged(bytes32,address,uint256,uint256)
+          handler: handleChannelChallenged
+        - event: ChallengeFinalised(bytes32,address,uint256)
+          handler: handleChallengeFinalised
+        - event: ChannelExpiredReclaimed(bytes32,address,uint256)
+          handler: handleChannelExpired
+      file: ./src/sessionChannels.ts
+
+  - kind: ethereum
+    name: TrustRegistryV2
+    network: base-sepolia
+    source:
+      address: "0xfCc2CDC42654e05Dad5F6734cE5caFf3dAE0E94F"
+      abi: TrustRegistryV2
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - TrustScore
+        - TrustScoreUpdate
+      abis:
+        - name: TrustRegistryV2
+          file: ./abis/TrustRegistryV2.json
+      eventHandlers:
+        - event: WalletInitialized(address,uint256)
+          handler: handleWalletInitialized
+        - event: ScoreUpdated(address,uint256,string,int256)
+          handler: handleScoreUpdated
+      file: ./src/trustRegistry.ts
+
+  - kind: ethereum
+    name: ReputationOracle
+    network: base-sepolia
+    source:
+      address: "0x410e650113fd163389C956BC7fC51c5642617187"
+      abi: ReputationOracle
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - ReputationSignal
+      abis:
+        - name: ReputationOracle
+          file: ./abis/ReputationOracle.json
+      eventHandlers:
+        - event: SignalPublished(address,address,uint8,bytes32,uint256,bool)
+          handler: handleSignalPublished
+      file: ./src/reputationOracle.ts

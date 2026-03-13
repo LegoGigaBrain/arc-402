@@ -1,0 +1,129 @@
+# ─── Agents ───────────────────────────────────────────────────────────────────
+
+type Agent @entity {
+  id: ID!                        # wallet address
+  name: String!
+  serviceType: String!
+  endpoint: String
+  active: Boolean!
+  registeredAt: BigInt!
+  heartbeatCount: BigInt!
+  uptimeScore: BigInt!
+  responseScore: BigInt!
+  lastHeartbeat: BigInt
+  wallet: Wallet
+  trustScore: TrustScore
+}
+
+# ─── Wallets ──────────────────────────────────────────────────────────────────
+
+type Wallet @entity {
+  id: ID!                        # wallet contract address
+  owner: Bytes!
+  createdAt: BigInt!
+  policies: [Policy!]! @derivedFrom(field: "wallet")
+}
+
+# ─── Policies ─────────────────────────────────────────────────────────────────
+
+type Policy @entity {
+  id: ID!                        # wallet + category
+  wallet: Wallet!
+  category: String!
+  limitPerTx: BigInt!
+  updatedAt: BigInt!
+}
+
+# ─── Agreements ───────────────────────────────────────────────────────────────
+
+type Agreement @entity {
+  id: ID!                        # agreement id
+  client: Bytes!
+  provider: Bytes!
+  serviceType: String!
+  price: BigInt!
+  token: Bytes!
+  deadline: BigInt!
+  state: String!                 # PROPOSED | ACCEPTED | FULFILLED | DISPUTED | CANCELLED | RESOLVED
+  deliverablesHash: Bytes
+  proposedAt: BigInt!
+  updatedAt: BigInt!
+  disputes: [Dispute!]! @derivedFrom(field: "agreement")
+  channels: [Channel!]! @derivedFrom(field: "agreement")
+}
+
+# ─── Disputes ─────────────────────────────────────────────────────────────────
+
+type Dispute @entity {
+  id: ID!                        # agreement id + index
+  agreement: Agreement!
+  initiator: Bytes!
+  reason: String!
+  outcome: String
+  providerAward: BigInt
+  clientAward: BigInt
+  openedAt: BigInt!
+  resolvedAt: BigInt
+}
+
+# ─── Channels ─────────────────────────────────────────────────────────────────
+
+type Channel @entity {
+  id: ID!                        # channelId (bytes32)
+  agreement: Agreement
+  client: Bytes!
+  provider: Bytes!
+  token: Bytes!
+  depositAmount: BigInt!
+  deadline: BigInt!
+  state: String!                 # OPEN | CLOSING | SETTLED | EXPIRED
+  settledAmount: BigInt
+  refundAmount: BigInt
+  sequenceNumber: BigInt
+  openedAt: BigInt!
+  updatedAt: BigInt!
+}
+
+# ─── Trust Scores ─────────────────────────────────────────────────────────────
+
+type TrustScore @entity {
+  id: ID!                        # wallet address
+  wallet: Bytes!
+  globalScore: BigInt!
+  initializedAt: BigInt!
+  updatedAt: BigInt!
+  history: [TrustScoreUpdate!]! @derivedFrom(field: "trustScore")
+}
+
+type TrustScoreUpdate @entity {
+  id: ID!                        # txHash + logIndex
+  trustScore: TrustScore!
+  capability: String!
+  delta: BigInt!
+  newGlobalScore: BigInt!
+  timestamp: BigInt!
+}
+
+# ─── Reputation Signals ───────────────────────────────────────────────────────
+
+type ReputationSignal @entity {
+  id: ID!                        # txHash + logIndex
+  publisher: Bytes!
+  subject: Bytes!
+  signalType: Int!
+  capabilityHash: Bytes!
+  publisherTrustAtTime: BigInt!
+  autoPublished: Boolean!
+  timestamp: BigInt!
+}
+
+# ─── Protocol Stats ───────────────────────────────────────────────────────────
+
+type ProtocolStats @entity {
+  id: ID!                        # singleton: "global"
+  totalAgents: BigInt!
+  totalWallets: BigInt!
+  totalAgreements: BigInt!
+  totalChannels: BigInt!
+  totalDisputes: BigInt!
+}

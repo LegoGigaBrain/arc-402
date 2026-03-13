@@ -1,0 +1,14 @@
+{
+  "name": "arc402-subgraph",
+  "version": "1.0.0",
+  "scripts": {
+    "codegen": "graph codegen",
+    "build": "graph build",
+    "deploy": "graph deploy --studio arc402",
+    "deploy:mainnet": "graph deploy --studio arc402"
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "^0.73.0",
+    "@graphprotocol/graph-ts": "^0.35.1"
+  }
+}

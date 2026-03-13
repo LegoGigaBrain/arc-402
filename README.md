@@ -1,4 +1,4 @@
-# ARC-402: Agent Resource Control
+# ARC-402: Agent-to-Agent Arcing
 
 > x402 solved payments. ARC-402 solves governance.
 

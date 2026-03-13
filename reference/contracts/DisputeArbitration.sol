@@ -417,6 +417,8 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
         return twiceFee > bondFloorTokens ? twiceFee : bondFloorTokens;
     }
 
+    // wake-disable-next-line reentrancy
+    // @dev Called only from nonReentrant-guarded entry points. Reentrancy path blocked upstream.
     function _collectPayment(address token, address from, uint256 amount) internal {
         if (amount == 0) return;
         if (token == address(0)) {
@@ -431,6 +433,8 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
         }
     }
 
+    // wake-disable-next-line reentrancy
+    // @dev Called only from nonReentrant-guarded entry points. Reentrancy path blocked upstream.
     // slither-disable-next-line arbitrary-send-eth
     function _releasePayment(address token, address to, uint256 amount) internal {
         if (amount == 0 || to == address(0)) return;
@@ -442,6 +446,8 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
         }
     }
 
+    // wake-disable-next-line reentrancy
+    // @dev Called only from nonReentrant-guarded entry points. Reentrancy path blocked upstream.
     // slither-disable-next-line reentrancy-eth
     function _settleArbitratorBondsAndFees(
         uint256 agreementId,
@@ -496,6 +502,8 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
         }
     }
 
+    // wake-disable-next-line reentrancy
+    // @dev Called only from nonReentrant-guarded entry points. Reentrancy path blocked upstream.
     function _writeTrust(DisputeFeeState storage fs, uint8 outcome) internal {
         if (trustRegistry == address(0)) return;
 

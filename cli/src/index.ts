@@ -18,6 +18,8 @@ import { registerRemediateCommands } from "./commands/remediate";
 import { registerDaemonCommands } from "./commands/daemon";
 import { registerTrustCommand } from "./commands/trust";
 import { registerWalletCommands } from "./commands/wallet";
+import reputation from "./commands/reputation.js";
+import policy from "./commands/policy.js";
 
 const program = new Command();
 program.name("arc402").description("ARC-402 CLI aligned to canonical-capability discovery → negotiate → hire → remediate → dispute workflow").version("0.2.0");
@@ -40,4 +42,6 @@ registerRelayCommands(program);
 registerDaemonCommands(program);
 registerTrustCommand(program);
 registerWalletCommands(program);
+program.addCommand(reputation);
+program.addCommand(policy);
 program.parse(process.argv);

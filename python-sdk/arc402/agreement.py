@@ -215,6 +215,29 @@ class ServiceAgreementClient:
             client_award,
         )
 
+    async def owner_resolve_dispute(self, agreement_id: int, favor_provider: bool) -> str:
+        """Owner-only: resolve a dispute directly in favor of provider or client. Requires DISPUTED or ESCALATED_TO_HUMAN status."""
+        return await self._simple_write("ownerResolveDispute", agreement_id, favor_provider)
+
+    async def resolve_from_arbitration(
+        self,
+        agreement_id: int,
+        recipient: str,
+        provider_amount: int,
+        client_amount: int,
+    ) -> str:
+        """
+        Resolve a dispute from arbitration with split amounts.
+        recipient: winning party address; provider_amount and client_amount are token units.
+        """
+        return await self._simple_write(
+            "resolveFromArbitration",
+            agreement_id,
+            Web3.to_checksum_address(recipient),
+            provider_amount,
+            client_amount,
+        )
+
     async def cancel(self, agreement_id: int) -> str:
         return await self._simple_write("cancel", agreement_id)
 

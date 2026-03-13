@@ -98,4 +98,32 @@ export function registerArbitratorCommand(program: Command): void {
       await client.slashArbitrator(BigInt(agreementId), arbitratorAddress, reason);
       console.log(`slashed arbitrator ${arbitratorAddress} for ${reason}`);
     });
+
+  arbitrator
+    .command("reclaim-bond <agreementId>")
+    .description("Reclaim an arbitrator bond after 45 days if dispute was never resolved via resolveDisputeFee")
+    .action(async (agreementId, _opts) => {
+      const config = loadConfig();
+      if (!config.disputeArbitrationAddress) throw new Error("disputeArbitrationAddress missing in config");
+      const { signer } = await requireSigner(config);
+      const client = new DisputeArbitrationClient(config.disputeArbitrationAddress, signer);
+      await client.reclaimExpiredBond(BigInt(agreementId));
+      console.log(`bond reclaimed for agreement ${agreementId}`);
+    });
+
+  arbitrator
+    .command("resolve-from <agreementId>")
+    .description("Resolve a dispute from arbitration with split amounts (calls ServiceAgreement.resolveFromArbitration)")
+    .requiredOption("--recipient <address>", "Winning recipient address")
+    .requiredOption("--provider-amount <amount>", "Provider payout in wei/tokens")
+    .requiredOption("--client-amount <amount>", "Client refund in wei/tokens")
+    .action(async (agreementId, opts) => {
+      const { ServiceAgreementClient } = await import("@arc402/sdk");
+      const config = loadConfig();
+      if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+      const { signer } = await requireSigner(config);
+      const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+      await client.resolveFromArbitration(BigInt(agreementId), opts.recipient, BigInt(opts.providerAmount), BigInt(opts.clientAmount));
+      console.log(`resolved from arbitration: agreement ${agreementId}, recipient ${opts.recipient}`);
+    });
 }

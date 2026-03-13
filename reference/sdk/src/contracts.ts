@@ -8,10 +8,17 @@ export const POLICY_ENGINE_ABI = [
   "function validateSpend(address wallet, string category, uint256 amount, bytes32 contextId) external view returns (bool, string)",
   "function categoryLimits(address wallet, string category) external view returns (uint256)",
   "function registerWallet(address wallet, address owner) external",
+  "function freezeSpend(address wallet) external",
+  "function unfreeze(address wallet) external",
+  "function authorizeFreezeAgent(address agent) external",
+  "function revokeFreezeAgent(address agent) external",
+  "function queueCapReduction(address wallet, string category, uint256 newCap) external",
+  "function applyCapReduction(address wallet, string category) external",
 ] as const;
 
 export const TRUST_REGISTRY_ABI = [
   "function getScore(address wallet) external view returns (uint256)",
+  "function getEffectiveScore(address wallet) external view returns (uint256)",
   "function getTrustLevel(address wallet) external view returns (string)",
   "function initWallet(address wallet) external",
   "function recordSuccess(address wallet) external",
@@ -107,7 +114,8 @@ export const SERVICE_AGREEMENT_ABI = [
   "function getChannel(bytes32 channelId) external view returns (tuple(address client, address provider, address token, uint256 depositAmount, uint256 settledAmount, uint256 lastSequenceNumber, uint256 deadline, uint256 challengeExpiry, uint8 status))",
   "function getChannelsByClient(address client) external view returns (bytes32[])",
   "function getChannelsByProvider(address provider) external view returns (bytes32[])",
-  "function resolveFromArbitration(uint256 agreementId, address recipient, uint256 amount) external",
+  "function resolveFromArbitration(uint256 agreementId, address recipient, uint256 providerAmount, uint256 clientAmount) external",
+  "function ownerResolveDispute(uint256 agreementId, bool favorProvider) external",
   "event AgreementProposed(uint256 indexed id, address indexed client, address indexed provider, string serviceType, uint256 price, address token, uint256 deadline)",
 ] as const;
 

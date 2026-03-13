@@ -1,8 +1,8 @@
 import { Command } from "commander";
-import { TrustClient } from "@arc402/sdk";
+import { PolicyClient, TrustClient } from "@arc402/sdk";
 import { ethers } from "ethers";
 import { getUsdcAddress, loadConfig } from "../config";
-import { getClient } from "../client";
+import { getClient, requireSigner } from "../client";
 import { getTrustTier } from "../utils/format";
 
 export function registerWalletCommands(program: Command): void {
@@ -14,4 +14,26 @@ export function registerWalletCommands(program: Command): void {
     const payload = { address, network: config.network, ethBalance: ethers.formatEther(ethBalance), usdcBalance: (Number(usdcBalance) / 1e6).toFixed(2), trustScore: score.score, trustTier: getTrustTier(score.score) };
     console.log(opts.json ? JSON.stringify(payload, null, 2) : `${payload.address}\nETH=${payload.ethBalance}\nUSDC=${payload.usdcBalance}\nTrust=${payload.trustScore} ${payload.trustTier}`);
   });
+
+  wallet.command("freeze <walletAddress>")
+    .description("Freeze spend for a wallet. Callable by the wallet, its owner, or an authorized freeze agent. Use immediately if suspicious activity is detected.")
+    .action(async (walletAddress, _opts) => {
+      const config = loadConfig();
+      if (!config.policyEngineAddress) throw new Error("policyEngineAddress missing in config");
+      const { signer } = await requireSigner(config);
+      const client = new PolicyClient(config.policyEngineAddress, signer);
+      await client.freezeSpend(walletAddress);
+      console.log(`wallet ${walletAddress} spend frozen`);
+    });
+
+  wallet.command("unfreeze <walletAddress>")
+    .description("Unfreeze spend for a wallet. Only callable by the wallet or its registered owner.")
+    .action(async (walletAddress, _opts) => {
+      const config = loadConfig();
+      if (!config.policyEngineAddress) throw new Error("policyEngineAddress missing in config");
+      const { signer } = await requireSigner(config);
+      const client = new PolicyClient(config.policyEngineAddress, signer);
+      await client.unfreeze(walletAddress);
+      console.log(`wallet ${walletAddress} spend unfrozen`);
+    });
 }

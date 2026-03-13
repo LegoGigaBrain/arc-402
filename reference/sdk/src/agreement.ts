@@ -98,6 +98,29 @@ export class ServiceAgreementClient {
     const tx = await this.contract.resolveDisputeDetailed(id, outcome, providerAward, clientAward); return tx.wait();
   }
 
+  /** Owner-only: resolve a dispute directly in favor of provider or client. Requires DISPUTED or ESCALATED_TO_HUMAN status. */
+  async ownerResolveDispute(agreementId: bigint, favorProvider: boolean): Promise<ethers.TransactionReceipt> {
+    const tx = await this.contract.ownerResolveDispute(agreementId, favorProvider);
+    return tx.wait();
+  }
+
+  /**
+   * Called by the DisputeArbitration contract to resolve a dispute with split amounts.
+   * @param agreementId Agreement to resolve
+   * @param recipient  Address of the winning party
+   * @param providerAmount Provider payout in token units
+   * @param clientAmount   Client refund in token units
+   */
+  async resolveFromArbitration(
+    agreementId: bigint,
+    recipient: string,
+    providerAmount: bigint,
+    clientAmount: bigint,
+  ): Promise<ethers.TransactionReceipt> {
+    const tx = await this.contract.resolveFromArbitration(agreementId, recipient, providerAmount, clientAmount);
+    return tx.wait();
+  }
+
   async requestRevision(agreementId: bigint, feedbackHash: string, feedbackURI = "", previousTranscriptHash = ethers.ZeroHash) {
     const tx = await this.contract.requestRevision(agreementId, feedbackHash, feedbackURI, previousTranscriptHash);
     return tx.wait();

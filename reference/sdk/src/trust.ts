@@ -25,6 +25,17 @@ export class TrustClient {
     const score = Number(await this.contract.getScore(walletAddress));
     return { score, level: getTrustLevel(score), nextLevelAt: getNextLevelAt(score) };
   }
+
+  /**
+   * Returns the effective trust score for a wallet, accounting for any decay or bonus adjustments
+   * applied by the TrustRegistry (e.g. velocity bonuses, anomaly penalties).
+   * Prefer this over getScore for policy decisions.
+   */
+  async getEffectiveScore(walletAddress: string): Promise<TrustScore> {
+    const score = Number(await this.contract.getEffectiveScore(walletAddress));
+    return { score, level: getTrustLevel(score), nextLevelAt: getNextLevelAt(score) };
+  }
+
   async init(walletAddress: string) { const tx = await this.contract.initWallet(walletAddress); return tx.wait(); }
   getTrustLevel = getTrustLevel;
   getNextLevelAt = getNextLevelAt;

@@ -17,6 +17,9 @@ const DISPUTE_ARBITRATION_ABI = [
   "function acceptAssignment(uint256 agreementId) payable",
   "function triggerFallback(uint256 agreementId) returns (bool)",
   "function slashArbitrator(uint256 agreementId, address arbitrator, string reason)",
+  "function reclaimExpiredBond(uint256 agreementId)",
+  "function transferOwnership(address newOwner)",
+  "function acceptOwnership()",
   "function setTokenUsdRate(address token, uint256 usdRate18)",
   "function setFeeFloorUsd(uint256 floorUsd18)",
   "function setFeeCapUsd(uint256 capUsd18)",
@@ -129,6 +132,27 @@ export class DisputeArbitrationClient {
     reason: string
   ): Promise<ethers.TransactionReceipt> {
     const tx = await this.contract.slashArbitrator(agreementId, arbitrator, reason);
+    return (await tx.wait())!;
+  }
+
+  /**
+   * Arbitrators can reclaim their bond after 45 days if the dispute was never resolved via resolveDisputeFee.
+   * Prevents permanent bond lock on stalled disputes.
+   */
+  async reclaimExpiredBond(agreementId: bigint): Promise<ethers.TransactionReceipt> {
+    const tx = await this.contract.reclaimExpiredBond(agreementId);
+    return (await tx.wait())!;
+  }
+
+  /** Step 1 of two-step ownership transfer. Owner-only. */
+  async proposeOwner(newOwner: string): Promise<ethers.TransactionReceipt> {
+    const tx = await this.contract.transferOwnership(newOwner);
+    return (await tx.wait())!;
+  }
+
+  /** Step 2 of two-step ownership transfer. Must be called by the pending owner. */
+  async acceptOwnership(): Promise<ethers.TransactionReceipt> {
+    const tx = await this.contract.acceptOwnership();
     return (await tx.wait())!;
   }
 

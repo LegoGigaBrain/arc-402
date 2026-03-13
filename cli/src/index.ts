@@ -18,6 +18,7 @@ import { registerRemediateCommands } from "./commands/remediate";
 import { registerDaemonCommands } from "./commands/daemon";
 import { registerTrustCommand } from "./commands/trust";
 import { registerWalletCommands } from "./commands/wallet";
+import { registerOwnerCommands } from "./commands/owner";
 import reputation from "./commands/reputation.js";
 import policy from "./commands/policy.js";
 
@@ -42,6 +43,7 @@ registerRelayCommands(program);
 registerDaemonCommands(program);
 registerTrustCommand(program);
 registerWalletCommands(program);
+registerOwnerCommands(program);
 program.addCommand(reputation);
 program.addCommand(policy);
 program.parse(process.argv);

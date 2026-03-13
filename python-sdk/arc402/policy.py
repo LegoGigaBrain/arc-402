@@ -78,6 +78,57 @@ class PolicyClient:
             "chainId": self._w3.eth.chain_id,
         }
 
+    async def freeze_spend(self, wallet: str) -> str:
+        """Freeze spend for a wallet. Callable by the wallet, its owner, or an authorized freeze agent."""
+        tx = self._contract.functions.freezeSpend(
+            Web3.to_checksum_address(wallet)
+        ).build_transaction(self._tx_params())
+        receipt = await self._send(tx)
+        return receipt["transactionHash"].hex()
+
+    async def unfreeze(self, wallet: str) -> str:
+        """Unfreeze spend for a wallet. Only callable by the wallet or its registered owner."""
+        tx = self._contract.functions.unfreeze(
+            Web3.to_checksum_address(wallet)
+        ).build_transaction(self._tx_params())
+        receipt = await self._send(tx)
+        return receipt["transactionHash"].hex()
+
+    async def authorize_freeze_agent(self, agent: str) -> str:
+        """Authorize a watchtower agent to freeze this wallet's spending. Caller must be the wallet."""
+        tx = self._contract.functions.authorizeFreezeAgent(
+            Web3.to_checksum_address(agent)
+        ).build_transaction(self._tx_params())
+        receipt = await self._send(tx)
+        return receipt["transactionHash"].hex()
+
+    async def revoke_freeze_agent(self, agent: str) -> str:
+        """Revoke a watchtower agent's freeze authorization."""
+        tx = self._contract.functions.revokeFreezeAgent(
+            Web3.to_checksum_address(agent)
+        ).build_transaction(self._tx_params())
+        receipt = await self._send(tx)
+        return receipt["transactionHash"].hex()
+
+    async def queue_cap_reduction(self, wallet: str, category: str, new_cap: int) -> str:
+        """
+        Queue a daily-limit reduction for wallet+category. Only reductions (new_cap < current) are allowed.
+        A 24-hour timelock applies before the new cap can be applied via apply_cap_reduction().
+        """
+        tx = self._contract.functions.queueCapReduction(
+            Web3.to_checksum_address(wallet), category, new_cap
+        ).build_transaction(self._tx_params())
+        receipt = await self._send(tx)
+        return receipt["transactionHash"].hex()
+
+    async def apply_cap_reduction(self, wallet: str, category: str) -> str:
+        """Apply a queued cap reduction after the 24-hour timelock has elapsed."""
+        tx = self._contract.functions.applyCapReduction(
+            Web3.to_checksum_address(wallet), category
+        ).build_transaction(self._tx_params())
+        receipt = await self._send(tx)
+        return receipt["transactionHash"].hex()
+
     async def _send(self, tx: dict) -> dict:
         signed = self._account.sign_transaction(tx)
         tx_hash = self._w3.eth.send_raw_transaction(signed.raw_transaction)

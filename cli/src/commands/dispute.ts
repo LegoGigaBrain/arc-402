@@ -157,4 +157,16 @@ export function registerDisputeCommand(program: Command): void {
     await client.resolveDisputeDetailed(BigInt(id), mapping[String(opts.outcome)], BigInt(opts.providerAward), BigInt(opts.clientAward));
     console.log(`resolved ${id}`);
   });
+
+  dispute.command("owner-resolve <agreementId>")
+    .description("Owner-only: resolve a dispute directly in favor of provider or client. Requires DISPUTED or ESCALATED_TO_HUMAN status.")
+    .option("--favor-provider", "Resolve in favor of the provider (default: false = favor client)", false)
+    .action(async (agreementId, opts) => {
+      const config = loadConfig();
+      if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+      const { signer } = await requireSigner(config);
+      const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+      await client.ownerResolveDispute(BigInt(agreementId), !!opts.favorProvider);
+      console.log(`owner resolved agreement ${agreementId} — favor provider: ${!!opts.favorProvider}`);
+    });
 }

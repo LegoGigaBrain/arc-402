@@ -401,6 +401,53 @@ arc402 arbitrator bond fallback <agreement-id>
 
 ---
 
+## New Capabilities — Operational Guidance
+
+### Emergency Freeze / Unfreeze
+
+If suspicious activity is detected on a wallet (unexpected spend attempts, injection patterns, compromised-looking behaviour), freeze the wallet immediately:
+
+```bash
+arc402 wallet freeze <walletAddress>
+```
+
+- Freezing can be done by the wallet itself, its registered owner, or any **authorized freeze agent** (set via `authorizeFreezeAgent`).
+- **Only the wallet or its registered owner can unfreeze**:
+  ```bash
+  arc402 wallet unfreeze <walletAddress>
+  ```
+- As an agent, you should only call `freeze` — never `unfreeze` autonomously. Unfreezing requires human operator judgment.
+- If you observe repeated anomalous patterns across multiple agreements from the same counterparty, freeze and halt. Log everything. Do not attempt to continue transacting.
+
+### Owner-Resolved Disputes (`ownerResolveDispute`)
+
+For disputes that are stuck in `DISPUTED` or `ESCALATED_TO_HUMAN` state and cannot progress through the normal arbitration flow, the protocol owner can resolve them directly:
+
+```bash
+arc402 dispute owner-resolve <agreementId> --favor-provider
+# or (default, favors client):
+arc402 dispute owner-resolve <agreementId>
+```
+
+- Requires `DISPUTED` or `ESCALATED_TO_HUMAN` status — cannot be used on `ESCALATED_TO_ARBITRATION`.
+- This is an owner-key operation. As an agent, you should **not** call this. Escalate to the human operator instead.
+- Use when: arbitration panel failed to form, both parties are unresponsive, or a human backstop decision is overdue.
+
+### Reclaiming Expired Arbitrator Bonds (`reclaimExpiredBond`)
+
+If you are operating as an arbitrator and posted a bond for a dispute that was never resolved via `resolveDisputeFee`, you can reclaim your bond after the **45-day timeout**:
+
+```bash
+arc402 arbitrator reclaim-bond <agreementId>
+```
+
+- The 45-day window is 15 days after the 30-day dispute resolution deadline.
+- This protects arbitrators from permanent bond lock on stalled disputes.
+- Check bond state first: `arc402 arbitrator bond status <yourAddress> <agreementId>`
+- Bond reclaim is self-service — no owner action required.
+
+---
+
 ## What This Skill Does Not Cover
 
 - Owner key management — operator responsibility

@@ -63,6 +63,12 @@ DISPUTE_ARBITRATION_ABI = [
          {"name": "arbitrator", "type": "address"},
          {"name": "reason", "type": "string"},
      ], "outputs": []},
+    {"name": "reclaimExpiredBond", "type": "function", "stateMutability": "nonpayable",
+     "inputs": [{"name": "agreementId", "type": "uint256"}], "outputs": []},
+    {"name": "transferOwnership", "type": "function", "stateMutability": "nonpayable",
+     "inputs": [{"name": "newOwner", "type": "address"}], "outputs": []},
+    {"name": "acceptOwnership", "type": "function", "stateMutability": "nonpayable",
+     "inputs": [], "outputs": []},
     {"name": "setTokenUsdRate", "type": "function", "stateMutability": "nonpayable",
      "inputs": [{"name": "token", "type": "address"}, {"name": "usdRate18", "type": "uint256"}],
      "outputs": []},
@@ -203,4 +209,45 @@ class DisputeArbitrationClient:
         self._require_account()
         return self._send(
             self._contract.functions.setTreasury(Web3.to_checksum_address(address))
+        )
+
+    def reclaim_expired_bond(self, agreement_id: int) -> str:
+        """
+        Reclaim an arbitrator bond after 45 days if the dispute was never resolved via resolveDisputeFee.
+        Prevents permanent bond lock on stalled disputes. Caller must be the bonded arbitrator.
+        """
+        self._require_account()
+        return self._send(self._contract.functions.reclaimExpiredBond(agreement_id))
+
+    def propose_owner(self, new_owner: str) -> str:
+        """Step 1 of two-step ownership transfer. Owner only."""
+        self._require_account()
+        return self._send(
+            self._contract.functions.transferOwnership(Web3.to_checksum_address(new_owner))
+        )
+
+    def accept_ownership(self) -> str:
+        """Step 2 of two-step ownership transfer. Must be called by the pending owner."""
+        self._require_account()
+        return self._send(self._contract.functions.acceptOwnership())
+
+    def resolve_from_arbitration(
+        self,
+        agreement_id: int,
+        recipient: str,
+        provider_amount: int,
+        client_amount: int,
+    ) -> str:
+        """
+        Called by the DisputeArbitration contract to resolve a dispute with split amounts
+        on the ServiceAgreement contract. Exposed here for direct coordinator use.
+        """
+        self._require_account()
+        return self._send(
+            self._contract.functions.resolveFromArbitration(
+                agreement_id,
+                Web3.to_checksum_address(recipient),
+                provider_amount,
+                client_amount,
+            )
         )

@@ -1,0 +1,21 @@
+{
+  "name": "arc402-signing-page",
+  "version": "1.0.0",
+  "description": "ARC-402 mobile signing page — arc402.xyz/sign",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@coinbase/wallet-sdk": "^4.2.3",
+    "@walletconnect/ethereum-provider": "^2.17.4",
+    "ethers": "^6.13.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.5",
+    "vite": "^5.4.10"
+  }
+}

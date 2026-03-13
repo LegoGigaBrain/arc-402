@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>ARC-402 Sign</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #f0f0f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #app {
+      width: 100%;
+      max-width: 420px;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .header {
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #888;
+    }
+
+    .card {
+      background: #161616;
+      border: 1px solid #2a2a2a;
+      border-radius: 16px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .action-icon {
+      font-size: 40px;
+      text-align: center;
+    }
+
+    .action-label {
+      text-align: center;
+    }
+
+    .action-label .verb {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 4px;
+    }
+
+    .action-label .action-text {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .details {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .detail-row .label {
+      color: #888;
+    }
+
+    .detail-row .value {
+      color: #ccc;
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 12px;
+    }
+
+    .divider {
+      height: 1px;
+      background: #2a2a2a;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 16px;
+      border-radius: 12px;
+      border: none;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .btn:active { opacity: 0.7; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-primary {
+      background: #3b82f6;
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: #1e1e1e;
+      color: #ccc;
+      border: 1px solid #333;
+      font-size: 14px;
+      padding: 12px;
+      margin-top: -8px;
+    }
+
+    .status {
+      text-align: center;
+      font-size: 14px;
+      color: #888;
+    }
+
+    .status.error {
+      color: #f87171;
+    }
+
+    .status.success {
+      color: #4ade80;
+    }
+
+    .confirm-icon {
+      font-size: 56px;
+      text-align: center;
+    }
+
+    .tx-link {
+      display: block;
+      text-align: center;
+      color: #3b82f6;
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    #state-loading,
+    #state-confirm,
+    #state-done,
+    #state-error {
+      display: none;
+    }
+
+    #state-loading.active,
+    #state-confirm.active,
+    #state-done.active,
+    #state-error.active {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    #wallet-options {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="header">
+      <h1>ARC-402 Protocol</h1>
+    </div>
+
+    <!-- Loading / verifying -->
+    <div id="state-loading" class="active">
+      <div class="card">
+        <div class="status"><span class="spinner"></span>Verifying request…</div>
+      </div>
+    </div>
+
+    <!-- Confirm action -->
+    <div id="state-confirm">
+      <div class="card">
+        <div class="action-icon" id="action-icon"></div>
+        <div class="action-label">
+          <div class="verb">You are being asked to</div>
+          <div class="action-text" id="action-text"></div>
+        </div>
+        <div class="divider"></div>
+        <div class="details">
+          <div class="detail-row">
+            <span class="label">Wallet</span>
+            <span class="value" id="detail-wallet"></span>
+          </div>
+          <div class="detail-row">
+            <span class="label">Network</span>
+            <span class="value" id="detail-network"></span>
+          </div>
+        </div>
+      </div>
+      <div id="wallet-options">
+        <button class="btn btn-primary" id="btn-coinbase">Connect Wallet to Approve</button>
+        <button class="btn btn-secondary" id="btn-wc">Use WalletConnect instead</button>
+      </div>
+      <div class="status" id="confirm-status"></div>
+    </div>
+
+    <!-- Done -->
+    <div id="state-done">
+      <div class="card">
+        <div class="confirm-icon">✓</div>
+        <div class="action-label">
+          <div class="action-text" style="font-size:16px;">Transaction submitted</div>
+        </div>
+        <a class="tx-link" id="basescan-link" target="_blank" rel="noopener">View on Basescan →</a>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div id="state-error">
+      <div class="card">
+        <div class="status error" id="error-message"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

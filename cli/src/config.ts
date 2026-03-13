@@ -6,6 +6,10 @@ export interface Arc402Config {
   network: "base-mainnet" | "base-sepolia";
   rpcUrl: string;
   privateKey?: string;
+  guardianPrivateKey?: string;
+  guardianAddress?: string;
+  walletConnectProjectId?: string;
+  ownerAddress?: string;
   agentRegistryAddress?: string;
   serviceAgreementAddress?: string;
   disputeArbitrationAddress?: string;

@@ -100,3 +100,25 @@ export const POLICY_ENGINE_LIMITS_ABI = [
 export const ARC402_WALLET_EXECUTE_ABI = [
   "function executeContractCall((address target, bytes data, uint256 value, uint256 minReturnValue, uint256 maxApprovalAmount, address approvalToken) params) external returns (bytes memory)",
 ] as const;
+
+export const ARC402_WALLET_GUARDIAN_ABI = [
+  // Guardian management (owner only)
+  "function setGuardian(address _guardian) external",
+  // Guardian freeze functions (guardian key only)
+  "function freeze() external",
+  "function freezeAndDrain() external",
+  // Owner freeze (with reason)
+  "function freeze(string reason) external",
+  // Owner unfreeze
+  "function unfreeze() external",
+  // State queries
+  "function frozen() external view returns (bool)",
+  "function frozenBy() external view returns (address)",
+  "function frozenAt() external view returns (uint256)",
+  "function guardian() external view returns (address)",
+  "function owner() external view returns (address)",
+  // Events
+  "event WalletFrozen(address indexed by, string reason, uint256 timestamp)",
+  "event WalletUnfrozen(address indexed by, uint256 timestamp)",
+  "event GuardianUpdated(address indexed newGuardian)",
+] as const;

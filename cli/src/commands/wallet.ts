@@ -4,7 +4,8 @@ import { ethers } from "ethers";
 import { Arc402Config, getConfigPath, getUsdcAddress, loadConfig, NETWORK_DEFAULTS, saveConfig } from "../config";
 import { getClient, requireSigner } from "../client";
 import { getTrustTier } from "../utils/format";
-import { POLICY_ENGINE_LIMITS_ABI, WALLET_FACTORY_ABI } from "../abis";
+import { ARC402_WALLET_GUARDIAN_ABI, POLICY_ENGINE_LIMITS_ABI, WALLET_FACTORY_ABI } from "../abis";
+import { requestPhoneWalletSignature } from "../walletconnect";
 
 const POLICY_ENGINE_DEFAULT = "0x44102e70c2A366632d98Fe40d892a2501fC7fFF2";
 
@@ -148,7 +149,7 @@ export function registerWalletCommands(program: Command): void {
   // ─── deploy ────────────────────────────────────────────────────────────────
 
   wallet.command("deploy")
-    .description("Deploy ARC402Wallet contract via WalletFactory")
+    .description("Deploy ARC402Wallet contract via WalletFactory (phone wallet signs via WalletConnect)")
     .action(async () => {
       const config = loadConfig();
       const factoryAddress = config.walletFactoryAddress ?? NETWORK_DEFAULTS[config.network]?.walletFactoryAddress;
@@ -156,29 +157,76 @@ export function registerWalletCommands(program: Command): void {
         console.error("walletFactoryAddress not found in config or NETWORK_DEFAULTS. Add walletFactoryAddress to your config.");
         process.exit(1);
       }
-      const { signer, address } = await requireSigner(config);
-      const factory = new ethers.Contract(factoryAddress, WALLET_FACTORY_ABI, signer);
-      console.log(`Deploying ARC402Wallet via factory at ${factoryAddress}...`);
-      const tx = await factory.createWallet(address);
-      const receipt = await tx.wait();
-      let walletAddress: string | null = null;
-      for (const log of receipt.logs) {
-        try {
-          const parsed = factory.interface.parseLog(log);
-          if (parsed?.name === "WalletCreated") {
-            walletAddress = parsed.args.wallet as string;
-            break;
-          }
-        } catch { /* skip unparseable logs */ }
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const factoryInterface = new ethers.Interface(WALLET_FACTORY_ABI);
+
+      if (config.walletConnectProjectId) {
+        const { txHash, account } = await requestPhoneWalletSignature(
+          config.walletConnectProjectId,
+          chainId,
+          (ownerAccount) => ({
+            to: factoryAddress,
+            data: factoryInterface.encodeFunctionData("createWallet", [ownerAccount]),
+            value: "0x0",
+          }),
+          "Approve ARC402Wallet deployment — you will be set as owner"
+        );
+        console.log(`\nTransaction submitted: ${txHash}`);
+        console.log("Waiting for confirmation...");
+        const receipt = await provider.waitForTransaction(txHash);
+        if (!receipt) {
+          console.error("Transaction not confirmed. Check on-chain.");
+          process.exit(1);
+        }
+        let walletAddress: string | null = null;
+        const factoryContract = new ethers.Contract(factoryAddress, WALLET_FACTORY_ABI, provider);
+        for (const log of receipt.logs) {
+          try {
+            const parsed = factoryContract.interface.parseLog(log);
+            if (parsed?.name === "WalletCreated") {
+              walletAddress = parsed.args.wallet as string;
+              break;
+            }
+          } catch { /* skip unparseable logs */ }
+        }
+        if (!walletAddress) {
+          console.error("Could not find WalletCreated event in receipt. Check the transaction on-chain.");
+          process.exit(1);
+        }
+        config.walletContractAddress = walletAddress;
+        config.ownerAddress = account;
+        saveConfig(config);
+        console.log(`ARC402Wallet deployed at: ${walletAddress}`);
+        console.log(`Owner: ${account} (your phone wallet)`);
+        console.log(`Your wallet contract is ready for policy enforcement`);
+      } else {
+        console.warn("⚠ WalletConnect not configured. Using stored private key (insecure).");
+        console.warn("  Run `arc402 config set walletConnectProjectId <id>` to enable phone wallet signing.");
+        const { signer, address } = await requireSigner(config);
+        const factory = new ethers.Contract(factoryAddress, WALLET_FACTORY_ABI, signer);
+        console.log(`Deploying ARC402Wallet via factory at ${factoryAddress}...`);
+        const tx = await factory.createWallet(address);
+        const receipt = await tx.wait();
+        let walletAddress: string | null = null;
+        for (const log of receipt.logs) {
+          try {
+            const parsed = factory.interface.parseLog(log);
+            if (parsed?.name === "WalletCreated") {
+              walletAddress = parsed.args.wallet as string;
+              break;
+            }
+          } catch { /* skip unparseable logs */ }
+        }
+        if (!walletAddress) {
+          console.error("Could not find WalletCreated event in receipt. Check the transaction on-chain.");
+          process.exit(1);
+        }
+        config.walletContractAddress = walletAddress;
+        saveConfig(config);
+        console.log(`ARC402Wallet deployed at: ${walletAddress}`);
+        console.log(`Your wallet contract is ready for policy enforcement`);
       }
-      if (!walletAddress) {
-        console.error("Could not find WalletCreated event in receipt. Check the transaction on-chain.");
-        process.exit(1);
-      }
-      config.walletContractAddress = walletAddress;
-      saveConfig(config);
-      console.log(`ARC402Wallet deployed at: ${walletAddress}`);
-      console.log(`Your wallet contract is ready for policy enforcement`);
     });
 
   // ─── send ──────────────────────────────────────────────────────────────────
@@ -225,17 +273,44 @@ export function registerWalletCommands(program: Command): void {
     });
 
   walletPolicy.command("set-limit")
-    .description("Set a spending limit for a category")
+    .description("Set a spending limit for a category (phone wallet signs via WalletConnect)")
     .requiredOption("--category <cat>", "Category name (e.g. code.review)")
     .requiredOption("--amount <eth>", "Limit in ETH (e.g. 0.1)")
     .action(async (opts) => {
       const config = loadConfig();
       const policyAddress = config.policyEngineAddress ?? POLICY_ENGINE_DEFAULT;
-      const { signer, address } = await requireSigner(config);
-      const contract = new ethers.Contract(policyAddress, POLICY_ENGINE_LIMITS_ABI, signer);
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
       const amount = ethers.parseEther(opts.amount);
-      await (await contract.setSpendLimit(address, opts.category, amount)).wait();
-      console.log(`Spend limit for ${opts.category} set to ${opts.amount} ETH`);
+      const policyInterface = new ethers.Interface(POLICY_ENGINE_LIMITS_ABI);
+
+      if (config.walletConnectProjectId) {
+        const walletAddr = config.walletContractAddress;
+        if (!walletAddr) {
+          console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+          process.exit(1);
+        }
+        const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+        const { txHash } = await requestPhoneWalletSignature(
+          config.walletConnectProjectId,
+          chainId,
+          (account) => ({
+            to: policyAddress,
+            data: policyInterface.encodeFunctionData("setSpendLimit", [walletAddr, opts.category, amount]),
+            value: "0x0",
+          }),
+          `Approve spend limit: ${opts.category} → ${opts.amount} ETH`
+        );
+        console.log(`\nTransaction submitted: ${txHash}`);
+        await provider.waitForTransaction(txHash);
+        console.log(`Spend limit for ${opts.category} set to ${opts.amount} ETH`);
+      } else {
+        console.warn("⚠ WalletConnect not configured. Using stored private key (insecure).");
+        console.warn("  Run `arc402 config set walletConnectProjectId <id>` to enable phone wallet signing.");
+        const { signer, address } = await requireSigner(config);
+        const contract = new ethers.Contract(policyAddress, POLICY_ENGINE_LIMITS_ABI, signer);
+        await (await contract.setSpendLimit(address, opts.category, amount)).wait();
+        console.log(`Spend limit for ${opts.category} set to ${opts.amount} ETH`);
+      }
     });
 
   // ─── freeze / unfreeze ─────────────────────────────────────────────────────

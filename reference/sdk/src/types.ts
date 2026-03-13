@@ -367,3 +367,41 @@ export type NegotiationMessage =
   | NegotiationCounter
   | NegotiationAccept
   | NegotiationReject;
+
+
+// ─── DisputeArbitration types ─────────────────────────────────────────────────
+
+export enum DisputeMode {
+  UNILATERAL = 0,
+  MUTUAL = 1,
+}
+
+export enum DisputeClass {
+  HARD_FAILURE = 0,
+  AMBIGUITY_QUALITY = 1,
+  HIGH_SENSITIVITY = 2,
+}
+
+export interface DisputeFeeState {
+  mode: DisputeMode;
+  disputeClass: DisputeClass;
+  opener: string;
+  client: string;
+  provider: string;
+  token: string;
+  agreementPrice: bigint;
+  feeRequired: bigint;
+  openerPaid: bigint;
+  respondentPaid: bigint;
+  openedAt: bigint;
+  active: boolean;
+  resolved: boolean;
+}
+
+export interface ArbitratorBondState {
+  bondAmount: bigint;
+  lockedAt: bigint;
+  locked: boolean;
+  slashed: boolean;
+  returned: boolean;
+}

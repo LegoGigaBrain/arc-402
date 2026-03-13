@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "./IServiceAgreement.sol";
+import "./IDisputeArbitration.sol";
 import "./ITrustRegistry.sol";
 import "./ReputationOracle.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -15,6 +16,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     address public pendingOwner;
     ReputationOracle public reputationOracle;
     address public immutable trustRegistry;
+    address public disputeArbitration;
 
     address public constant ETH = address(0);
     uint256 public constant VERIFY_WINDOW = 3 days;
@@ -70,6 +72,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     event DisputeEvidenceSubmitted(uint256 indexed id, uint256 indexed evidenceIndex, address indexed submitter, EvidenceType evidenceType, bytes32 evidenceHash);
     event DetailedDisputeResolved(uint256 indexed id, DisputeOutcome outcome, uint256 providerAward, uint256 clientAward);
     event ArbitratorApprovalUpdated(address indexed arbitrator, bool approved);
+    event DisputeArbitrationUpdated(address indexed da);
+    event DisputeFeeResolutionFailed(uint256 indexed agreementId);
     event ArbitratorNominated(uint256 indexed id, address indexed nominator, address indexed arbitrator, uint8 panelSize);
     event ArbitrationActivated(uint256 indexed id, uint256 selectionDeadlineAt, uint256 decisionDeadlineAt);
     event ArbitrationVoteCast(uint256 indexed id, address indexed arbitrator, ArbitrationVote vote, uint256 providerAward, uint256 clientAward);
@@ -140,6 +144,11 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     function setReputationOracle(address oracle) external onlyOwner {
         reputationOracle = ReputationOracle(oracle);
         emit ReputationOracleUpdated(oracle);
+    }
+
+    function setDisputeArbitration(address da) external onlyOwner {
+        disputeArbitration = da;
+        emit DisputeArbitrationUpdated(da);
     }
 
     function propose(address provider, string calldata serviceType, string calldata description, uint256 price, address token, uint256 deadline, bytes32 deliverablesHash) external payable nonReentrant returns (uint256 agreementId) {
@@ -243,13 +252,25 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         _updateTrust(agreementId, ag, true);
     }
 
-    function dispute(uint256 agreementId, string calldata reason) external {
-        _openFormalDispute(agreementId, reason, true, DirectDisputeReason.NONE);
+    function dispute(uint256 agreementId, string calldata reason) external payable {
+        _openFormalDispute(agreementId, reason, true, DirectDisputeReason.NONE, IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
     }
 
-    function directDispute(uint256 agreementId, DirectDisputeReason directReason, string calldata reason) external {
+    function directDispute(uint256 agreementId, DirectDisputeReason directReason, string calldata reason) external payable {
         require(directReason != DirectDisputeReason.NONE, "ServiceAgreement: invalid direct dispute reason");
-        _openFormalDispute(agreementId, reason, false, directReason);
+        _openFormalDispute(agreementId, reason, false, directReason, IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
+    }
+
+    /// @notice Open a dispute with explicit fee mode and dispute class.
+    ///         For ERC-20 payment tokens, caller must approve DisputeArbitration for the fee amount first.
+    ///         For ETH payment tokens, send the required fee as msg.value (use getFeeQuote to preview).
+    function openDisputeWithMode(
+        uint256 agreementId,
+        IDisputeArbitration.DisputeMode mode,
+        IDisputeArbitration.DisputeClass disputeClass,
+        string calldata reason
+    ) external payable {
+        _openFormalDispute(agreementId, reason, true, DirectDisputeReason.NONE, mode, disputeClass);
     }
 
     function requestRevision(uint256 agreementId, bytes32 feedbackHash, string calldata feedbackURI, bytes32 previousTranscriptHash) external {
@@ -330,7 +351,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
             ag.status = Status.ESCALATED_TO_HUMAN;
             _ensureDisputeCase(agreementId, true);
         } else if (responseType == ProviderResponseType.ESCALATE) {
-            _openFormalDispute(agreementId, "provider escalation", true, DirectDisputeReason.NONE);
+            _openFormalDispute(agreementId, "provider escalation", true, DirectDisputeReason.NONE, IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
             return;
         } else {
             ag.status = Status.REVISED;
@@ -339,8 +360,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         emit RevisionResponded(agreementId, rc.cycleCount, msg.sender, responseType, transcriptHash);
     }
 
-    function escalateToDispute(uint256 agreementId, string calldata reason) external {
-        _openFormalDispute(agreementId, reason, true, DirectDisputeReason.NONE);
+    function escalateToDispute(uint256 agreementId, string calldata reason) external payable {
+        _openFormalDispute(agreementId, reason, true, DirectDisputeReason.NONE, IDisputeArbitration.DisputeMode.UNILATERAL, IDisputeArbitration.DisputeClass.HARD_FAILURE);
     }
 
     function canDirectDispute(uint256 agreementId, DirectDisputeReason directReason) external view returns (bool) {
@@ -373,7 +394,12 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     function nominateArbitrator(uint256 agreementId, address arbitrator) external onlyParty(agreementId) {
         Agreement storage ag = _get(agreementId);
         require(ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_ARBITRATION || ag.status == Status.ESCALATED_TO_HUMAN, "ServiceAgreement: no active dispute");
-        require(approvedArbitrators[arbitrator], "ServiceAgreement: arbitrator not approved");
+        require(
+            disputeArbitration != address(0)
+                ? IDisputeArbitration(disputeArbitration).isEligibleArbitrator(arbitrator)
+                : approvedArbitrators[arbitrator],
+            "ServiceAgreement: arbitrator not eligible"
+        );
         require(arbitrator != ag.client && arbitrator != ag.provider, "ServiceAgreement: conflicted arbitrator");
 
         ArbitrationCase storage ac = _arbitrationCases[agreementId];
@@ -409,6 +435,11 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         require(vote != ArbitrationVote.NONE, "ServiceAgreement: invalid vote");
 
         disputeArbitratorVoted[agreementId][msg.sender] = true;
+
+        // Notify DisputeArbitration so it can track vote for bond/fee settlement
+        if (disputeArbitration != address(0)) {
+            try IDisputeArbitration(disputeArbitration).recordArbitratorVote(agreementId, msg.sender) {} catch {}
+        }
 
         if (vote == ArbitrationVote.PROVIDER_WINS) {
             require(providerAward == ag.price && clientAward == 0, "ServiceAgreement: invalid provider vote split");
@@ -533,7 +564,14 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     function getAgreementsByProvider(address provider) external view returns (uint256[] memory) { return _byProvider[provider]; }
     function agreementCount() external view returns (uint256) { return _nextId; }
 
-    function _openFormalDispute(uint256 agreementId, string memory reason, bool requireEligibility, DirectDisputeReason directReason) internal {
+    function _openFormalDispute(
+        uint256 agreementId,
+        string memory reason,
+        bool requireEligibility,
+        DirectDisputeReason directReason,
+        IDisputeArbitration.DisputeMode daMode,
+        IDisputeArbitration.DisputeClass daClass
+    ) internal {
         require(bytes(reason).length <= 512, "ServiceAgreement: reason too long");
         Agreement storage ag = _get(agreementId);
         require(msg.sender == ag.client || msg.sender == ag.provider, "ServiceAgreement: not a party");
@@ -544,11 +582,28 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
             require(_canDirectDispute(ag, directReason), "ServiceAgreement: direct dispute not allowed");
         }
         _ensureDisputeCase(agreementId, false);
+        _disputeCases[agreementId].opener = msg.sender;
         ag.status = Status.DISPUTED;
         ag.resolvedAt = block.timestamp;
         emit AgreementDisputed(agreementId, msg.sender, reason);
         if (directReason != DirectDisputeReason.NONE) {
             emit DirectDisputeOpened(agreementId, msg.sender, directReason, reason);
+        }
+        // DisputeArbitration fee hook
+        if (disputeArbitration != address(0)) {
+            try IDisputeArbitration(disputeArbitration).openDispute{value: msg.value}(
+                agreementId,
+                daMode,
+                daClass,
+                msg.sender,
+                ag.client,
+                ag.provider,
+                ag.price,
+                ag.token
+            ) {} catch {
+                // Fee hook failure does not revert the dispute — dispute proceeds without fee layer
+                // This preserves backwards compatibility if DisputeArbitration is misconfigured
+            }
         }
     }
 
@@ -641,6 +696,16 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         }
 
         emit DetailedDisputeResolved(agreementId, outcome, providerAward, clientAward);
+
+        // DisputeArbitration fee resolution callback
+        if (disputeArbitration != address(0)) {
+            try IDisputeArbitration(disputeArbitration).resolveDisputeFee(
+                agreementId,
+                uint8(outcome)
+            ) {} catch {
+                emit DisputeFeeResolutionFailed(agreementId);
+            }
+        }
     }
 
     function _isPanelArbitrator(ArbitrationCase storage ac, address arbitrator) internal view returns (bool) {

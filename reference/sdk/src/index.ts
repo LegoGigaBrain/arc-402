@@ -5,6 +5,7 @@ export { IntentAttestationClient, IntentAttestation } from "./intent";
 export { SettlementClient, MultiAgentSettlement } from "./settlement";
 export { AgentRegistryClient, type AgentRegistrationInput } from "./agent";
 export { ServiceAgreementClient } from "./agreement";
+export { DisputeArbitrationClient } from "./dispute-arbitration";
 export { ReputationOracleClient } from "./reputation";
 export { SponsorshipAttestationClient } from "./sponsorship";
 export { CapabilityRegistryClient } from "./capability";

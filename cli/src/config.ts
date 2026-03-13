@@ -8,6 +8,7 @@ export interface Arc402Config {
   privateKey?: string;
   agentRegistryAddress?: string;
   serviceAgreementAddress?: string;
+  disputeArbitrationAddress?: string;
   trustRegistryAddress: string;
   reputationOracleAddress?: string;
   sponsorshipAttestationAddress?: string;

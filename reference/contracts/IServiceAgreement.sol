@@ -72,6 +72,17 @@ interface IServiceAgreement {
         HUMAN_REVIEW_REQUIRED
     }
 
+    enum DisputeMode {
+        UNILATERAL, // opener pays full fee; win = 50% refund, lose = consumed
+        MUTUAL      // each party pays 50%; no winner reimbursement
+    }
+
+    enum DisputeClass {
+        HARD_FAILURE,      // 1.0x fee multiplier
+        AMBIGUITY_QUALITY, // 1.25x fee multiplier
+        HIGH_SENSITIVITY   // 1.5x fee multiplier
+    }
+
     struct Agreement {
         uint256 id;
         address client;
@@ -137,6 +148,7 @@ interface IServiceAgreement {
         uint256 clientAward;
         bool humanReviewRequested;
         uint256 evidenceCount;
+        address opener; // party who initiated the dispute
     }
 
     struct ArbitrationCase {

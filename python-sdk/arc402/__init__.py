@@ -2,6 +2,7 @@
 
 from .agent import AgentInfo, AgentRegistryClient
 from .agreement import ServiceAgreementClient
+from .dispute_arbitration import DisputeArbitrationClient
 from .capability import CapabilityRegistryClient
 from .context import ContextBinding as Context
 from .exceptions import (
@@ -24,8 +25,12 @@ from .trust import TrustClient as Trust
 from .types import (
     Agreement,
     AgreementStatus,
+    ArbitratorBondState,
     ArbitrationCase,
     ArbitrationVote,
+    DisputeClass,
+    DisputeFeeState,
+    DisputeMode,
     AttestationRecord,
     CapabilitySlot,
     DisputeCase,
@@ -61,6 +66,11 @@ __all__ = [
     "AgentRegistryClient",
     "AgentInfo",
     "ServiceAgreementClient",
+    "DisputeArbitrationClient",
+    "DisputeMode",
+    "DisputeClass",
+    "DisputeFeeState",
+    "ArbitratorBondState",
     "CapabilityRegistryClient",
     "ARC402GovernanceClient",
     "ReputationOracleClient",

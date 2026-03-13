@@ -546,3 +546,68 @@ class OperationalMetrics(BaseModel):
             uptime_score=raw[6],
             response_score=raw[7],
         )
+
+
+# ─── DisputeArbitration types ────────────────────────────────────────────────
+
+class DisputeMode(IntEnum):
+    UNILATERAL = 0  # opener pays full fee; win = 50% refund, lose = consumed
+    MUTUAL = 1      # each party pays 50%; no winner reimbursement
+
+
+class DisputeClass(IntEnum):
+    HARD_FAILURE = 0      # 1.0x fee multiplier
+    AMBIGUITY_QUALITY = 1 # 1.25x fee multiplier
+    HIGH_SENSITIVITY = 2  # 1.5x fee multiplier
+
+
+class DisputeFeeState(BaseModel):
+    mode: DisputeMode
+    dispute_class: DisputeClass
+    opener: str
+    client: str
+    provider: str
+    token: str
+    agreement_price: int
+    fee_required: int
+    opener_paid: int
+    respondent_paid: int
+    opened_at: int
+    active: bool
+    resolved: bool
+
+    @classmethod
+    def from_raw(cls, raw: tuple) -> "DisputeFeeState":
+        return cls(
+            mode=DisputeMode(raw[0]),
+            dispute_class=DisputeClass(raw[1]),
+            opener=raw[2],
+            client=raw[3],
+            provider=raw[4],
+            token=raw[5],
+            agreement_price=raw[6],
+            fee_required=raw[7],
+            opener_paid=raw[8],
+            respondent_paid=raw[9],
+            opened_at=raw[10],
+            active=raw[11],
+            resolved=raw[12],
+        )
+
+
+class ArbitratorBondState(BaseModel):
+    bond_amount: int
+    locked_at: int
+    locked: bool
+    slashed: bool
+    returned: bool
+
+    @classmethod
+    def from_raw(cls, raw: tuple) -> "ArbitratorBondState":
+        return cls(
+            bond_amount=raw[0],
+            locked_at=raw[1],
+            locked=raw[2],
+            slashed=raw[3],
+            returned=raw[4],
+        )

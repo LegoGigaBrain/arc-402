@@ -18,6 +18,7 @@ contract TrustRegistry is ITrustRegistry, Ownable2Step {
     uint256 public constant INITIAL_SCORE = 100;
     uint256 public constant INCREMENT = 5;
     uint256 public constant DECREMENT = 20;
+    uint256 public constant ARBITRATOR_SLASH_DECREMENT = 50;
 
     mapping(address => uint256) private scores;
     mapping(address => bool) private initialized;
@@ -101,6 +102,23 @@ contract TrustRegistry is ITrustRegistry, Ownable2Step {
         emit ScoreUpdated(wallet, oldScore, newScore, "anomaly");
     }
 
+
+    /// @notice Slash an arbitrator's trust score for misconduct.
+    /// @dev Caller must be a registered authorized updater (e.g. DisputeArbitration).
+    ///      Uses a heavier penalty (50 points) than standard anomaly (20 points).
+    function recordArbitratorSlash(
+        address arbitrator,
+        string calldata reason
+    ) external onlyUpdater {
+        if (!initialized[arbitrator]) {
+            initialized[arbitrator] = true;
+            scores[arbitrator] = INITIAL_SCORE;
+        }
+        uint256 oldScore = scores[arbitrator];
+        uint256 newScore = oldScore < ARBITRATOR_SLASH_DECREMENT ? 0 : oldScore - ARBITRATOR_SLASH_DECREMENT;
+        scores[arbitrator] = newScore;
+        emit ScoreUpdated(arbitrator, oldScore, newScore, reason);
+    }
 
     function getTrustLevel(address wallet) external view returns (string memory) {
         uint256 score = scores[wallet];

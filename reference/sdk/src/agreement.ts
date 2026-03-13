@@ -6,7 +6,9 @@ import {
   ArbitrationCase,
   ArbitrationVote,
   DisputeCase,
+  DisputeClass,
   DisputeEvidence,
+  DisputeMode,
   DisputeOutcome,
   DirectDisputeReason,
   EvidenceType,
@@ -54,9 +56,41 @@ export class ServiceAgreementClient {
   async commitDeliverable(id: bigint, hash: string) { const tx = await this.contract.commitDeliverable(id, hash); return tx.wait(); }
   async verifyDeliverable(id: bigint) { const tx = await this.contract.verifyDeliverable(id); return tx.wait(); }
   async autoRelease(id: bigint) { const tx = await this.contract.autoRelease(id); return tx.wait(); }
-  async dispute(id: bigint, reason: string) { const tx = await this.contract.dispute(id, reason); return tx.wait(); }
-  async directDispute(id: bigint, directReason: DirectDisputeReason, reason: string) { const tx = await this.contract.directDispute(id, directReason, reason); return tx.wait(); }
-  async escalateToDispute(id: bigint, reason: string) { const tx = await this.contract.escalateToDispute(id, reason); return tx.wait(); }
+  async dispute(id: bigint, reason: string, feeEth = 0n) { const tx = await this.contract.dispute(id, reason, { value: feeEth }); return tx.wait(); }
+  async directDispute(id: bigint, directReason: DirectDisputeReason, reason: string, feeEth = 0n) { const tx = await this.contract.directDispute(id, directReason, reason, { value: feeEth }); return tx.wait(); }
+  async escalateToDispute(id: bigint, reason: string, feeEth = 0n) { const tx = await this.contract.escalateToDispute(id, reason, { value: feeEth }); return tx.wait(); }
+
+  /** Open a dispute with explicit mode and class. For ETH agreements, pass fee as feeEth. */
+  async openDisputeWithMode(
+    id: bigint,
+    mode: DisputeMode,
+    disputeClass: DisputeClass,
+    reason: string,
+    feeEth = 0n
+  ): Promise<ethers.TransactionReceipt> {
+    const tx = await this.contract.openDisputeWithMode(id, mode, disputeClass, reason, { value: feeEth });
+    return tx.wait();
+  }
+
+  /** Shorthand: UNILATERAL dispute with specified class. */
+  async openUnilateralDispute(
+    id: bigint,
+    disputeClass: DisputeClass,
+    reason: string,
+    feeEth = 0n
+  ): Promise<ethers.TransactionReceipt> {
+    return this.openDisputeWithMode(id, DisputeMode.UNILATERAL, disputeClass, reason, feeEth);
+  }
+
+  /** Shorthand: MUTUAL dispute — opener pays half. Respondent calls DisputeArbitrationClient.joinMutualDispute(). */
+  async openMutualDispute(
+    id: bigint,
+    disputeClass: DisputeClass,
+    reason: string,
+    halfFeeEth = 0n
+  ): Promise<ethers.TransactionReceipt> {
+    return this.openDisputeWithMode(id, DisputeMode.MUTUAL, disputeClass, reason, halfFeeEth);
+  }
   async canDirectDispute(id: bigint, directReason: DirectDisputeReason): Promise<boolean> { return this.contract.canDirectDispute(id, directReason); }
   async cancel(id: bigint) { const tx = await this.contract.cancel(id); return tx.wait(); }
   async expiredCancel(id: bigint) { const tx = await this.contract.expiredCancel(id); return tx.wait(); }

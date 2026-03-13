@@ -1,11 +1,75 @@
 import { Command } from "commander";
-import { ArbitrationVote, DirectDisputeReason, DisputeOutcome, EvidenceType, ServiceAgreementClient } from "@arc402/sdk";
+import { ArbitrationVote, DirectDisputeReason, DisputeClass, DisputeMode, DisputeOutcome, EvidenceType, ServiceAgreementClient, DisputeArbitrationClient } from "@arc402/sdk";
 import { loadConfig } from "../config";
 import { getClient, requireSigner } from "../client";
 import { hashFile, hashString } from "../utils/hash";
 
 export function registerDisputeCommand(program: Command): void {
   const dispute = program.command("dispute").description("Formal dispute workflow; remediation-first by default, with narrow hard-fail direct-dispute exceptions");
+
+  // Fee quote (requires DisputeArbitration configured)
+  dispute.command("fee-quote <agreementId>")
+    .description("Get dispute fee quote for an agreement")
+    .requiredOption("--price <price>", "Agreement price in wei/token units")
+    .requiredOption("--token <token>", "Token address (0x0 for ETH)")
+    .requiredOption("--mode <mode>", "unilateral|mutual")
+    .requiredOption("--class <class>", "hard-failure|ambiguity|high-sensitivity")
+    .action(async (agreementId, opts) => {
+      const config = loadConfig();
+      if (!config.disputeArbitrationAddress) throw new Error("disputeArbitrationAddress missing in config");
+      const { provider } = await getClient(config);
+      const client = new DisputeArbitrationClient(config.disputeArbitrationAddress, provider);
+      const modeMap: Record<string, DisputeMode> = { unilateral: DisputeMode.UNILATERAL, mutual: DisputeMode.MUTUAL };
+      const classMap: Record<string, DisputeClass> = {
+        'hard-failure': DisputeClass.HARD_FAILURE,
+        'ambiguity': DisputeClass.AMBIGUITY_QUALITY,
+        'high-sensitivity': DisputeClass.HIGH_SENSITIVITY,
+      };
+      const mode = modeMap[String(opts.mode).toLowerCase()];
+      const disputeClass = classMap[String(opts.class).toLowerCase()];
+      if (!mode || !disputeClass) throw new Error("Invalid --mode or --class");
+      const feeInTokens = await client.getFeeQuote(BigInt(opts.price), opts.token, mode, disputeClass);
+      console.log(`Fee quote for agreement ${agreementId}: ${feeInTokens.toString()} tokens`);
+    });
+
+  // Open with explicit mode/class
+  dispute.command("open-with-mode <agreementId>")
+    .description("Open dispute with specific mode and class (requires fee in msg.value for ETH)")
+    .requiredOption("--mode <mode>", "unilateral|mutual")
+    .requiredOption("--class <class>", "hard-failure|ambiguity|high-sensitivity")
+    .requiredOption("--reason <reason>")
+    .option("--fee <fee>", "Fee in wei (for ETH agreements)", "0")
+    .action(async (agreementId, opts) => {
+      const config = loadConfig();
+      if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+      const { signer } = await requireSigner(config);
+      const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+      const modeMap: Record<string, DisputeMode> = { unilateral: DisputeMode.UNILATERAL, mutual: DisputeMode.MUTUAL };
+      const classMap: Record<string, DisputeClass> = {
+        'hard-failure': DisputeClass.HARD_FAILURE,
+        'ambiguity': DisputeClass.AMBIGUITY_QUALITY,
+        'high-sensitivity': DisputeClass.HIGH_SENSITIVITY,
+      };
+      const mode = modeMap[String(opts.mode).toLowerCase()];
+      const disputeClass = classMap[String(opts.class).toLowerCase()];
+      if (!mode || !disputeClass) throw new Error("Invalid --mode or --class");
+      await client.openDisputeWithMode(BigInt(agreementId), mode, disputeClass, opts.reason, BigInt(opts.fee));
+      console.log(`dispute opened for ${agreementId} (${opts.mode} / ${opts.class})`);
+    });
+
+  // Join mutual dispute (respondent pays their half)
+  dispute.command("join <agreementId>")
+    .description("Join a mutual dispute as respondent (pays half the fee)")
+    .option("--fee <fee>", "Half-fee in wei (for ETH agreements)", "0")
+    .action(async (agreementId, opts) => {
+      const config = loadConfig();
+      if (!config.disputeArbitrationAddress) throw new Error("disputeArbitrationAddress missing in config");
+      const { signer } = await requireSigner(config);
+      const client = new DisputeArbitrationClient(config.disputeArbitrationAddress, signer);
+      await client.joinMutualDispute(BigInt(agreementId), BigInt(opts.fee));
+      console.log(`joined mutual dispute ${agreementId}`);
+    });
+
   dispute.command("open <id>")
     .requiredOption("--reason <reason>")
     .option("--escalated", "Use escalateToDispute after remediation", false)

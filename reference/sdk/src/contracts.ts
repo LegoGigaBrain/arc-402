@@ -99,6 +99,15 @@ export const SERVICE_AGREEMENT_ABI = [
   "function getAgreementsByClient(address client) external view returns (uint256[])",
   "function getAgreementsByProvider(address provider) external view returns (uint256[])",
   "function agreementCount() external view returns (uint256)",
+  "function openSessionChannel(address provider, address token, uint256 maxAmount, uint256 ratePerCall, uint256 deadline) external payable returns (bytes32 channelId)",
+  "function closeChannel(bytes32 channelId, bytes finalState) external",
+  "function challengeChannel(bytes32 channelId, bytes latestState) external",
+  "function finaliseChallenge(bytes32 channelId) external",
+  "function reclaimExpiredChannel(bytes32 channelId) external",
+  "function getChannel(bytes32 channelId) external view returns (tuple(address client, address provider, address token, uint256 depositAmount, uint256 settledAmount, uint256 lastSequenceNumber, uint256 deadline, uint256 challengeExpiry, uint8 status))",
+  "function getChannelsByClient(address client) external view returns (bytes32[])",
+  "function getChannelsByProvider(address provider) external view returns (bytes32[])",
+  "function resolveFromArbitration(uint256 agreementId, address recipient, uint256 amount) external",
   "event AgreementProposed(uint256 indexed id, address indexed client, address indexed provider, string serviceType, uint256 price, address token, uint256 deadline)",
 ] as const;
 

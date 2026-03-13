@@ -213,9 +213,7 @@ contract DisputeArbitration is IDisputeArbitration, ReentrancyGuard {
         // ─── Arbitrator bonds + fee payout ───────────────────────────────
         _settleArbitratorBondsAndFees(agreementId, fs.token, feeForArbitrators);
 
-        // NOTE: Trust writes are handled by ServiceAgreement._updateTrust before this
-        // callback is invoked. Do NOT write trust here — it would double-apply score
-        // changes for PROVIDER_WINS and CLIENT_REFUND outcomes.
+        _writeTrust(fs, outcome);
 
         emit DisputeFeeResolved(agreementId, outcome, openerRefund);
     }

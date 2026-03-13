@@ -13,6 +13,8 @@ export { GovernanceClient } from "./governance";
 export { signNegotiationMessage, createSignedProposal, createSignedCounter, createSignedAccept, createSignedReject, createNegotiationProposal, createNegotiationCounter, createNegotiationAccept, createNegotiationReject, parseNegotiationMessage } from "./negotiation";
 export { NegotiationGuard } from "./negotiation-guard";
 export { SessionManager } from "./session-manager";
+export { ChannelClient } from "./channel";
 export type { NegotiationVerificationResult, NegotiationVerificationError, SignedNegotiationMessage } from "./types";
+export type { ChannelState, Channel, ChannelStatus, OpenChannelParams } from "./types";
 export * from "./contracts";
 export * from "./types";

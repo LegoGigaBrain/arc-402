@@ -442,3 +442,36 @@ export interface ArbitratorBondState {
   slashed: boolean;
   returned: boolean;
 }
+
+export type ChannelStatus = 'OPEN' | 'CLOSING' | 'CHALLENGED' | 'SETTLED';
+
+export interface ChannelState {
+  channelId: string
+  sequenceNumber: number
+  callCount: number
+  cumulativePayment: bigint
+  token: string
+  timestamp: number
+  clientSig?: string
+  providerSig?: string
+}
+
+export interface Channel {
+  client: string
+  provider: string
+  token: string
+  depositAmount: bigint
+  settledAmount: bigint
+  lastSequenceNumber: number
+  deadline: number
+  challengeExpiry: number
+  status: ChannelStatus
+}
+
+export interface OpenChannelParams {
+  provider: string
+  token: string
+  maxAmount: bigint
+  ratePerCall: bigint
+  deadline: number
+}

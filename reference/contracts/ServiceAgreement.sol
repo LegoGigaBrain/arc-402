@@ -27,6 +27,7 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     uint8 public constant MAX_REMEDIATION_CYCLES = 2;
     uint8 public constant ARBITRATOR_PANEL_SIZE = 3;
     uint8 public constant ARBITRATOR_MAJORITY = 2;
+    uint256 public constant CHALLENGE_WINDOW = 24 hours;
 
     mapping(address => bool) public allowedTokens;
     mapping(address => bool) public legacyFulfillProviders;
@@ -47,6 +48,33 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     mapping(uint256 => ArbitrationCase) private _arbitrationCases;
     mapping(uint256 => mapping(address => bool)) public disputeArbitratorNominated;
     mapping(uint256 => mapping(address => bool)) public disputeArbitratorVoted;
+
+    enum ChannelStatus { OPEN, CLOSING, CHALLENGED, SETTLED }
+    struct Channel {
+        address client;
+        address provider;
+        address token;
+        uint256 depositAmount;
+        uint256 settledAmount;
+        uint256 lastSequenceNumber;
+        uint256 deadline;
+        uint256 challengeExpiry;
+        ChannelStatus status;
+    }
+    struct ChannelState {
+        bytes32 channelId;
+        uint256 sequenceNumber;
+        uint256 callCount;
+        uint256 cumulativePayment;
+        address token;
+        uint256 timestamp;
+        bytes clientSig;
+        bytes providerSig;
+    }
+    mapping(bytes32 => Channel) public channels;
+    mapping(address => bytes32[]) private _channelsByClient;
+    mapping(address => bytes32[]) private _channelsByProvider;
+    uint256 private _channelNonce;
 
     event AgreementProposed(uint256 indexed id, address indexed client, address indexed provider, string serviceType, uint256 price, address token, uint256 deadline);
     event AgreementAccepted(uint256 indexed id, address indexed provider);
@@ -78,6 +106,11 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
     event ArbitrationActivated(uint256 indexed id, uint256 selectionDeadlineAt, uint256 decisionDeadlineAt);
     event ArbitrationVoteCast(uint256 indexed id, address indexed arbitrator, ArbitrationVote vote, uint256 providerAward, uint256 clientAward);
     event HumanEscalationRequested(uint256 indexed id, address indexed requester, string reason);
+    event ChannelOpened(bytes32 indexed channelId, address indexed client, address indexed provider, address token, uint256 depositAmount, uint256 deadline);
+    event ChannelClosing(bytes32 indexed channelId, uint256 sequenceNumber, uint256 settledAmount, uint256 challengeExpiry);
+    event ChannelChallenged(bytes32 indexed channelId, address indexed challenger, uint256 newSequenceNumber, uint256 newSettledAmount);
+    event ChannelSettled(bytes32 indexed channelId, address indexed provider, uint256 settledAmount, uint256 refundAmount);
+    event ChannelExpiredReclaimed(bytes32 indexed channelId, address indexed client, uint256 reclaimedAmount);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "ServiceAgreement: not owner");
@@ -183,7 +216,8 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
             createdAt: block.timestamp,
             resolvedAt: 0,
             verifyWindowEnd: 0,
-            committedHash: bytes32(0)
+            committedHash: bytes32(0),
+            protocolVersion: "1.0.0"
         });
         _byClient[msg.sender].push(agreementId);
         _byProvider[provider].push(agreementId);
@@ -531,6 +565,11 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
         _releaseEscrow(ag.token, ag.client, ag.price);
     }
 
+    /// @notice Protocol version tag (Spec 20).
+    function protocolVersion() external pure returns (string memory) {
+        return "1.0.0";
+    }
+
     function getAgreement(uint256 id) external view returns (Agreement memory) {
         require(_agreements[id].id != 0, "ServiceAgreement: not found");
         return _agreements[id];
@@ -758,6 +797,198 @@ contract ServiceAgreement is IServiceAgreement, ReentrancyGuard {
                 try reputationOracle.autoWarn(ag.client, ag.provider, capabilityHash) {} catch {}
             }
         }
+    }
+
+    // ─── DisputeArbitration resolution callback ───────────────────────────────
+
+    function resolveFromArbitration(uint256 agreementId, address recipient, uint256 amount) external nonReentrant {
+        require(msg.sender == disputeArbitration, "ServiceAgreement: not DisputeArbitration");
+        require(disputeArbitration != address(0), "ServiceAgreement: DA not set");
+        Agreement storage ag = _get(agreementId);
+        require(ag.status == Status.DISPUTED || ag.status == Status.ESCALATED_TO_HUMAN || ag.status == Status.ESCALATED_TO_ARBITRATION, "ServiceAgreement: not in dispute");
+        require(recipient == ag.client || recipient == ag.provider, "ServiceAgreement: invalid recipient");
+        require(amount <= ag.price, "ServiceAgreement: amount exceeds escrow");
+        ag.status = Status.FULFILLED;
+        ag.resolvedAt = block.timestamp;
+        emit DetailedDisputeResolved(agreementId, DisputeOutcome.PROVIDER_WINS, recipient == ag.provider ? amount : 0, recipient == ag.client ? amount : 0);
+        _releaseEscrow(ag.token, recipient, amount);
+        _updateTrust(agreementId, ag, recipient == ag.provider);
+    }
+
+    // ─── Session Channels ─────────────────────────────────────────────────────
+
+    function openSessionChannel(
+        address provider,
+        address token,
+        uint256 maxAmount,
+        uint256 ratePerCall,
+        uint256 deadline
+    ) external payable nonReentrant returns (bytes32 channelId) {
+        require(provider != address(0), "ServiceAgreement: zero provider");
+        require(provider != msg.sender, "ServiceAgreement: client == provider");
+        require(deadline > block.timestamp, "ServiceAgreement: deadline in past");
+        require(maxAmount > 0, "ServiceAgreement: zero amount");
+        require(allowedTokens[token], "ServiceAgreement: token not allowed");
+        if (token == address(0)) {
+            require(msg.value == maxAmount, "ServiceAgreement: ETH value != maxAmount");
+        } else {
+            require(msg.value == 0, "ServiceAgreement: ETH sent with ERC-20");
+            IERC20(token).safeTransferFrom(msg.sender, address(this), maxAmount);
+        }
+        unchecked { _channelNonce++; }
+        channelId = keccak256(abi.encodePacked(msg.sender, provider, token, maxAmount, deadline, block.timestamp, _channelNonce));
+        channels[channelId] = Channel({
+            client: msg.sender,
+            provider: provider,
+            token: token,
+            depositAmount: maxAmount,
+            settledAmount: 0,
+            lastSequenceNumber: 0,
+            deadline: deadline,
+            challengeExpiry: 0,
+            status: ChannelStatus.OPEN
+        });
+        _channelsByClient[msg.sender].push(channelId);
+        _channelsByProvider[provider].push(channelId);
+        emit ChannelOpened(channelId, msg.sender, provider, token, maxAmount, deadline);
+    }
+
+    function closeChannel(bytes32 channelId, bytes calldata finalStateBytes) external nonReentrant {
+        Channel storage ch = channels[channelId];
+        require(ch.client != address(0), "ServiceAgreement: channel not found");
+        require(ch.status == ChannelStatus.OPEN, "ServiceAgreement: channel not OPEN");
+        require(msg.sender == ch.client || msg.sender == ch.provider, "ServiceAgreement: not a party");
+        ChannelState memory state = abi.decode(finalStateBytes, (ChannelState));
+        require(state.channelId == channelId, "ServiceAgreement: channelId mismatch");
+        require(state.token == ch.token, "ServiceAgreement: token mismatch");
+        require(state.cumulativePayment <= ch.depositAmount, "ServiceAgreement: payment exceeds deposit");
+        require(state.sequenceNumber > 0, "ServiceAgreement: zero sequence number");
+        _verifyChannelStateSigs(ch, state);
+        ch.status = ChannelStatus.CLOSING;
+        ch.lastSequenceNumber = state.sequenceNumber;
+        ch.settledAmount = state.cumulativePayment;
+        ch.challengeExpiry = block.timestamp + CHALLENGE_WINDOW;
+        emit ChannelClosing(channelId, state.sequenceNumber, state.cumulativePayment, ch.challengeExpiry);
+    }
+
+    function challengeChannel(bytes32 channelId, bytes calldata latestStateBytes) external nonReentrant {
+        Channel storage ch = channels[channelId];
+        require(ch.client != address(0), "ServiceAgreement: channel not found");
+        require(ch.status == ChannelStatus.CLOSING || ch.status == ChannelStatus.OPEN, "ServiceAgreement: not challengeable");
+        require(msg.sender == ch.client || msg.sender == ch.provider, "ServiceAgreement: not a party");
+        if (ch.status == ChannelStatus.CLOSING) {
+            require(block.timestamp <= ch.challengeExpiry, "ServiceAgreement: challenge window expired");
+        }
+        ChannelState memory state = abi.decode(latestStateBytes, (ChannelState));
+        require(state.channelId == channelId, "ServiceAgreement: channelId mismatch");
+        require(state.token == ch.token, "ServiceAgreement: token mismatch");
+        require(state.cumulativePayment <= ch.depositAmount, "ServiceAgreement: payment exceeds deposit");
+        require(state.sequenceNumber > ch.lastSequenceNumber, "ServiceAgreement: sequence not higher");
+        _verifyChannelStateSigs(ch, state);
+        // Challenge wins immediately — settle now
+        address badFaithCloser = ch.status == ChannelStatus.CLOSING ? (msg.sender == ch.client ? ch.provider : ch.client) : address(0);
+        ch.status = ChannelStatus.SETTLED;
+        ch.settledAmount = state.cumulativePayment;
+        ch.lastSequenceNumber = state.sequenceNumber;
+        emit ChannelChallenged(channelId, msg.sender, state.sequenceNumber, state.cumulativePayment);
+        _settleChannel(channelId, ch);
+        // Trust penalty for bad-faith closer
+        if (badFaithCloser != address(0) && trustRegistry != address(0)) {
+            try ITrustRegistry(trustRegistry).recordAnomaly(badFaithCloser, msg.sender, "session-channel-bad-faith", ch.depositAmount) {} catch {
+                emit TrustUpdateFailed(0, badFaithCloser, "channel:bad-faith-close");
+            }
+        }
+    }
+
+    function finaliseChallenge(bytes32 channelId) external nonReentrant {
+        Channel storage ch = channels[channelId];
+        require(ch.client != address(0), "ServiceAgreement: channel not found");
+        require(ch.status == ChannelStatus.CLOSING, "ServiceAgreement: not CLOSING");
+        require(block.timestamp > ch.challengeExpiry, "ServiceAgreement: challenge window open");
+        ch.status = ChannelStatus.SETTLED;
+        _settleChannel(channelId, ch);
+        // Clean close — positive trust for both
+        _updateChannelTrust(channelId, ch, true, false);
+    }
+
+    function reclaimExpiredChannel(bytes32 channelId) external nonReentrant {
+        Channel storage ch = channels[channelId];
+        require(ch.client != address(0), "ServiceAgreement: channel not found");
+        require(msg.sender == ch.client, "ServiceAgreement: not client");
+        require(ch.status == ChannelStatus.OPEN, "ServiceAgreement: channel not OPEN");
+        require(block.timestamp > ch.deadline, "ServiceAgreement: deadline not passed");
+        ch.status = ChannelStatus.SETTLED;
+        ch.settledAmount = 0;
+        uint256 reclaimAmount = ch.depositAmount;
+        emit ChannelExpiredReclaimed(channelId, ch.client, reclaimAmount);
+        _releaseEscrow(ch.token, ch.client, reclaimAmount);
+        // Provider non-response penalty
+        if (trustRegistry != address(0)) {
+            try ITrustRegistry(trustRegistry).recordAnomaly(ch.provider, ch.client, "session-channel-no-close", ch.depositAmount) {} catch {
+                emit TrustUpdateFailed(0, ch.provider, "channel:no-close");
+            }
+        }
+    }
+
+    function getChannel(bytes32 channelId) external view returns (Channel memory) {
+        require(channels[channelId].client != address(0), "ServiceAgreement: channel not found");
+        return channels[channelId];
+    }
+
+    function getChannelsByClient(address client) external view returns (bytes32[] memory) {
+        return _channelsByClient[client];
+    }
+
+    function getChannelsByProvider(address provider) external view returns (bytes32[] memory) {
+        return _channelsByProvider[provider];
+    }
+
+    function _settleChannel(bytes32 channelId, Channel storage ch) internal {
+        uint256 providerAmount = ch.settledAmount;
+        uint256 clientRefund = ch.depositAmount - ch.settledAmount;
+        emit ChannelSettled(channelId, ch.provider, providerAmount, clientRefund);
+        if (providerAmount > 0) _releaseEscrow(ch.token, ch.provider, providerAmount);
+        if (clientRefund > 0) _releaseEscrow(ch.token, ch.client, clientRefund);
+    }
+
+    function _updateChannelTrust(bytes32, Channel storage ch, bool providerSuccess, bool clientSuccess) internal {
+        if (trustRegistry == address(0)) return;
+        if (providerSuccess) {
+            try ITrustRegistry(trustRegistry).recordSuccess(ch.provider, ch.client, "session-channel", ch.settledAmount) {} catch {}
+        }
+        if (clientSuccess) {
+            try ITrustRegistry(trustRegistry).recordSuccess(ch.client, ch.provider, "session-channel", ch.settledAmount) {} catch {}
+        }
+    }
+
+    function _verifyChannelStateSigs(Channel storage ch, ChannelState memory state) internal view {
+        bytes32 messageHash = keccak256(abi.encode(
+            state.channelId,
+            state.sequenceNumber,
+            state.callCount,
+            state.cumulativePayment,
+            state.token,
+            state.timestamp
+        ));
+        bytes32 ethHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
+        address clientSigner = _recoverSigner(ethHash, state.clientSig);
+        address providerSigner = _recoverSigner(ethHash, state.providerSig);
+        require(clientSigner == ch.client, "ServiceAgreement: invalid client sig");
+        require(providerSigner == ch.provider, "ServiceAgreement: invalid provider sig");
+    }
+
+    function _recoverSigner(bytes32 hash, bytes memory sig) internal pure returns (address) {
+        require(sig.length == 65, "ServiceAgreement: invalid sig length");
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := mload(add(sig, 32))
+            s := mload(add(sig, 64))
+            v := byte(0, mload(add(sig, 96)))
+        }
+        if (v < 27) v += 27;
+        return ecrecover(hash, v, r, s);
     }
 
     receive() external payable {}

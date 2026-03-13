@@ -83,3 +83,14 @@ export const ERC20_ABI = [
   "function decimals() external view returns (uint8)",
   "function symbol() external view returns (string)",
 ] as const;
+
+export const WALLET_FACTORY_ABI = [
+  "function createWallet(address owner) external returns (address wallet)",
+  "event WalletCreated(address indexed owner, address indexed wallet)",
+] as const;
+
+export const POLICY_ENGINE_LIMITS_ABI = [
+  "function getSpendLimit(address wallet, string category) external view returns (uint256)",
+  "function setSpendLimit(address wallet, string category, uint256 amount) external",
+  "function getCategories(address wallet) external view returns (string[])",
+] as const;

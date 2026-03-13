@@ -16,10 +16,14 @@ export interface Arc402Config {
   governanceAddress?: string;
   agreementTreeAddress?: string;
   policyEngineAddress?: string;
+  walletFactoryAddress?: string;
+  walletContractAddress?: string;
 }
 
 const CONFIG_DIR = path.join(os.homedir(), ".arc402");
 const CONFIG_PATH = process.env.ARC402_CONFIG || path.join(CONFIG_DIR, "config.json");
+
+export const getConfigPath = () => CONFIG_PATH;
 
 export function loadConfig(): Arc402Config {
   if (!fs.existsSync(CONFIG_PATH)) {
@@ -47,6 +51,7 @@ export const NETWORK_DEFAULTS: Record<string, Partial<Arc402Config> & { usdcAddr
     rpcUrl: "https://sepolia.base.org",
     trustRegistryAddress: "0xdA1D377991B2E580991B0DD381CdD635dd71aC39",
     usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    walletFactoryAddress: "0xD560C22aD5372Aa830ee5ffBFa4a5D9f528e7B87",
   },
 };
 

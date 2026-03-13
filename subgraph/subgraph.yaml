@@ -20,17 +20,17 @@ dataSources:
         - name: AgentRegistry
           file: ./abis/AgentRegistry.json
       eventHandlers:
-        - event: AgentRegistered(address,string,string,uint256)
+        - event: AgentRegistered(indexed address,string,string,uint256)
           handler: handleAgentRegistered
-        - event: AgentUpdated(address,string,string)
+        - event: AgentUpdated(indexed address,string,string)
           handler: handleAgentUpdated
-        - event: AgentDeactivated(address)
+        - event: AgentDeactivated(indexed address)
           handler: handleAgentDeactivated
-        - event: AgentReactivated(address)
+        - event: AgentReactivated(indexed address)
           handler: handleAgentReactivated
-        - event: EndpointChanged(address,string,string,uint256)
+        - event: EndpointChanged(indexed address,string,string,uint256)
           handler: handleEndpointChanged
-        - event: HeartbeatSubmitted(address,uint256,uint256,uint256,uint256,uint256)
+        - event: HeartbeatSubmitted(indexed address,uint256,uint256,uint256,uint256,uint256)
           handler: handleHeartbeatSubmitted
       file: ./src/agentRegistry.ts
 
@@ -52,7 +52,7 @@ dataSources:
         - name: WalletFactory
           file: ./abis/WalletFactory.json
       eventHandlers:
-        - event: WalletCreated(address,address)
+        - event: WalletCreated(indexed address,indexed address)
           handler: handleWalletCreated
       file: ./src/walletFactory.ts
 
@@ -74,7 +74,7 @@ dataSources:
         - name: PolicyEngine
           file: ./abis/PolicyEngine.json
       eventHandlers:
-        - event: CategoryLimitSet(address,string,uint256)
+        - event: CategoryLimitSet(indexed address,string,uint256)
           handler: handleCategoryLimitSet
       file: ./src/policyEngine.ts
 
@@ -97,17 +97,17 @@ dataSources:
         - name: ServiceAgreement
           file: ./abis/ServiceAgreement.json
       eventHandlers:
-        - event: AgreementProposed(uint256,address,address,string,uint256,address,uint256)
+        - event: AgreementProposed(indexed uint256,indexed address,indexed address,string,uint256,address,uint256)
           handler: handleAgreementProposed
-        - event: AgreementAccepted(uint256,address)
+        - event: AgreementAccepted(indexed uint256,indexed address)
           handler: handleAgreementAccepted
-        - event: AgreementFulfilled(uint256,address,bytes32)
+        - event: AgreementFulfilled(indexed uint256,indexed address,bytes32)
           handler: handleAgreementFulfilled
-        - event: AgreementDisputed(uint256,address,string)
+        - event: AgreementDisputed(indexed uint256,indexed address,string)
           handler: handleAgreementDisputed
-        - event: AgreementCancelled(uint256,address)
+        - event: AgreementCancelled(indexed uint256,indexed address)
           handler: handleAgreementCancelled
-        - event: DetailedDisputeResolved(uint256,uint8,uint256,uint256)
+        - event: DetailedDisputeResolved(indexed uint256,uint8,uint256,uint256)
           handler: handleDisputeResolved
       file: ./src/serviceAgreement.ts
 
@@ -129,17 +129,17 @@ dataSources:
         - name: SessionChannels
           file: ./abis/SessionChannels.json
       eventHandlers:
-        - event: ChannelOpened(bytes32,address,address,address,uint256,uint256)
+        - event: ChannelOpened(indexed bytes32,indexed address,indexed address,address,uint256,uint256)
           handler: handleChannelOpened
-        - event: ChannelClosing(bytes32,uint256,uint256,uint256)
+        - event: ChannelClosing(indexed bytes32,uint256,uint256,uint256)
           handler: handleChannelClosing
-        - event: ChannelSettled(bytes32,address,uint256,uint256)
+        - event: ChannelSettled(indexed bytes32,indexed address,uint256,uint256)
           handler: handleChannelSettled
-        - event: ChannelChallenged(bytes32,address,uint256,uint256)
+        - event: ChannelChallenged(indexed bytes32,indexed address,uint256,uint256)
           handler: handleChannelChallenged
-        - event: ChallengeFinalised(bytes32,address,uint256)
+        - event: ChallengeFinalised(indexed bytes32,indexed address,uint256)
           handler: handleChallengeFinalised
-        - event: ChannelExpiredReclaimed(bytes32,address,uint256)
+        - event: ChannelExpiredReclaimed(indexed bytes32,indexed address,uint256)
           handler: handleChannelExpired
       file: ./src/sessionChannels.ts
 
@@ -161,9 +161,9 @@ dataSources:
         - name: TrustRegistryV2
           file: ./abis/TrustRegistryV2.json
       eventHandlers:
-        - event: WalletInitialized(address,uint256)
+        - event: WalletInitialized(indexed address,uint256)
           handler: handleWalletInitialized
-        - event: ScoreUpdated(address,uint256,string,int256)
+        - event: ScoreUpdated(indexed address,uint256,string,int256)
           handler: handleScoreUpdated
       file: ./src/trustRegistry.ts
 
@@ -184,6 +184,6 @@ dataSources:
         - name: ReputationOracle
           file: ./abis/ReputationOracle.json
       eventHandlers:
-        - event: SignalPublished(address,address,uint8,bytes32,uint256,bool)
+        - event: SignalPublished(indexed address,indexed address,uint8,bytes32,uint256,bool)
           handler: handleSignalPublished
       file: ./src/reputationOracle.ts

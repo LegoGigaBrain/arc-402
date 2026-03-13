@@ -121,6 +121,11 @@ contract PolicyEngine is IPolicyEngine {
         emit DailyCategoryLimitSet(wallet, category, limit);
     }
 
+    /// @dev Uses block.timestamp for rolling daily window tracking.
+    ///      Validator timestamp manipulation is bounded to ~12 seconds.
+    ///      Daily window is 86400 seconds; 12s = 0.014% max drift.
+    ///      Formally documented in SECURITY-ASSUMPTIONS-RC0.md (SWC-116 accepted risk).
+    // slither-disable-next-line timestamp
     function validateSpend(
         address wallet,
         string calldata category,
@@ -163,6 +168,7 @@ contract PolicyEngine is IPolicyEngine {
 
     /// @notice Record a validated spend. Only callable by the wallet itself or its registered owner.
     /// @dev ARC402Wallet MUST call this immediately after validateSpend returns (true, "").
+    // slither-disable-next-line timestamp
     function recordSpend(
         address wallet,
         string calldata category,

@@ -43,6 +43,8 @@ export const SERVICE_AGREEMENT_ABI = [
   "function expiredCancel(uint256 agreementId) external",
   "function resolveDispute(uint256 agreementId, bool favorProvider) external",
   "function resolveDisputeDetailed(uint256 agreementId, uint8 outcome, uint256 providerAward, uint256 clientAward) external",
+  "function openDisputeWithMode(uint256 agreementId, uint8 mode, uint8 class, string reason) external payable",
+  "function ownerResolveDispute(uint256 agreementId, bool favorProvider) external",
   "function canDirectDispute(uint256 agreementId, uint8 directReason) external view returns (bool)",
   "function getAgreement(uint256 id) external view returns (tuple(uint256 id, address client, address provider, string serviceType, string description, uint256 price, address token, uint256 deadline, bytes32 deliverablesHash, uint8 status, uint256 createdAt, uint256 resolvedAt, uint256 verifyWindowEnd, bytes32 committedHash))",
   "function getDisputeCase(uint256 agreementId) external view returns (tuple(uint256 agreementId, uint256 openedAt, uint256 responseDeadlineAt, uint8 outcome, uint256 providerAward, uint256 clientAward, bool humanReviewRequested, uint256 evidenceCount))",
@@ -93,4 +95,8 @@ export const POLICY_ENGINE_LIMITS_ABI = [
   "function getSpendLimit(address wallet, string category) external view returns (uint256)",
   "function setSpendLimit(address wallet, string category, uint256 amount) external",
   "function getCategories(address wallet) external view returns (string[])",
+] as const;
+
+export const ARC402_WALLET_EXECUTE_ABI = [
+  "function executeContractCall((address target, bytes data, uint256 value, uint256 minReturnValue, uint256 maxApprovalAmount, address approvalToken) params) external returns (bytes memory)",
 ] as const;

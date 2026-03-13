@@ -3,11 +3,13 @@ import { ArbitrationVote, DirectDisputeReason, DisputeClass, DisputeMode, Disput
 import { loadConfig } from "../config";
 import { getClient, requireSigner } from "../client";
 import { hashFile, hashString } from "../utils/hash";
+import { printSenderInfo, executeContractWriteViaWallet } from "../wallet-router";
+import { SERVICE_AGREEMENT_ABI } from "../abis";
 
 export function registerDisputeCommand(program: Command): void {
   const dispute = program.command("dispute").description("Formal dispute workflow; remediation-first by default, with narrow hard-fail direct-dispute exceptions");
 
-  // Fee quote (requires DisputeArbitration configured)
+  // Fee quote (requires DisputeArbitration configured) — read-only, no wallet routing needed
   dispute.command("fee-quote <agreementId>")
     .description("Get dispute fee quote for an agreement")
     .requiredOption("--price <price>", "Agreement price in wei/token units")
@@ -43,7 +45,6 @@ export function registerDisputeCommand(program: Command): void {
       const config = loadConfig();
       if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
       const { signer } = await requireSigner(config);
-      const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
       const modeMap: Record<string, DisputeMode> = { unilateral: DisputeMode.UNILATERAL, mutual: DisputeMode.MUTUAL };
       const classMap: Record<string, DisputeClass> = {
         'hard-failure': DisputeClass.HARD_FAILURE,
@@ -53,11 +54,22 @@ export function registerDisputeCommand(program: Command): void {
       const mode = modeMap[String(opts.mode).toLowerCase()];
       const disputeClass = classMap[String(opts.class).toLowerCase()];
       if (!mode || !disputeClass) throw new Error("Invalid --mode or --class");
-      await client.openDisputeWithMode(BigInt(agreementId), mode, disputeClass, opts.reason, BigInt(opts.fee));
+      printSenderInfo(config);
+      if (config.walletContractAddress) {
+        await executeContractWriteViaWallet(
+          config.walletContractAddress, signer, config.serviceAgreementAddress,
+          SERVICE_AGREEMENT_ABI, "openDisputeWithMode",
+          [BigInt(agreementId), mode, disputeClass, opts.reason],
+          BigInt(opts.fee),
+        );
+      } else {
+        const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+        await client.openDisputeWithMode(BigInt(agreementId), mode, disputeClass, opts.reason, BigInt(opts.fee));
+      }
       console.log(`dispute opened for ${agreementId} (${opts.mode} / ${opts.class})`);
     });
 
-  // Join mutual dispute (respondent pays their half)
+  // Join mutual dispute (respondent pays their half) — DisputeArbitration contract, no wallet routing
   dispute.command("join <agreementId>")
     .description("Join a mutual dispute as respondent (pays half the fee)")
     .option("--fee <fee>", "Half-fee in wei (for ETH agreements)", "0")
@@ -75,8 +87,9 @@ export function registerDisputeCommand(program: Command): void {
     .option("--escalated", "Use escalateToDispute after remediation", false)
     .option("--direct <type>", "Direct-dispute hard-fail reason: no-delivery|deadline-breach|invalid-deliverable|safety-critical")
     .action(async (id, opts) => {
-      const config = loadConfig(); if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
-      const { signer } = await requireSigner(config); const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+      const config = loadConfig();
+      if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+      const { signer } = await requireSigner(config);
       const directMap: Record<string, DirectDisputeReason> = {
         'no-delivery': DirectDisputeReason.NO_DELIVERY,
         'deadline-breach': DirectDisputeReason.HARD_DEADLINE_BREACH,
@@ -84,27 +97,65 @@ export function registerDisputeCommand(program: Command): void {
         'safety-critical': DirectDisputeReason.SAFETY_CRITICAL_VIOLATION,
       };
       if (opts.escalated && opts.direct) throw new Error('Choose either --escalated or --direct, not both');
-      if (opts.direct) {
-        const directReason = directMap[String(opts.direct).toLowerCase()];
-        if (directReason === undefined) throw new Error('Unsupported --direct reason');
-        await client.directDispute(BigInt(id), directReason, opts.reason);
-      } else if (opts.escalated) {
-        await client.escalateToDispute(BigInt(id), opts.reason);
+      printSenderInfo(config);
+      if (config.walletContractAddress) {
+        if (opts.direct) {
+          const directReason = directMap[String(opts.direct).toLowerCase()];
+          if (directReason === undefined) throw new Error('Unsupported --direct reason');
+          await executeContractWriteViaWallet(
+            config.walletContractAddress, signer, config.serviceAgreementAddress,
+            SERVICE_AGREEMENT_ABI, "directDispute", [BigInt(id), directReason, opts.reason],
+          );
+        } else if (opts.escalated) {
+          await executeContractWriteViaWallet(
+            config.walletContractAddress, signer, config.serviceAgreementAddress,
+            SERVICE_AGREEMENT_ABI, "escalateToDispute", [BigInt(id), opts.reason],
+          );
+        } else {
+          await executeContractWriteViaWallet(
+            config.walletContractAddress, signer, config.serviceAgreementAddress,
+            SERVICE_AGREEMENT_ABI, "dispute", [BigInt(id), opts.reason],
+          );
+        }
       } else {
-        await client.dispute(BigInt(id), opts.reason);
+        const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+        if (opts.direct) {
+          const directReason = directMap[String(opts.direct).toLowerCase()];
+          if (directReason === undefined) throw new Error('Unsupported --direct reason');
+          await client.directDispute(BigInt(id), directReason, opts.reason);
+        } else if (opts.escalated) {
+          await client.escalateToDispute(BigInt(id), opts.reason);
+        } else {
+          await client.dispute(BigInt(id), opts.reason);
+        }
       }
       console.log(`dispute opened for ${id}`);
     });
+
   dispute.command("evidence <id>").requiredOption("--type <type>", "transcript|deliverable|acceptance|communication|external|other").option("--file <path>").option("--text <text>").option("--uri <uri>", "External evidence URI", "").action(async (id, opts) => {
-    const config = loadConfig(); if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
-    const { signer } = await requireSigner(config); const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+    const config = loadConfig();
+    if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+    const { signer } = await requireSigner(config);
     const mapping: Record<string, EvidenceType> = { transcript: EvidenceType.TRANSCRIPT, deliverable: EvidenceType.DELIVERABLE, acceptance: EvidenceType.ACCEPTANCE_CRITERIA, communication: EvidenceType.COMMUNICATION, external: EvidenceType.EXTERNAL_REFERENCE, other: EvidenceType.OTHER };
     const hash = opts.file ? hashFile(opts.file) : hashString(opts.text ?? opts.uri ?? `evidence:${id}`);
-    await client.submitDisputeEvidence(BigInt(id), mapping[String(opts.type).toLowerCase()] ?? EvidenceType.OTHER, hash, opts.uri);
+    const evidenceType = mapping[String(opts.type).toLowerCase()] ?? EvidenceType.OTHER;
+    printSenderInfo(config);
+    if (config.walletContractAddress) {
+      await executeContractWriteViaWallet(
+        config.walletContractAddress, signer, config.serviceAgreementAddress,
+        SERVICE_AGREEMENT_ABI, "submitDisputeEvidence", [BigInt(id), evidenceType, hash, opts.uri],
+      );
+    } else {
+      const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+      await client.submitDisputeEvidence(BigInt(id), evidenceType, hash, opts.uri);
+    }
     console.log(`evidence submitted for ${id} hash=${hash}`);
   });
+
+  // status — read-only, no wallet routing needed
   dispute.command("status <id>").option("--json").action(async (id, opts) => {
-    const config = loadConfig(); if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+    const config = loadConfig();
+    if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
     const { provider } = await getClient(config); const client = new ServiceAgreementClient(config.serviceAgreementAddress, provider);
     const result = {
       case: await client.getDisputeCase(BigInt(id)),
@@ -113,23 +164,36 @@ export function registerDisputeCommand(program: Command): void {
     };
     console.log(JSON.stringify(result, (_k, value) => typeof value === 'bigint' ? value.toString() : value, opts.json ? 2 : 2));
   });
+
   dispute.command("nominate <id>")
     .description("Nominate an arbitrator during the on-chain arbitration phase")
     .requiredOption("--arbitrator <address>")
     .action(async (id, opts) => {
-      const config = loadConfig(); if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
-      const { signer } = await requireSigner(config); const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
-      await client.nominateArbitrator(BigInt(id), opts.arbitrator);
+      const config = loadConfig();
+      if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+      const { signer } = await requireSigner(config);
+      printSenderInfo(config);
+      if (config.walletContractAddress) {
+        await executeContractWriteViaWallet(
+          config.walletContractAddress, signer, config.serviceAgreementAddress,
+          SERVICE_AGREEMENT_ABI, "nominateArbitrator", [BigInt(id), opts.arbitrator],
+        );
+      } else {
+        const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+        await client.nominateArbitrator(BigInt(id), opts.arbitrator);
+      }
       console.log(`arbitrator nominated for ${id}: ${opts.arbitrator}`);
     });
+
   dispute.command("vote <id>")
     .description("Cast an arbitration vote on-chain")
     .requiredOption("--vote <vote>", "provider|refund|split|human-review")
     .option("--provider-award <amount>", "Wei/token units", "0")
     .option("--client-award <amount>", "Wei/token units", "0")
     .action(async (id, opts) => {
-      const config = loadConfig(); if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
-      const { signer } = await requireSigner(config); const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+      const config = loadConfig();
+      if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+      const { signer } = await requireSigner(config);
       const mapping: Record<string, ArbitrationVote> = {
         provider: ArbitrationVote.PROVIDER_WINS,
         refund: ArbitrationVote.CLIENT_REFUND,
@@ -138,23 +202,56 @@ export function registerDisputeCommand(program: Command): void {
       };
       const vote = mapping[String(opts.vote).toLowerCase()];
       if (vote === undefined) throw new Error('Unsupported --vote value');
-      await client.castArbitrationVote(BigInt(id), vote, BigInt(opts.providerAward), BigInt(opts.clientAward));
+      printSenderInfo(config);
+      if (config.walletContractAddress) {
+        await executeContractWriteViaWallet(
+          config.walletContractAddress, signer, config.serviceAgreementAddress,
+          SERVICE_AGREEMENT_ABI, "castArbitrationVote",
+          [BigInt(id), vote, BigInt(opts.providerAward), BigInt(opts.clientAward)],
+        );
+      } else {
+        const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+        await client.castArbitrationVote(BigInt(id), vote, BigInt(opts.providerAward), BigInt(opts.clientAward));
+      }
       console.log(`arbitration vote recorded for ${id}`);
     });
+
   dispute.command("human <id>")
     .description("Request human escalation when arbitration stalls or requires human backstop")
     .requiredOption("--reason <reason>")
     .action(async (id, opts) => {
-      const config = loadConfig(); if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
-      const { signer } = await requireSigner(config); const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
-      await client.requestHumanEscalation(BigInt(id), opts.reason);
+      const config = loadConfig();
+      if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+      const { signer } = await requireSigner(config);
+      printSenderInfo(config);
+      if (config.walletContractAddress) {
+        await executeContractWriteViaWallet(
+          config.walletContractAddress, signer, config.serviceAgreementAddress,
+          SERVICE_AGREEMENT_ABI, "requestHumanEscalation", [BigInt(id), opts.reason],
+        );
+      } else {
+        const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+        await client.requestHumanEscalation(BigInt(id), opts.reason);
+      }
       console.log(`human escalation requested for ${id}`);
     });
+
   dispute.command("resolve <id>").description("Owner-only admin path if you are operating the dispute contract").requiredOption("--outcome <outcome>", "provider|refund|partial-provider|partial-client|mutual-cancel|human-review").option("--provider-award <amount>", "Wei/token units", "0").option("--client-award <amount>", "Wei/token units", "0").action(async (id, opts) => {
-    const config = loadConfig(); if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
-    const { signer } = await requireSigner(config); const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+    const config = loadConfig();
+    if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+    const { signer } = await requireSigner(config);
     const mapping: Record<string, DisputeOutcome> = { provider: DisputeOutcome.PROVIDER_WINS, refund: DisputeOutcome.CLIENT_REFUND, 'partial-provider': DisputeOutcome.PARTIAL_PROVIDER, 'partial-client': DisputeOutcome.PARTIAL_CLIENT, 'mutual-cancel': DisputeOutcome.MUTUAL_CANCEL, 'human-review': DisputeOutcome.HUMAN_REVIEW_REQUIRED };
-    await client.resolveDisputeDetailed(BigInt(id), mapping[String(opts.outcome)], BigInt(opts.providerAward), BigInt(opts.clientAward));
+    printSenderInfo(config);
+    if (config.walletContractAddress) {
+      await executeContractWriteViaWallet(
+        config.walletContractAddress, signer, config.serviceAgreementAddress,
+        SERVICE_AGREEMENT_ABI, "resolveDisputeDetailed",
+        [BigInt(id), mapping[String(opts.outcome)], BigInt(opts.providerAward), BigInt(opts.clientAward)],
+      );
+    } else {
+      const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+      await client.resolveDisputeDetailed(BigInt(id), mapping[String(opts.outcome)], BigInt(opts.providerAward), BigInt(opts.clientAward));
+    }
     console.log(`resolved ${id}`);
   });
 
@@ -165,8 +262,16 @@ export function registerDisputeCommand(program: Command): void {
       const config = loadConfig();
       if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
       const { signer } = await requireSigner(config);
-      const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
-      await client.ownerResolveDispute(BigInt(agreementId), !!opts.favorProvider);
+      printSenderInfo(config);
+      if (config.walletContractAddress) {
+        await executeContractWriteViaWallet(
+          config.walletContractAddress, signer, config.serviceAgreementAddress,
+          SERVICE_AGREEMENT_ABI, "ownerResolveDispute", [BigInt(agreementId), !!opts.favorProvider],
+        );
+      } else {
+        const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+        await client.ownerResolveDispute(BigInt(agreementId), !!opts.favorProvider);
+      }
       console.log(`owner resolved agreement ${agreementId} — favor provider: ${!!opts.favorProvider}`);
     });
 }

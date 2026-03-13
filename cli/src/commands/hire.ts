@@ -5,6 +5,8 @@ import { getUsdcAddress, loadConfig } from "../config";
 import { requireSigner } from "../client";
 import { hashFile, hashString } from "../utils/hash";
 import { parseDuration } from "../utils/time";
+import { printSenderInfo, executeContractWriteViaWallet } from "../wallet-router";
+import { SERVICE_AGREEMENT_ABI } from "../abis";
 
 const sessionManager = new SessionManager();
 
@@ -60,16 +62,6 @@ export function registerHireCommand(program: Command): void {
       }
       if (price <= 0n) throw new Error(`--max must be greater than zero`);
 
-      if (useUsdc) {
-        const usdc = new ethers.Contract(
-          token,
-          ["function approve(address spender,uint256 amount) external returns (bool)", "function allowance(address owner,address spender) external view returns (uint256)"],
-          signer
-        );
-        const allowance = await usdc.allowance(address, config.serviceAgreementAddress);
-        if (allowance < price) await (await usdc.approve(config.serviceAgreementAddress, price)).wait();
-      }
-
       // Use spec hash as deliverables hash; if transcript exists, incorporate it
       const baseHash = opts.deliverableSpec ? hashFile(opts.deliverableSpec) : hashString(opts.task);
       const deliverablesHash = transcriptHash
@@ -87,28 +79,75 @@ export function registerHireCommand(program: Command): void {
         deadlineSeconds = parseDuration(deadlineArg);
       }
 
-      const result = await client.propose({
-        provider: opts.agent,
-        serviceType: opts.serviceType,
-        description: opts.task,
-        price,
-        token,
-        deadline: deadlineSeconds,
-        deliverablesHash,
-      });
+      printSenderInfo(config);
+
+      let agreementId: bigint;
+
+      if (config.walletContractAddress) {
+        // Smart wallet path — wallet handles per-tx USDC approval via maxApprovalAmount
+        const tx = await executeContractWriteViaWallet(
+          config.walletContractAddress,
+          signer,
+          config.serviceAgreementAddress,
+          SERVICE_AGREEMENT_ABI,
+          "propose",
+          [opts.agent, opts.serviceType, opts.task, price, token, deadlineSeconds, deliverablesHash],
+          useUsdc ? 0n : price,   // ETH value forwarded to SA; 0 for USDC agreements
+          useUsdc ? token : ethers.ZeroAddress,  // approvalToken for USDC
+          useUsdc ? price : 0n,   // maxApprovalAmount for USDC
+        );
+        const receipt = await tx.wait();
+        const saInterface = new ethers.Interface(SERVICE_AGREEMENT_ABI);
+        let found = false;
+        for (const log of receipt!.logs) {
+          if (log.address.toLowerCase() === config.serviceAgreementAddress.toLowerCase()) {
+            try {
+              const parsed = saInterface.parseLog(log);
+              if (parsed?.name === "AgreementProposed") {
+                agreementId = parsed.args[0] as bigint;
+                found = true;
+                break;
+              }
+            } catch { /* skip unparseable logs */ }
+          }
+        }
+        if (!found) throw new Error("AgreementProposed event not found in transaction receipt");
+      } else {
+        // EOA path — existing behaviour
+        if (useUsdc) {
+          const usdc = new ethers.Contract(
+            token,
+            ["function approve(address spender,uint256 amount) external returns (bool)", "function allowance(address owner,address spender) external view returns (uint256)"],
+            signer
+          );
+          const allowance = await usdc.allowance(address, config.serviceAgreementAddress);
+          if (allowance < price) await (await usdc.approve(config.serviceAgreementAddress, price)).wait();
+        }
+
+        const result = await client.propose({
+          provider: opts.agent,
+          serviceType: opts.serviceType,
+          description: opts.task,
+          price,
+          token,
+          deadline: deadlineSeconds,
+          deliverablesHash,
+        });
+        agreementId = result.agreementId;
+      }
 
       if (opts.session) {
-        sessionManager.setOnChainId(opts.session, result.agreementId.toString());
+        sessionManager.setOnChainId(opts.session, agreementId!.toString());
       }
 
       if (opts.json) {
-        const output: Record<string, unknown> = { agreementId: result.agreementId.toString(), deliverablesHash };
+        const output: Record<string, unknown> = { agreementId: agreementId!.toString(), deliverablesHash };
         if (transcriptHash) output.transcriptHash = transcriptHash;
         if (opts.session) output.sessionId = opts.session;
         return console.log(JSON.stringify(output, null, 2));
       }
 
-      console.log(`agreementId=${result.agreementId} deliverablesHash=${deliverablesHash}`);
+      console.log(`agreementId=${agreementId!} deliverablesHash=${deliverablesHash}`);
       if (transcriptHash) console.log(`transcriptHash=${transcriptHash}`);
     });
 }

@@ -1,4 +1,0 @@
-[11:51:53] Found 37 *.sol files in 0.06 s                          detect.py:729
-[11:51:54] Loaded previous build in 1.15 s                       compiler.py:869
-           Compiled 0 files using 0 solc runs in 0.00 s         compiler.py:1249
-           Processed compilation results in 0.01 s              compiler.py:1502

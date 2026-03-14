@@ -37,3 +37,4 @@ E2E-TEST-SPEC.md
 .vercelignore
 python-sdk/examples/
 docs/audit-briefs/
+docs/post-audit-launch-checklist.md

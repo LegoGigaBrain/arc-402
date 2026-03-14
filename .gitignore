@@ -35,3 +35,5 @@ tools/
 CLI-SPEC.md
 E2E-TEST-SPEC.md
 .vercelignore
+python-sdk/examples/
+docs/audit-briefs/

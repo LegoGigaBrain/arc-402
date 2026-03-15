@@ -419,6 +419,7 @@ We invite security researchers to probe the live contracts.
 ## Architecture
 
 - [`docs/architecture/key-model.md`](./docs/architecture/key-model.md) - master key, smart wallet, and agent key explained. Read this before building.
+- [`docs/wallet-governance.md`](./docs/wallet-governance.md) - every governance parameter: spending limits, velocity cap, guardian key, X402 interceptor, registry upgrade timelock. With CLI commands for each.
 
 ---
 

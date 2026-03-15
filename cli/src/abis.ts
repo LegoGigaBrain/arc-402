@@ -124,3 +124,23 @@ export const ARC402_WALLET_GUARDIAN_ABI = [
   "event WalletUnfrozen(address indexed by, uint256 timestamp)",
   "event GuardianUpdated(address indexed newGuardian)",
 ] as const;
+
+export const ARC402_WALLET_REGISTRY_ABI = [
+  "function proposeRegistryUpdate(address newRegistry) external",
+  "function executeRegistryUpdate() external",
+  "function cancelRegistryUpdate() external",
+  "function pendingRegistry() external view returns (address)",
+  "function registryUpdateUnlockAt() external view returns (uint256)",
+  "function registry() external view returns (address)",
+] as const;
+
+export const ARC402_WALLET_OWNER_ABI = [
+  // Owner-only setters
+  "function setAuthorizedInterceptor(address interceptor) external",
+  "function setVelocityLimit(uint256 limit) external",
+  "function updatePolicy(bytes32 newPolicyId) external",
+  // State queries
+  "function authorizedInterceptor() external view returns (address)",
+  "function velocityLimit() external view returns (uint256)",
+  "function activePolicyId() external view returns (bytes32)",
+] as const;

@@ -5,7 +5,7 @@ import { ethers } from "ethers";
 import { Arc402Config, getConfigPath, getUsdcAddress, loadConfig, NETWORK_DEFAULTS, saveConfig } from "../config";
 import { getClient, requireSigner } from "../client";
 import { getTrustTier } from "../utils/format";
-import { ARC402_WALLET_GUARDIAN_ABI, POLICY_ENGINE_LIMITS_ABI, TRUST_REGISTRY_ABI, WALLET_FACTORY_ABI } from "../abis";
+import { ARC402_WALLET_GUARDIAN_ABI, ARC402_WALLET_OWNER_ABI, ARC402_WALLET_REGISTRY_ABI, POLICY_ENGINE_LIMITS_ABI, TRUST_REGISTRY_ABI, WALLET_FACTORY_ABI } from "../abis";
 import { connectPhoneWallet, sendTransactionWithSession, requestPhoneWalletSignature } from "../walletconnect";
 import { requestCoinbaseSmartWalletSignature } from "../coinbase-smart-wallet";
 import { sendTelegramMessage } from "../telegram-notify";
@@ -514,6 +514,65 @@ export function registerWalletCommands(program: Command): void {
       }
     });
 
+  walletPolicy.command("set <policyId>")
+    .description("Set the active policy ID on ARC402Wallet (phone wallet signs via WalletConnect)")
+    .action(async (policyId) => {
+      const config = loadConfig();
+      if (!config.walletContractAddress) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.walletConnectProjectId) {
+        console.error("walletConnectProjectId not set in config. Run `arc402 config set walletConnectProjectId <id>`.");
+        process.exit(1);
+      }
+
+      // Normalise policyId to bytes32 hex
+      let policyIdHex: string;
+      try {
+        policyIdHex = ethers.zeroPadValue(ethers.hexlify(policyId.startsWith("0x") ? policyId : ethers.toUtf8Bytes(policyId)), 32);
+      } catch {
+        console.error("Invalid policyId — must be a hex string (0x…) or UTF-8 label.");
+        process.exit(1);
+      }
+
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const ownerInterface = new ethers.Interface(ARC402_WALLET_OWNER_ABI);
+
+      let currentPolicy = "(unknown)";
+      try {
+        const walletContract = new ethers.Contract(config.walletContractAddress, ARC402_WALLET_OWNER_ABI, provider);
+        currentPolicy = await walletContract.activePolicyId();
+      } catch { /* contract may not be deployed yet */ }
+
+      console.log(`\nWallet:         ${config.walletContractAddress}`);
+      console.log(`Current policy: ${currentPolicy}`);
+      console.log(`New policy:     ${policyIdHex}`);
+
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      const { txHash } = await requestPhoneWalletSignature(
+        config.walletConnectProjectId,
+        chainId,
+        () => ({
+          to: config.walletContractAddress!,
+          data: ownerInterface.encodeFunctionData("updatePolicy", [policyIdHex]),
+          value: "0x0",
+        }),
+        `Approve: update policy to ${policyIdHex}`,
+        telegramOpts,
+        config
+      );
+
+      await provider.waitForTransaction(txHash);
+      console.log(`\n✓ Active policy updated`);
+      console.log(`  Tx: ${txHash}`);
+      console.log(`  Policy: ${policyIdHex}`);
+    });
+
   // ─── freeze (guardian key — emergency wallet freeze) ──────────────────────
   //
   // Uses the guardian private key from config to call ARC402Wallet.freeze() or
@@ -558,10 +617,14 @@ export function registerWalletCommands(program: Command): void {
       }
     });
 
-  // ─── unfreeze (owner key — requires WalletConnect or hot key) ─────────────
+  // ─── unfreeze (owner key — requires WalletConnect) ────────────────────────
+  //
+  // Deliberately uses WalletConnect (phone wallet) so unfreezing requires owner
+  // approval from the phone. Guardian can freeze fast; only owner can unfreeze.
 
   wallet.command("unfreeze")
-    .description("Unfreeze wallet contract. Only the owner can unfreeze — guardian cannot.")
+    .description("Unfreeze wallet contract via owner phone wallet (WalletConnect). Only the owner can unfreeze — guardian cannot.")
+    .option("--hardware", "Hardware wallet mode: show raw wc: URI only")
     .option("--json")
     .action(async (opts) => {
       const config = loadConfig();
@@ -569,46 +632,129 @@ export function registerWalletCommands(program: Command): void {
         console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
         process.exit(1);
       }
-      const { signer } = await requireSigner(config);
-      const walletContract = new ethers.Contract(config.walletContractAddress, ARC402_WALLET_GUARDIAN_ABI, signer);
-      const tx = await walletContract.unfreeze();
-      const receipt = await tx.wait();
+      if (!config.walletConnectProjectId) {
+        console.error("walletConnectProjectId not set in config. Run `arc402 config set walletConnectProjectId <id>`.");
+        process.exit(1);
+      }
+
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const walletInterface = new ethers.Interface(ARC402_WALLET_GUARDIAN_ABI);
+
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      const { client, session, account } = await connectPhoneWallet(
+        config.walletConnectProjectId,
+        chainId,
+        config,
+        { telegramOpts, prompt: "Approve: unfreeze ARC402Wallet", hardware: !!opts.hardware }
+      );
+
+      const networkName = chainId === 8453 ? "Base" : "Base Sepolia";
+      const shortAddr = `${account.slice(0, 6)}...${account.slice(-5)}`;
+      console.log(`\n✓ Connected: ${shortAddr} on ${networkName}`);
+      console.log(`\nWallet to unfreeze: ${config.walletContractAddress}`);
+      console.log("\nPress Enter to send unfreeze(), or Ctrl+C to cancel");
+      await new Promise<void>((resolve) => {
+        const rl = readline.createInterface({ input: process.stdin });
+        const timer = setTimeout(() => { rl.close(); resolve(); }, 5 * 60 * 1000);
+        rl.once("line", () => { clearTimeout(timer); rl.close(); resolve(); });
+      });
+
+      console.log("Sending transaction...");
+      const txHash = await sendTransactionWithSession(client, session, account, chainId, {
+        to: config.walletContractAddress,
+        data: walletInterface.encodeFunctionData("unfreeze", []),
+        value: "0x0",
+      });
+
+      await provider.waitForTransaction(txHash);
       if (opts.json) {
-        console.log(JSON.stringify({ txHash: receipt.hash, walletAddress: config.walletContractAddress }));
+        console.log(JSON.stringify({ txHash, walletAddress: config.walletContractAddress }));
       } else {
-        console.log(`Wallet ${config.walletContractAddress} unfrozen.`);
-        console.log(`Tx: ${receipt.hash}`);
+        console.log(`\n✓ Wallet ${config.walletContractAddress} unfrozen`);
+        console.log(`  Tx: ${txHash}`);
       }
     });
 
   // ─── set-guardian ──────────────────────────────────────────────────────────
+  //
+  // Generates a guardian key locally, then registers it on-chain via the owner's
+  // phone wallet (WalletConnect). Guardian changes require owner approval.
 
   wallet.command("set-guardian")
-    .description("Generate a new guardian key and register it on the wallet contract (owner signs)")
+    .description("Generate a new guardian key and register it on the wallet contract (phone wallet signs via WalletConnect)")
     .option("--guardian-key <key>", "Use an existing private key as the guardian (optional)")
+    .option("--hardware", "Hardware wallet mode: show raw wc: URI only")
     .action(async (opts) => {
       const config = loadConfig();
       if (!config.walletContractAddress) {
         console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
         process.exit(1);
       }
-      const { signer } = await requireSigner(config);
+      if (!config.walletConnectProjectId) {
+        console.error("walletConnectProjectId not set in config. Run `arc402 config set walletConnectProjectId <id>`.");
+        process.exit(1);
+      }
+
       let guardianWallet: ethers.Wallet;
       if (opts.guardianKey) {
-        guardianWallet = new ethers.Wallet(opts.guardianKey);
+        try {
+          guardianWallet = new ethers.Wallet(opts.guardianKey);
+        } catch {
+          console.error("Invalid guardian key. Must be a 0x-prefixed hex string.");
+          process.exit(1);
+        }
       } else {
         guardianWallet = new ethers.Wallet(ethers.Wallet.createRandom().privateKey);
         console.log("Generated new guardian key.");
       }
-      const walletContract = new ethers.Contract(config.walletContractAddress, ARC402_WALLET_GUARDIAN_ABI, signer);
-      const tx = await walletContract.setGuardian(guardianWallet.address);
-      await tx.wait();
+
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const walletInterface = new ethers.Interface(ARC402_WALLET_GUARDIAN_ABI);
+
+      console.log(`\nGuardian address: ${guardianWallet.address}`);
+      console.log(`Wallet contract:  ${config.walletContractAddress}`);
+
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      const { client, session, account } = await connectPhoneWallet(
+        config.walletConnectProjectId,
+        chainId,
+        config,
+        { telegramOpts, prompt: `Approve: set guardian to ${guardianWallet.address}`, hardware: !!opts.hardware }
+      );
+
+      const networkName = chainId === 8453 ? "Base" : "Base Sepolia";
+      const shortAddr = `${account.slice(0, 6)}...${account.slice(-5)}`;
+      console.log(`\n✓ Connected: ${shortAddr} on ${networkName}`);
+      console.log("\nPress Enter to send setGuardian(), or Ctrl+C to cancel");
+      await new Promise<void>((resolve) => {
+        const rl = readline.createInterface({ input: process.stdin });
+        const timer = setTimeout(() => { rl.close(); resolve(); }, 5 * 60 * 1000);
+        rl.once("line", () => { clearTimeout(timer); rl.close(); resolve(); });
+      });
+
+      console.log("Sending transaction...");
+      const txHash = await sendTransactionWithSession(client, session, account, chainId, {
+        to: config.walletContractAddress,
+        data: walletInterface.encodeFunctionData("setGuardian", [guardianWallet.address]),
+        value: "0x0",
+      });
+
+      await provider.waitForTransaction(txHash);
       config.guardianPrivateKey = guardianWallet.privateKey;
       config.guardianAddress = guardianWallet.address;
       saveConfig(config);
-      console.log(`Guardian set to: ${guardianWallet.address}`);
-      console.log(`Guardian private key saved to config.`);
-      console.log(`WARN: The guardian key can freeze your wallet. Store it separately from your hot key.`);
+      console.log(`\n✓ Guardian set to: ${guardianWallet.address}`);
+      console.log(`  Tx: ${txHash}`);
+      console.log(`  Guardian private key saved to config.`);
+      console.log(`  WARN: The guardian key can freeze your wallet. Store it separately from your hot key.`);
     });
 
   // ─── policy-engine freeze / unfreeze (legacy — for PolicyEngine-level freeze) ──
@@ -633,5 +779,355 @@ export function registerWalletCommands(program: Command): void {
       const client = new PolicyClient(config.policyEngineAddress, signer);
       await client.unfreeze(walletAddress);
       console.log(`wallet ${walletAddress} spend unfrozen (PolicyEngine)`);
+    });
+
+  // ─── upgrade-registry ──────────────────────────────────────────────────────
+
+  wallet.command("upgrade-registry <newRegistryAddress>")
+    .description("Propose a registry upgrade on the ARC402Wallet (2-day timelock, phone wallet signs via WalletConnect)")
+    .option("--dry-run", "Show calldata without connecting to wallet")
+    .option("--hardware", "Hardware wallet mode: show raw wc: URI only")
+    .action(async (newRegistryAddress, opts) => {
+      const config = loadConfig();
+      if (!config.walletContractAddress) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.walletConnectProjectId && !opts.dryRun) {
+        console.error("walletConnectProjectId not set in config. Run `arc402 config set walletConnectProjectId <id>`.");
+        process.exit(1);
+      }
+
+      let checksumAddress: string;
+      try {
+        checksumAddress = ethers.getAddress(newRegistryAddress);
+      } catch {
+        console.error(`Invalid address: ${newRegistryAddress}`);
+        process.exit(1);
+      }
+
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const walletInterface = new ethers.Interface(ARC402_WALLET_REGISTRY_ABI);
+
+      let currentRegistry = "(unknown)";
+      try {
+        const walletContract = new ethers.Contract(config.walletContractAddress, ARC402_WALLET_REGISTRY_ABI, provider);
+        currentRegistry = await walletContract.registry();
+      } catch { /* contract may not expose registry() */ }
+
+      // Box: 54-char inner width (║ + 54 + ║ = 56 total)
+      const fromPad = currentRegistry.padEnd(42);
+      console.log(`\n╔══════════════════════════════════════════════════════╗`);
+      console.log(`║     ARC402Wallet Registry Upgrade                    ║`);
+      console.log(`╟──────────────────────────────────────────────────────╢`);
+      console.log(`║  Wallet:   ${config.walletContractAddress}║`);
+      console.log(`║  From:     ${fromPad}║`);
+      console.log(`║  To:       ${checksumAddress}║`);
+      console.log(`║  Timelock: 2 days (cancelable)                       ║`);
+      console.log(`║  Action:   proposeRegistryUpdate()                   ║`);
+      console.log(`╚══════════════════════════════════════════════════════╝\n`);
+
+      const calldata = walletInterface.encodeFunctionData("proposeRegistryUpdate", [checksumAddress]);
+
+      if (opts.dryRun) {
+        console.log("Calldata (dry-run):");
+        console.log(`  To:    ${config.walletContractAddress}`);
+        console.log(`  Data:  ${calldata}`);
+        console.log(`  Value: 0x0`);
+        return;
+      }
+
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      const { client, session, account } = await connectPhoneWallet(
+        config.walletConnectProjectId!,
+        chainId,
+        config,
+        { telegramOpts, prompt: "Approve registry upgrade proposal on ARC402Wallet", hardware: !!opts.hardware }
+      );
+
+      const networkName = chainId === 8453 ? "Base" : "Base Sepolia";
+      const shortAddr = `${account.slice(0, 6)}...${account.slice(-5)}`;
+      console.log(`\n✓ Connected: ${shortAddr} on ${networkName}`);
+
+      console.log("\nPress Enter to send proposeRegistryUpdate(), or Ctrl+C to cancel");
+      await new Promise<void>((resolve) => {
+        const rl = readline.createInterface({ input: process.stdin });
+        const timer = setTimeout(() => { rl.close(); resolve(); }, 5 * 60 * 1000);
+        rl.once("line", () => { clearTimeout(timer); rl.close(); resolve(); });
+      });
+
+      console.log("Sending transaction...");
+      const txHash = await sendTransactionWithSession(client, session, account, chainId, {
+        to: config.walletContractAddress,
+        data: calldata,
+        value: "0x0",
+      });
+
+      const unlockAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+      console.log(`\n✓ Registry upgrade proposed`);
+      console.log(`  Tx: ${txHash}`);
+      console.log(`  Unlock at: ${unlockAt.toISOString()} (approximately)`);
+      console.log(`\nNext steps:`);
+      console.log(`  Wait 2 days, then run:`);
+      console.log(`  arc402 wallet execute-registry-upgrade`);
+      console.log(`\nTo cancel before execution:`);
+      console.log(`  arc402 wallet cancel-registry-upgrade`);
+    });
+
+  // ─── execute-registry-upgrade ──────────────────────────────────────────────
+
+  wallet.command("execute-registry-upgrade")
+    .description("Execute a pending registry upgrade after the 2-day timelock (phone wallet signs via WalletConnect)")
+    .action(async () => {
+      const config = loadConfig();
+      if (!config.walletContractAddress) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.walletConnectProjectId) {
+        console.error("walletConnectProjectId not set in config. Run `arc402 config set walletConnectProjectId <id>`.");
+        process.exit(1);
+      }
+
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const walletContract = new ethers.Contract(config.walletContractAddress, ARC402_WALLET_REGISTRY_ABI, provider);
+
+      let pendingRegistry: string;
+      let unlockAt: bigint;
+      try {
+        [pendingRegistry, unlockAt] = await Promise.all([
+          walletContract.pendingRegistry(),
+          walletContract.registryUpdateUnlockAt(),
+        ]);
+      } catch (e) {
+        console.error("Failed to read pending registry from contract:", e);
+        process.exit(1);
+      }
+
+      if (pendingRegistry === ethers.ZeroAddress) {
+        console.log("No pending registry upgrade.");
+        return;
+      }
+
+      const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+      if (unlockAt > nowSeconds) {
+        const remaining = Number(unlockAt - nowSeconds);
+        const hours = Math.floor(remaining / 3600);
+        const minutes = Math.floor((remaining % 3600) / 60);
+        console.log(`Timelock not yet elapsed.`);
+        console.log(`Pending registry: ${pendingRegistry}`);
+        console.log(`Unlocks in: ${hours}h ${minutes}m`);
+        console.log(`Unlock at: ${new Date(Number(unlockAt) * 1000).toISOString()}`);
+        return;
+      }
+
+      console.log(`Pending registry: ${pendingRegistry}`);
+      console.log("Timelock elapsed — proceeding with executeRegistryUpdate()");
+
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      const walletInterface = new ethers.Interface(ARC402_WALLET_REGISTRY_ABI);
+      const { txHash } = await requestPhoneWalletSignature(
+        config.walletConnectProjectId,
+        chainId,
+        () => ({
+          to: config.walletContractAddress!,
+          data: walletInterface.encodeFunctionData("executeRegistryUpdate", []),
+          value: "0x0",
+        }),
+        "Approve registry upgrade execution on ARC402Wallet",
+        telegramOpts,
+        config
+      );
+
+      console.log(`\n✓ Registry upgrade executed`);
+      console.log(`  Tx: ${txHash}`);
+      console.log(`  New registry: ${pendingRegistry}`);
+    });
+
+  // ─── cancel-registry-upgrade ───────────────────────────────────────────────
+
+  // ─── set-interceptor ───────────────────────────────────────────────────────
+
+  wallet.command("set-interceptor <address>")
+    .description("Set the authorized X402 interceptor address on ARC402Wallet (phone wallet signs via WalletConnect)")
+    .action(async (interceptorAddress) => {
+      const config = loadConfig();
+      if (!config.walletContractAddress) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.walletConnectProjectId) {
+        console.error("walletConnectProjectId not set in config. Run `arc402 config set walletConnectProjectId <id>`.");
+        process.exit(1);
+      }
+
+      let checksumAddress: string;
+      try {
+        checksumAddress = ethers.getAddress(interceptorAddress);
+      } catch {
+        console.error(`Invalid address: ${interceptorAddress}`);
+        process.exit(1);
+      }
+
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const ownerInterface = new ethers.Interface(ARC402_WALLET_OWNER_ABI);
+
+      let currentInterceptor = "(unknown)";
+      try {
+        const walletContract = new ethers.Contract(config.walletContractAddress, ARC402_WALLET_OWNER_ABI, provider);
+        currentInterceptor = await walletContract.authorizedInterceptor();
+      } catch { /* contract may not be deployed yet */ }
+
+      console.log(`\nWallet:              ${config.walletContractAddress}`);
+      console.log(`Current interceptor: ${currentInterceptor}`);
+      console.log(`New interceptor:     ${checksumAddress}`);
+
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      const { txHash } = await requestPhoneWalletSignature(
+        config.walletConnectProjectId,
+        chainId,
+        () => ({
+          to: config.walletContractAddress!,
+          data: ownerInterface.encodeFunctionData("setAuthorizedInterceptor", [checksumAddress]),
+          value: "0x0",
+        }),
+        `Approve: set X402 interceptor to ${checksumAddress}`,
+        telegramOpts,
+        config
+      );
+
+      await provider.waitForTransaction(txHash);
+      console.log(`\n✓ X402 interceptor updated`);
+      console.log(`  Tx: ${txHash}`);
+      console.log(`  Interceptor: ${checksumAddress}`);
+    });
+
+  // ─── set-velocity-limit ────────────────────────────────────────────────────
+
+  wallet.command("set-velocity-limit <limit>")
+    .description("Set the per-rolling-window ETH velocity limit on ARC402Wallet (limit in ETH, phone wallet signs via WalletConnect)")
+    .action(async (limitEth) => {
+      const config = loadConfig();
+      if (!config.walletContractAddress) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.walletConnectProjectId) {
+        console.error("walletConnectProjectId not set in config. Run `arc402 config set walletConnectProjectId <id>`.");
+        process.exit(1);
+      }
+
+      let limitWei: bigint;
+      try {
+        limitWei = ethers.parseEther(limitEth);
+      } catch {
+        console.error(`Invalid limit: ${limitEth}. Provide a value in ETH (e.g. 0.5)`);
+        process.exit(1);
+      }
+
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const ownerInterface = new ethers.Interface(ARC402_WALLET_OWNER_ABI);
+
+      let currentLimit = "(unknown)";
+      try {
+        const walletContract = new ethers.Contract(config.walletContractAddress, ARC402_WALLET_OWNER_ABI, provider);
+        const raw: bigint = await walletContract.velocityLimit();
+        currentLimit = raw === 0n ? "disabled" : `${ethers.formatEther(raw)} ETH`;
+      } catch { /* contract may not be deployed yet */ }
+
+      console.log(`\nWallet:         ${config.walletContractAddress}`);
+      console.log(`Current limit:  ${currentLimit}`);
+      console.log(`New limit:      ${limitEth} ETH (max ETH per rolling window)`);
+
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      const { txHash } = await requestPhoneWalletSignature(
+        config.walletConnectProjectId,
+        chainId,
+        () => ({
+          to: config.walletContractAddress!,
+          data: ownerInterface.encodeFunctionData("setVelocityLimit", [limitWei]),
+          value: "0x0",
+        }),
+        `Approve: set velocity limit to ${limitEth} ETH`,
+        telegramOpts,
+        config
+      );
+
+      await provider.waitForTransaction(txHash);
+      console.log(`\n✓ Velocity limit updated`);
+      console.log(`  Tx: ${txHash}`);
+      console.log(`  New limit: ${limitEth} ETH per rolling window`);
+    });
+
+  // ─── cancel-registry-upgrade ───────────────────────────────────────────────
+
+  wallet.command("cancel-registry-upgrade")
+    .description("Cancel a pending registry upgrade before it executes (phone wallet signs via WalletConnect)")
+    .action(async () => {
+      const config = loadConfig();
+      if (!config.walletContractAddress) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.walletConnectProjectId) {
+        console.error("walletConnectProjectId not set in config. Run `arc402 config set walletConnectProjectId <id>`.");
+        process.exit(1);
+      }
+
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const walletContract = new ethers.Contract(config.walletContractAddress, ARC402_WALLET_REGISTRY_ABI, provider);
+
+      let pendingRegistry: string;
+      try {
+        pendingRegistry = await walletContract.pendingRegistry();
+      } catch (e) {
+        console.error("Failed to read pending registry from contract:", e);
+        process.exit(1);
+      }
+
+      if (pendingRegistry === ethers.ZeroAddress) {
+        console.log("No pending registry upgrade to cancel.");
+        return;
+      }
+
+      console.log(`Cancelling pending registry upgrade to: ${pendingRegistry}`);
+
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      const walletInterface = new ethers.Interface(ARC402_WALLET_REGISTRY_ABI);
+      const { txHash } = await requestPhoneWalletSignature(
+        config.walletConnectProjectId,
+        chainId,
+        () => ({
+          to: config.walletContractAddress!,
+          data: walletInterface.encodeFunctionData("cancelRegistryUpdate", []),
+          value: "0x0",
+        }),
+        "Approve registry upgrade cancellation on ARC402Wallet",
+        telegramOpts,
+        config
+      );
+
+      console.log(`\n✓ Registry upgrade cancelled`);
+      console.log(`  Tx: ${txHash}`);
     });
 }

@@ -593,8 +593,8 @@ export default function OnboardContent() {
               const isDone    = sIdx < currentIdx
               const isActive  = step === s.id
               return (
-                <div key={s.id} style={{
-                  flex: 1, padding: '5px 4px', borderRadius: 8, textAlign: 'center',
+                <div key={s.id} onClick={() => setStep(s.id as Step)} style={{
+                  flex: 1, padding: '5px 4px', borderRadius: 8, textAlign: 'center', cursor: 'pointer',
                   background: isDone ? '#0a1a0a' : isActive ? '#0a0f1f' : '#0d0d0d',
                   border: `1px solid ${isDone ? '#1a3a1a' : isActive ? '#1a2a5a' : '#1a1a1a'}`,
                 }}>

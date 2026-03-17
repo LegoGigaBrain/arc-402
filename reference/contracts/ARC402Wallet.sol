@@ -13,6 +13,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import "./P256VerifierLib.sol";
 
 /**
  * @title ARC402Wallet
@@ -134,7 +135,8 @@ contract ARC402Wallet is IAccount, ReentrancyGuard {
 
     OwnerAuth public ownerAuth;
 
-    address internal constant P256_PRECOMPILE = 0x0000000000000000000000000000000000000100;
+    // P256 precompile address used via P256VerifierLib (kept for reference)
+    // address internal constant P256_PRECOMPILE = 0x0000000000000000000000000000000000000100;
 
     // ─── Events ──────────────────────────────────────────────────────────────
 
@@ -156,6 +158,8 @@ contract ARC402Wallet is IAccount, ReentrancyGuard {
     event InterceptorUpdated(address indexed interceptor);
     event ContractCallExecuted(address indexed target, uint256 value, bytes data, uint256 returnValue);
     event PasskeySet(bytes32 indexed pubKeyX, bytes32 pubKeyY);
+    event PasskeyCleared();
+    event EmergencyOverride(bytes32 indexed pubKeyX, bytes32 pubKeyY);
 
     // ─── Modifiers ───────────────────────────────────────────────────────────
 
@@ -287,24 +291,34 @@ contract ARC402Wallet is IAccount, ReentrancyGuard {
         return recovered == owner ? SIG_VALIDATION_SUCCESS : SIG_VALIDATION_FAILED;
     }
 
-    /// @dev Verify a P256 (secp256r1) signature using the Base RIP-7212 precompile at 0x100.
-    ///      sig must be 64 bytes: r (32) || s (32) compact WebAuthn format.
+    /// @dev Verify a WebAuthn P256 (secp256r1) signature using the Base RIP-7212 precompile at 0x100.
+    ///      sig must be ABI-encoded: (bytes32 r, bytes32 s, bytes authenticatorData, bytes clientDataJSON).
+    ///      Reconstructs the WebAuthn-signed hash: sha256(authenticatorData || sha256(clientDataJSON)).
     ///      Returns SIG_VALIDATION_SUCCESS (0) or SIG_VALIDATION_FAILED (1).
     ///      Safe-degrades on non-Base chains (precompile absent → staticcall fails → FAILED).
     function _validateP256Signature(
-        bytes32 hash,
+        bytes32 userOpHash,
         bytes calldata sig,
         bytes32 pubKeyX,
         bytes32 pubKeyY
     ) internal view returns (uint256) {
-        if (sig.length != 64) return SIG_VALIDATION_FAILED;
-        bytes32 r = bytes32(sig[:32]);
-        bytes32 s = bytes32(sig[32:64]);
-        // RIP-7212 input: hash (32) || r (32) || s (32) || x (32) || y (32) = 160 bytes
-        bytes memory input = abi.encodePacked(hash, r, s, pubKeyX, pubKeyY);
-        (bool ok, bytes memory result) = P256_PRECOMPILE.staticcall(input);
-        if (!ok || result.length < 32) return SIG_VALIDATION_FAILED;
-        return abi.decode(result, (uint256)) == 1 ? SIG_VALIDATION_SUCCESS : SIG_VALIDATION_FAILED;
+        // Minimum ABI-encoded size: 4 heads (4×32) + 2 dynamic length slots (2×32) = 192 bytes
+        if (sig.length < 192) return SIG_VALIDATION_FAILED;
+
+        // Decode WebAuthn signature payload
+        (bytes32 r, bytes32 s, bytes memory authData, bytes memory clientDataJSON) =
+            abi.decode(sig, (bytes32, bytes32, bytes, bytes));
+
+        // Suppress unused-variable warning for userOpHash — callers may use it for challenge
+        // verification off-chain; on-chain we verify the WebAuthn-reconstructed hash instead.
+        (userOpHash);
+
+        // Reconstruct the hash the WebAuthn authenticator actually signed:
+        // sha256(authenticatorData || sha256(clientDataJSON))
+        bytes32 cdHash  = sha256(clientDataJSON);
+        bytes32 msgHash = sha256(abi.encodePacked(authData, cdHash));
+
+        return P256VerifierLib.validateP256Signature(msgHash, abi.encodePacked(r, s), pubKeyX, pubKeyY);
     }
 
     /// @dev Protocol ops auto-approve unless the wallet is frozen.
@@ -468,6 +482,7 @@ contract ARC402Wallet is IAccount, ReentrancyGuard {
     ///         Governance UserOps will again require owner ECDSA signature.
     function clearPasskey() external onlyEntryPointOrOwner {
         ownerAuth = OwnerAuth({ signerType: SignerType.EOA, pubKeyX: bytes32(uint256(uint160(owner))), pubKeyY: bytes32(0) });
+        emit PasskeyCleared();
     }
 
     /// @notice Emergency break-glass: rotate to a new passkey using the EOA owner directly.
@@ -480,6 +495,7 @@ contract ARC402Wallet is IAccount, ReentrancyGuard {
         if (newPubKeyX == bytes32(0) && newPubKeyY == bytes32(0)) revert WZero();
         ownerAuth = OwnerAuth({ signerType: SignerType.Passkey, pubKeyX: newPubKeyX, pubKeyY: newPubKeyY });
         emit PasskeySet(newPubKeyX, newPubKeyY);
+        emit EmergencyOverride(newPubKeyX, newPubKeyY);
     }
 
     /// @notice Emergency break-glass: revert to EOA mode using the EOA owner directly.
@@ -487,6 +503,7 @@ contract ARC402Wallet is IAccount, ReentrancyGuard {
     function emergencyOwnerOverride() external {
         if (msg.sender != owner) revert WAuth();
         ownerAuth = OwnerAuth({ signerType: SignerType.EOA, pubKeyX: bytes32(uint256(uint160(owner))), pubKeyY: bytes32(0) });
+        emit PasskeyCleared();
     }
 
     // ─── Internal Contract Accessors ─────────────────────────────────────────

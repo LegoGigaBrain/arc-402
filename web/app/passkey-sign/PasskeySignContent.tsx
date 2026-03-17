@@ -2,6 +2,7 @@
 
 import { useSearchParams } from 'next/navigation'
 import { useState } from 'react'
+import { AbiCoder } from 'ethers'
 
 function hexToBytes(hex: string): Uint8Array {
   hex = hex.replace(/^0x/, '')
@@ -64,15 +65,31 @@ export default function PasskeySignContent() {
       }) as PublicKeyCredential
 
       const response = assertion.response as AuthenticatorAssertionResponse
-      const signature = parseDerSig(new Uint8Array(response.signature))
-      setSig(signature)
+
+      // Parse DER signature → compact r || s (64 bytes)
+      const compactHex = parseDerSig(new Uint8Array(response.signature))
+      // Split into 32-byte r and s for ABI encoding
+      const r = '0x' + compactHex.slice(2, 66)
+      const s = '0x' + compactHex.slice(66, 130)
+
+      // WebAuthn fields needed for on-chain hash reconstruction:
+      //   sha256(authenticatorData || sha256(clientDataJSON))
+      const authDataBytes = new Uint8Array(response.authenticatorData)
+      const clientDataJSONBytes = new Uint8Array(response.clientDataJSON)
+
+      // ABI-encode: (bytes32 r, bytes32 s, bytes authData, bytes clientDataJSON)
+      const sigPayload = AbiCoder.defaultAbiCoder().encode(
+        ['bytes32', 'bytes32', 'bytes', 'bytes'],
+        [r, s, authDataBytes, clientDataJSONBytes]
+      )
+      setSig(sigPayload)
 
       if (callbackUrl) {
         setState('submitted')
         const res = await fetch(callbackUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ signature, credentialId: b64url(assertion.rawId) }),
+          body: JSON.stringify({ signature: sigPayload, credentialId: b64url(assertion.rawId) }),
         })
         if (!res.ok) throw new Error(`Daemon returned ${res.status}`)
       }

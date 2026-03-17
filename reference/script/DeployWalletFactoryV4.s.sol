@@ -79,3 +79,9 @@ contract DeployWalletFactoryV4 is Script {
         require(oracle != address(0), "oracle: deploy failed");
     }
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST-DEPLOY REQUIRED:
+//   cast send <TrustRegistryV3> "addUpdater(address)" <WalletFactoryV4>
+//   Without this, createWallet() reverts: "TrustRegistryV3: not authorized updater"
+// ──────────────────────────────────────────────────────────────────────────────

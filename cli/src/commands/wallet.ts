@@ -2,11 +2,15 @@ import { Command } from "commander";
 import { PolicyClient, TrustClient } from "@arc402/sdk";
 import { ethers } from "ethers";
 import prompts from "prompts";
+import fs from "fs";
+import path from "path";
+import os from "os";
 import { Arc402Config, getConfigPath, getUsdcAddress, loadConfig, NETWORK_DEFAULTS, saveConfig } from "../config";
 import { getClient, requireSigner } from "../client";
 import { getTrustTier } from "../utils/format";
 import { ARC402_WALLET_EXECUTE_ABI, ARC402_WALLET_GUARDIAN_ABI, ARC402_WALLET_OWNER_ABI, ARC402_WALLET_REGISTRY_ABI, POLICY_ENGINE_LIMITS_ABI, TRUST_REGISTRY_ABI, WALLET_FACTORY_ABI } from "../abis";
 import { connectPhoneWallet, sendTransactionWithSession, requestPhoneWalletSignature } from "../walletconnect";
+import { clearWCSession } from "../walletconnect-session";
 import { requestCoinbaseSmartWalletSignature } from "../coinbase-smart-wallet";
 import { sendTelegramMessage } from "../telegram-notify";
 
@@ -72,6 +76,53 @@ export function registerWalletCommands(program: Command): void {
       if (contractGuardian && contractGuardian !== ethers.ZeroAddress) console.log(`Guardian=${contractGuardian}`);
     }
   });
+
+  // ─── wc-reset ──────────────────────────────────────────────────────────────
+  //
+  // Clears the saved WalletConnect session from config AND wipes the WC SDK
+  // storage file (~/.arc402/wc-storage.json). Use when MetaMask killed the
+  // session on its end and the CLI is stuck trying to resume a dead connection.
+  // Next wallet command will trigger a fresh QR pairing flow.
+
+  wallet.command("wc-reset")
+    .description("Clear stale WalletConnect session — forces a fresh QR pairing on next connection")
+    .option("--json")
+    .action(async (opts) => {
+      const config = loadConfig();
+
+      const hadSession = !!config.wcSession;
+
+      // 1. Clear from config
+      clearWCSession(config);
+
+      // 2. Wipe WC SDK storage file
+      const wcStoragePath = path.join(os.homedir(), ".arc402", "wc-storage.json");
+      let storageWiped = false;
+      try {
+        if (fs.existsSync(wcStoragePath)) {
+          fs.unlinkSync(wcStoragePath);
+          storageWiped = true;
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: false, error: `Could not delete ${wcStoragePath}: ${msg}` }));
+        } else {
+          console.warn(`⚠ Could not delete ${wcStoragePath}: ${msg}`);
+          console.warn("  You may need to delete it manually.");
+        }
+        return;
+      }
+
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, hadSession, storageWiped }));
+      } else {
+        console.log("✓ WalletConnect session cleared");
+        if (storageWiped) console.log(`  Storage wiped: ${wcStoragePath}`);
+        else console.log("  (No storage file found — already clean)");
+        console.log("\nNext: run any wallet command and scan the fresh QR code.");
+      }
+    });
 
   // ─── new ───────────────────────────────────────────────────────────────────
 
@@ -275,7 +326,7 @@ export function registerWalletCommands(program: Command): void {
           chainId,
           (ownerAccount) => ({
             to: factoryAddress,
-            data: factoryInterface.encodeFunctionData("createWallet", []),
+            data: factoryInterface.encodeFunctionData("createWallet", ["0x0000000071727De22E5E9d8BAf0edAc6f37da032"]),
             value: "0x0",
           }),
           "Approve ARC402Wallet deployment — you will be set as owner"
@@ -293,7 +344,7 @@ export function registerWalletCommands(program: Command): void {
           try {
             const parsed = factoryContract.interface.parseLog(log);
             if (parsed?.name === "WalletCreated") {
-              walletAddress = parsed.args.wallet as string;
+              walletAddress = parsed.args.walletAddress as string;
               break;
             }
           } catch { /* skip unparseable logs */ }
@@ -344,7 +395,7 @@ export function registerWalletCommands(program: Command): void {
         console.log("Deploying...");
         const txHash = await sendTransactionWithSession(client, session, account, chainId, {
           to: factoryAddress,
-          data: factoryInterface.encodeFunctionData("createWallet", []),
+          data: factoryInterface.encodeFunctionData("createWallet", ["0x0000000071727De22E5E9d8BAf0edAc6f37da032"]),
           value: "0x0",
         });
 
@@ -361,7 +412,7 @@ export function registerWalletCommands(program: Command): void {
           try {
             const parsed = factoryContract.interface.parseLog(log);
             if (parsed?.name === "WalletCreated") {
-              walletAddress = parsed.args.wallet as string;
+              walletAddress = parsed.args.walletAddress as string;
               break;
             }
           } catch { /* skip unparseable logs */ }
@@ -383,14 +434,14 @@ export function registerWalletCommands(program: Command): void {
         const { signer, address } = await requireSigner(config);
         const factory = new ethers.Contract(factoryAddress, WALLET_FACTORY_ABI, signer);
         console.log(`Deploying ARC402Wallet via factory at ${factoryAddress}...`);
-        const tx = await factory.createWallet();
+        const tx = await factory.createWallet("0x0000000071727De22E5E9d8BAf0edAc6f37da032");
         const receipt = await tx.wait();
         let walletAddress: string | null = null;
         for (const log of receipt.logs) {
           try {
             const parsed = factory.interface.parseLog(log);
             if (parsed?.name === "WalletCreated") {
-              walletAddress = parsed.args.wallet as string;
+              walletAddress = parsed.args.walletAddress as string;
               break;
             }
           } catch { /* skip unparseable logs */ }
@@ -1407,5 +1458,90 @@ export function registerWalletCommands(program: Command): void {
         console.log(`  WARN: Store the guardian private key separately from your hot key.`);
       }
       console.log(`\nVerify with: arc402 wallet status && arc402 wallet policy show`);
+    });
+
+  // ─── authorize-machine-key ─────────────────────────────────────────────────
+
+  wallet.command("authorize-machine-key <key>")
+    .description("Authorize a machine key (hot key) on your ARC402Wallet (phone wallet signs via WalletConnect)")
+    .action(async (keyAddress: string) => {
+      const config = loadConfig();
+      if (!config.walletContractAddress) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.walletConnectProjectId) {
+        console.error("walletConnectProjectId not set in config.");
+        process.exit(1);
+      }
+
+      let checksumKey: string;
+      try {
+        checksumKey = ethers.getAddress(keyAddress);
+      } catch {
+        console.error(`Invalid address: ${keyAddress}`);
+        process.exit(1);
+      }
+
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const machineKeyAbi = ["function authorizeMachineKey(address key) external", "function authorizedMachineKeys(address) external view returns (bool)"];
+      const walletContract = new ethers.Contract(config.walletContractAddress, machineKeyAbi, provider);
+
+      let alreadyAuthorized = false;
+      try {
+        alreadyAuthorized = await walletContract.authorizedMachineKeys(checksumKey);
+      } catch { /* ignore */ }
+
+      if (alreadyAuthorized) {
+        console.log(`\n✓ ${checksumKey} is already authorized as a machine key on ${config.walletContractAddress}`);
+        process.exit(0);
+      }
+
+      console.log(`\nWallet:      ${config.walletContractAddress}`);
+      console.log(`Machine key: ${checksumKey}`);
+
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      const walletInterface = new ethers.Interface(machineKeyAbi);
+      const txData = {
+        to: config.walletContractAddress,
+        data: walletInterface.encodeFunctionData("authorizeMachineKey", [checksumKey]),
+        value: "0x0",
+      };
+
+      const { client, session, account } = await connectPhoneWallet(
+        config.walletConnectProjectId,
+        chainId,
+        config,
+        {
+          telegramOpts,
+          prompt: `Authorize machine key ${checksumKey} on ARC402Wallet — allows autonomous protocol ops`,
+        }
+      );
+
+      console.log(`\n✓ Connected: ${account}`);
+      console.log("Sending authorizeMachineKey transaction...");
+
+      const hash = await sendTransactionWithSession(client, session, account, chainId, txData);
+      console.log(`\nTransaction submitted: ${hash}`);
+      console.log("Waiting for confirmation...");
+
+      const receipt = await provider.waitForTransaction(hash, 1, 60000);
+      if (!receipt || receipt.status !== 1) {
+        console.error("Transaction failed.");
+        process.exit(1);
+      }
+
+      const confirmed = await walletContract.authorizedMachineKeys(checksumKey);
+      console.log(`\n✓ Machine key authorized: ${confirmed ? "YES" : "NO"}`);
+      console.log(`  Wallet:      ${config.walletContractAddress}`);
+      console.log(`  Machine key: ${checksumKey}`);
+      console.log(`  Tx:          ${hash}`);
+
+      await client.disconnect({ topic: session.topic, reason: { code: 6000, message: "done" } });
+      process.exit(0);
     });
 }

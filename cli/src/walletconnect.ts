@@ -67,10 +67,20 @@ export async function connectPhoneWallet(
   if (stored) {
     try {
       const session = client.session.get(stored.topic);
+      // Verify the session is actually alive on the relay side (MetaMask may have
+      // killed it without notifying us). We do a lightweight ping; if it times out
+      // or throws the session is stale — fall through to fresh pairing.
+      await Promise.race([
+        client.ping({ topic: stored.topic }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("ping timeout")), 5000)),
+      ]);
       return { client, session, account: stored.account };
     } catch {
-      // Session expired in WC storage — clear it and do fresh pairing
+      // Session stale or timed out — clear locally and do fresh pairing
       clearWCSession(config);
+      try {
+        await client.disconnect({ topic: stored.topic, reason: { code: 6000, message: "session stale" } });
+      } catch { /* best-effort — may already be gone */ }
     }
   }
 

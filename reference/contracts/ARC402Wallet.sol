@@ -733,14 +733,36 @@ contract ARC402Wallet is IAccount, ReentrancyGuard {
         //    (Governance functions are onlyOwner; this check clarifies intent.)
         if (params.target == address(this)) revert WSelf();
 
-        // 1. Validate via PolicyEngine DeFi access tier
-        address _pe = _resolveContracts().policyEngine;
-        (bool valid, string memory reason) = IDefiPolicy(_pe).validateContractCall(
-            address(this),
-            params.target,
-            params.value
+        // 1. Protocol contract bypass + PolicyEngine validation
+        // Protocol contracts (from ARC402RegistryV2.getContracts()) are auto-allowed.
+        // These are the core protocol infrastructure that every wallet interacts with.
+        // External contracts (DeFi, custom integrations) still require explicit whitelisting
+        // via PolicyEngine.whitelistContract(wallet, target).
+        ARC402RegistryV2.ProtocolContracts memory pc = _resolveContracts();
+        bool isProtocolContract = (
+            params.target == pc.policyEngine ||
+            params.target == pc.trustRegistry ||
+            params.target == pc.intentAttestation ||
+            params.target == pc.serviceAgreement ||
+            params.target == pc.sessionChannels ||
+            params.target == pc.agentRegistry ||
+            params.target == pc.reputationOracle ||
+            params.target == pc.settlementCoordinator ||
+            params.target == pc.vouchingRegistry ||
+            params.target == pc.migrationRegistry
         );
-        require(valid, reason);
+
+        address _pe = pc.policyEngine;
+        if (!isProtocolContract) {
+            // Non-protocol contracts require PolicyEngine DeFi whitelist
+            (bool valid, string memory reason) = IDefiPolicy(_pe).validateContractCall(
+                address(this),
+                params.target,
+                params.value
+            );
+            require(valid, reason);
+        }
+        // Protocol contracts pass through — they are in the registry, no whitelist needed
 
         // 1b. Detect ERC-20 approve() calls and validate approval amount against policy.
         //     approve(address,uint256) selector = 0x095ea7b3

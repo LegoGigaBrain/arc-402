@@ -187,3 +187,9 @@ Add low-s enforcement in `P256VerifierLib` (AUD-PK-FIX-02).
 ---
 
 *AUDIT-PASSKEY-FIXES-2026-03-17 | ARC-402 Wallet — Second-Eyes Fix Verification*
+
+---
+
+## ✅ VERIFIED — AUD-PK-FIX-01 Challenge Verification (Final Pass)
+**Date:** 2026-03-17 | **Auditor:** Claude Opus 4.6 (targeted final audit)
+**Status:** CLEAR TO DEPLOY — `_b64v` char decoder, `base64urlToBytes32` bit packing, `extractChallenge` JSON search + offset arithmetic, and `challenge != userOpHash` check all verified correct. Replay vector is closed.

@@ -32,7 +32,7 @@ async function makeSignClient(projectId: string): Promise<SignClientT> {
     metadata: {
       name: "ARC-402 CLI",
       description: "ARC-402 Protocol CLI",
-      url: "https://arc402.xyz",
+      url: "https://app.arc402.xyz",
       icons: [],
     },
     storage: new KeyValueStorage({ database: storagePath }),

@@ -24,5 +24,5 @@ export async function buildSigningUrl(
     ...params,
   });
 
-  return `https://arc402.xyz/sign?${urlParams.toString()}`;
+  return `https://app.arc402.xyz/sign?${urlParams.toString()}`;
 }

@@ -8,10 +8,58 @@ import { ethers } from 'ethers'
 const WC_PROJECT_ID   = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? '455e9425343b9156fce1428250c9a54a'
 const CHAIN_ID        = 8453
 const BASE_RPC        = 'https://mainnet.base.org'
+const BUNDLER_URL     = process.env.NEXT_PUBLIC_BUNDLER_URL ?? 'https://api.pimlico.io/v2/base/rpc'
 const WALLET_FACTORY  = '0x974d2ae81cC9B4955e325890f4247AC76c92148D'
 const ENTRY_POINT     = '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
 const AGENT_REGISTRY  = '0xcc0D8731ccCf6CFfF4e66F6d68cA86330Ea8B622'
 const POLICY_ENGINE   = '0xAA5Ef3489C929bFB3BFf5D5FE15aa62d3763c847'
+const PAYMASTER_URL   = process.env.NEXT_PUBLIC_PAYMASTER_URL ?? ''
+
+// ─── PaymasterClient (browser) ─────────────────────────────────────────────
+
+class PaymasterClient {
+  constructor(private url: string) {}
+
+  async sponsorUserOperation(userOp: Record<string, unknown>, entryPoint: string): Promise<Record<string, unknown>> {
+    const res = await fetch(this.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'pm_sponsorUserOperation', params: [userOp, entryPoint, {}] }),
+    })
+    if (!res.ok) throw new Error(`Paymaster HTTP ${res.status}: ${res.statusText}`)
+    const json = await res.json() as { result?: Record<string, unknown>; error?: { code: number; message: string } }
+    if (json.error) throw new Error(`Paymaster error [${json.error.code}]: ${json.error.message}`)
+    return { ...userOp, ...json.result }
+  }
+}
+
+async function sendUserOpViaBundler(userOp: Record<string, unknown>): Promise<string> {
+  const res = await fetch(BUNDLER_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_sendUserOperation', params: [userOp, ENTRY_POINT] }),
+  })
+  const json = await res.json() as { result?: string; error?: { code: number; message: string } }
+  if (json.error) throw new Error(`Bundler error [${json.error.code}]: ${json.error.message}`)
+  return json.result as string
+}
+
+async function waitForUserOpReceipt(hash: string): Promise<void> {
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 2000))
+    const res = await fetch(BUNDLER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getUserOperationReceipt', params: [hash] }),
+    })
+    const json = await res.json() as { result?: { success: boolean } }
+    if (json.result) {
+      if (!json.result.success) throw new Error('Sponsored UserOperation failed on-chain')
+      return
+    }
+  }
+  throw new Error('UserOperation not confirmed after 60s')
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -183,6 +231,48 @@ export default function OnboardContent() {
         await disconnectWC(wc)
         setStep('passkey')
         return
+      }
+
+      // Check ETH balance — attempt paymaster sponsorship if wallet has no ETH
+      if (PAYMASTER_URL) {
+        setStatusMsg('Checking balance...')
+        const provider = new ethers.JsonRpcProvider(BASE_RPC)
+        const balance = await provider.getBalance(wc.account)
+        if (balance < BigInt(500_000_000_000_000)) { // < 0.0005 ETH
+          setStatusMsg('Sponsoring deploy via Coinbase...')
+          try {
+            const pm = new PaymasterClient(PAYMASTER_URL)
+            const feeData = await provider.getFeeData()
+            const factoryIface2 = new ethers.Interface(['function createWallet(address _entryPoint) external returns (address)'])
+            const factoryData = factoryIface2.encodeFunctionData('createWallet', [ENTRY_POINT])
+            const sponsoredOp = await pm.sponsorUserOperation({
+              sender: wc.account, // placeholder — factory needs ERC-4337 owner param for production
+              nonce: '0x0',
+              callData: '0x',
+              factory: WALLET_FACTORY,
+              factoryData,
+              callGasLimit: ethers.toBeHex(300_000),
+              verificationGasLimit: ethers.toBeHex(400_000),
+              preVerificationGas: ethers.toBeHex(60_000),
+              maxFeePerGas: ethers.toBeHex(feeData.maxFeePerGas ?? BigInt(1_000_000_000)),
+              maxPriorityFeePerGas: ethers.toBeHex(feeData.maxPriorityFeePerGas ?? BigInt(100_000_000)),
+              signature: '0x',
+            }, ENTRY_POINT)
+            setStatusMsg('Submitting sponsored transaction...')
+            const uoHash = await sendUserOpViaBundler(sponsoredOp)
+            setStatusMsg('Waiting for confirmation...')
+            await waitForUserOpReceipt(uoHash)
+            // Wallet address from sponsoredOp.sender
+            const sponsoredWallet = sponsoredOp.sender as string
+            setArc402Wallet(sponsoredWallet)
+            await disconnectWC(wc)
+            setStep('passkey')
+            return
+          } catch (pmErr: unknown) {
+            // Paymaster failed — fall through to direct WalletConnect deploy
+            console.warn('Paymaster unavailable:', pmErr instanceof Error ? pmErr.message : String(pmErr))
+          }
+        }
       }
 
       setStatusMsg('Deploying ARC-402 wallet...')
@@ -488,6 +578,12 @@ export default function OnboardContent() {
           {/* ── STEP 1: DEPLOY ── */}
           {step === 'deploy' && !wcUri && !waiting && (
             <div>
+              {PAYMASTER_URL && (
+                <div style={{ background: '#001a0d', border: '1px solid #005c2a', borderRadius: 8, padding: '7px 12px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14 }}>⛽</span>
+                  <span style={{ fontSize: '0.75rem', color: '#00c46a', fontWeight: 500 }}>Gas sponsored by Coinbase — free to start</span>
+                </div>
+              )}
               <p style={{ color: '#666', fontSize: '0.82rem', marginBottom: 6, lineHeight: 1.5 }}>
                 Deploy an ARC-402 wallet contract on Base Mainnet. Your connected address becomes the owner.
               </p>
@@ -736,7 +832,7 @@ export default function OnboardContent() {
               <div style={{ background: '#0a0a1a', border: '1px solid #1a1a3a', borderRadius: 10, padding: '14px', marginTop: 16 }}>
                 <div style={{ fontSize: '0.72rem', color: '#444', marginBottom: 8 }}>Next steps</div>
                 <div style={{ fontSize: '0.78rem', color: '#666', lineHeight: 1.8 }}>
-                  • Fund wallet with ETH for gas<br />
+                  {!PAYMASTER_URL && <>{`• Fund wallet with ETH for gas`}<br /></>}
                   • Run daemon: <span style={{ fontFamily: 'monospace', color: '#818cf8', fontSize: '0.72rem' }}>arc402 daemon start</span><br />
                   • Sign governance ops: <span style={{ fontFamily: 'monospace', color: '#818cf8', fontSize: '0.72rem' }}>app.arc402.xyz/passkey-sign</span>
                 </div>

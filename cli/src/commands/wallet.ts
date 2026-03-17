@@ -10,6 +10,7 @@ import { getClient, requireSigner } from "../client";
 import { getTrustTier } from "../utils/format";
 import { ARC402_WALLET_EXECUTE_ABI, ARC402_WALLET_GUARDIAN_ABI, ARC402_WALLET_OWNER_ABI, ARC402_WALLET_PASSKEY_ABI, ARC402_WALLET_REGISTRY_ABI, POLICY_ENGINE_LIMITS_ABI, TRUST_REGISTRY_ABI, WALLET_FACTORY_ABI } from "../abis";
 import { connectPhoneWallet, sendTransactionWithSession, requestPhoneWalletSignature } from "../walletconnect";
+import { BundlerClient, buildSponsoredUserOp, PaymasterClient, DEFAULT_ENTRY_POINT } from "../bundler";
 import { clearWCSession } from "../walletconnect-session";
 import { requestCoinbaseSmartWalletSignature } from "../coinbase-smart-wallet";
 import { sendTelegramMessage } from "../telegram-notify";
@@ -310,6 +311,7 @@ export function registerWalletCommands(program: Command): void {
     .description("Deploy ARC402Wallet contract via WalletFactory (phone wallet signs via WalletConnect)")
     .option("--smart-wallet", "Connect via Base Smart Wallet (Coinbase Wallet SDK) instead of WalletConnect")
     .option("--hardware", "Hardware wallet mode: show raw wc: URI only (for Ledger Live, Trezor Suite, etc.)")
+    .option("--sponsored", "Use CDP paymaster for gas sponsorship (requires paymasterUrl + cdpKeyName + CDP_PRIVATE_KEY env)")
     .action(async (opts) => {
       const config = loadConfig();
       const factoryAddress = config.walletFactoryAddress ?? NETWORK_DEFAULTS[config.network]?.walletFactoryAddress;
@@ -321,7 +323,103 @@ export function registerWalletCommands(program: Command): void {
       const provider = new ethers.JsonRpcProvider(config.rpcUrl);
       const factoryInterface = new ethers.Interface(WALLET_FACTORY_ABI);
 
-      if (opts.smartWallet) {
+      if (opts.sponsored) {
+        // ── Sponsored deploy via CDP paymaster + ERC-4337 bundler ─────────────
+        // Note: WalletFactoryV3/V4 use msg.sender as wallet owner. In ERC-4337
+        // context msg.sender = EntryPoint. A factory upgrade with explicit owner
+        // param is needed for fully correct sponsored deployment. Until then,
+        // this path is available for testing and future-proofing.
+        const paymasterUrl = config.paymasterUrl ?? NETWORK_DEFAULTS[config.network]?.paymasterUrl;
+        const cdpKeyName = config.cdpKeyName ?? process.env.CDP_KEY_NAME;
+        const cdpPrivateKey = config.cdpPrivateKey ?? process.env.CDP_PRIVATE_KEY;
+        if (!paymasterUrl) {
+          console.error("paymasterUrl not configured. Add it to config or set NEXT_PUBLIC_PAYMASTER_URL.");
+          process.exit(1);
+        }
+        const { signer, address: ownerAddress } = await requireSigner(config);
+        const bundlerUrl = process.env.BUNDLER_URL ?? "https://api.pimlico.io/v2/base/rpc";
+        const pm = new PaymasterClient(paymasterUrl, cdpKeyName, cdpPrivateKey);
+        const bundler = new BundlerClient(bundlerUrl, DEFAULT_ENTRY_POINT, chainId);
+
+        console.log(`Sponsoring deploy via ${paymasterUrl}...`);
+        const factoryIface = new ethers.Interface(WALLET_FACTORY_ABI);
+        const factoryData = factoryIface.encodeFunctionData("createWallet", [DEFAULT_ENTRY_POINT]);
+
+        // Predict counterfactual sender address using EntryPoint.getSenderAddress
+        const entryPoint = new ethers.Contract(
+          DEFAULT_ENTRY_POINT,
+          ["function getSenderAddress(bytes calldata initCode) external"],
+          provider
+        );
+        const initCodePacked = ethers.concat([factoryAddress, factoryData]);
+        let senderAddress: string;
+        try {
+          // getSenderAddress always reverts with SenderAddressResult(address)
+          await entryPoint.getSenderAddress(initCodePacked);
+          throw new Error("getSenderAddress did not revert as expected");
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          const match = msg.match(/0x6ca7b806([0-9a-fA-F]{64})/);
+          if (!match) {
+            console.error("Could not predict wallet address:", msg);
+            process.exit(1);
+          }
+          senderAddress = ethers.getAddress("0x" + match[1].slice(24));
+        }
+
+        console.log(`Predicted wallet address: ${senderAddress}`);
+        const userOp = await pm.sponsorUserOperation(
+          {
+            sender: senderAddress,
+            nonce: "0x0",
+            callData: "0x",
+            factory: factoryAddress,
+            factoryData,
+            callGasLimit: ethers.toBeHex(300_000),
+            verificationGasLimit: ethers.toBeHex(400_000),
+            preVerificationGas: ethers.toBeHex(60_000),
+            maxFeePerGas: ethers.toBeHex((await provider.getFeeData()).maxFeePerGas ?? BigInt(1_000_000_000)),
+            maxPriorityFeePerGas: ethers.toBeHex((await provider.getFeeData()).maxPriorityFeePerGas ?? BigInt(100_000_000)),
+            signature: "0x",
+          },
+          DEFAULT_ENTRY_POINT
+        );
+
+        // Sign UserOp with owner key
+        const userOpHash = ethers.keccak256(
+          ethers.AbiCoder.defaultAbiCoder().encode(
+            ["address", "uint256", "bytes32", "bytes32", "bytes32", "uint256", "bytes32", "bytes32"],
+            [
+              userOp.sender, BigInt(userOp.nonce),
+              ethers.keccak256(userOp.factory ? ethers.concat([userOp.factory, userOp.factoryData ?? "0x"]) : "0x"),
+              ethers.keccak256(userOp.callData),
+              ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+                ["uint256", "uint256", "uint256", "uint256", "uint256", "address", "bytes"],
+                [userOp.verificationGasLimit, userOp.callGasLimit, userOp.preVerificationGas, userOp.maxFeePerGas, userOp.maxPriorityFeePerGas, userOp.paymaster ?? ethers.ZeroAddress, userOp.paymasterData ?? "0x"]
+              )),
+              BigInt(chainId), DEFAULT_ENTRY_POINT, ethers.ZeroHash,
+            ]
+          )
+        );
+        userOp.signature = await signer.signMessage(ethers.getBytes(userOpHash));
+
+        const userOpHash2 = await bundler.sendUserOperation(userOp);
+        console.log(`UserOp submitted: ${userOpHash2}`);
+        console.log("Waiting for confirmation...");
+        const receipt = await bundler.getUserOperationReceipt(userOpHash2);
+        if (!receipt.success) {
+          console.error("UserOperation failed on-chain.");
+          process.exit(1);
+        }
+
+        config.walletContractAddress = senderAddress;
+        config.ownerAddress = ownerAddress;
+        saveConfig(config);
+        console.log(`\n✓ ARC402Wallet deployed (sponsored) at: ${senderAddress}`);
+        console.log("Gas sponsorship active — initial setup ops are free");
+        console.log(`Owner: ${ownerAddress}`);
+        console.log(`\nNext: arc402 wallet set-passkey <x> <y> --sponsored`);
+      } else if (opts.smartWallet) {
         const { txHash, account } = await requestCoinbaseSmartWalletSignature(
           chainId,
           (ownerAccount) => ({
@@ -427,6 +525,11 @@ export function registerWalletCommands(program: Command): void {
         console.log(`\n✓ ARC402Wallet deployed at: ${walletAddress}`);
         console.log(`Owner: ${account} (your phone wallet)`);
         console.log(`Your wallet contract is ready for policy enforcement`);
+        const paymasterUrl2 = config.paymasterUrl ?? NETWORK_DEFAULTS[config.network]?.paymasterUrl;
+        const deployedBalance = await provider.getBalance(walletAddress);
+        if (paymasterUrl2 && deployedBalance < BigInt(1_000_000_000_000_000)) {
+          console.log("Gas sponsorship active — initial setup ops are free");
+        }
         console.log(`\nNext: run 'arc402 wallet set-guardian' to configure the emergency guardian key.`);
       } else {
         console.warn("⚠ WalletConnect not configured. Using stored private key (insecure).");

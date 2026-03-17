@@ -32,6 +32,9 @@ export interface Arc402Config {
   governedTokenWhitelistAddress?: string;
   vouchingRegistryAddress?: string;
   migrationRegistryAddress?: string;
+  paymasterUrl?: string;    // CDP paymaster endpoint
+  cdpKeyName?: string;      // CDP API key name (org/.../apiKeys/...)
+  cdpPrivateKey?: string;   // CDP EC private key — base64 DER SEC1 (store in CDP_PRIVATE_KEY env var)
   subdomainApi?: string;    // defaults to https://api.arc402.xyz
   telegramBotToken?: string;
   telegramChatId?: string;
@@ -69,6 +72,7 @@ export const NETWORK_DEFAULTS: Record<string, Partial<Arc402Config> & { usdcAddr
   "base-mainnet": {
     rpcUrl: "https://mainnet.base.org",
     usdcAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    paymasterUrl: "https://api.developer.coinbase.com/rpc/v1/base/dca85088-a2ac-4ec3-8647-5154b150e7a9",
     // Base Mainnet deployments — v2 deployed 2026-03-15
     policyEngineAddress:           "0xAA5Ef3489C929bFB3BFf5D5FE15aa62d3763c847",
     trustRegistryAddress:          "0x22366D6dabb03062Bc0a5E893EfDff15D8E329b1",   // TrustRegistryV3 — v2

@@ -224,6 +224,10 @@ Once `setPasskey(x, y)` is called (spec 33), the passkey becomes the governance 
 - Autonomous ops use the machine key — not related to Privy
 - The embedded wallet EOA can no longer perform governance ops unilaterally
 
+### Gas sponsorship for embedded wallet users
+
+Users arriving via the email/social path have zero ETH at the point of onboarding. Spec 37 covers this: the initial setup sequence (wallet deploy, `setPasskey`, `AgentRegistry.register`) is sponsored via the Coinbase Base paymaster so no ETH is required to get started. Sponsorship is applied only to these first-time setup UserOps; all subsequent operations are paid from the wallet's own ETH. If the paymaster is unavailable, the onboarding app falls back to a funding prompt with a Coinbase on-ramp link.
+
 ### Key export recommendation
 
 For production agents handling significant economic activity: Privy supports private key export. Operators should export the private key, store it in a hardware wallet or secrets manager, and revoke Privy's role once the passkey is operational. This is documented in the onboarding app UI (step 4, post-setup).

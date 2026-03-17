@@ -27,6 +27,34 @@ function short(addr: string) {
 
 const WC_PROJECT_ID = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? '455e9425343b9156fce1428250c9a54a'
 const CHAIN_ID = 8453
+const BASE_RPC = 'https://mainnet.base.org'
+const WALLET_FACTORY = '0x974d2ae81cC9B4955e325890f4247AC76c92148D'
+
+async function getARC402Wallets(owner: string): Promise<string[]> {
+  const response = await fetch(BASE_RPC, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: 1, method: 'eth_call',
+      params: [{
+        to: WALLET_FACTORY,
+        // getWallets(address) selector = keccak256("getWallets(address)")[0:4]
+        data: '0xbfa2f4f2' + owner.slice(2).toLowerCase().padStart(64, '0'),
+      }, 'latest'],
+    }),
+  })
+  const json = await response.json() as { result?: string }
+  if (!json.result || json.result === '0x') return []
+  // Decode address[] — offset(32) + length(32) + addresses
+  const hex = json.result.slice(2)
+  const count = parseInt(hex.slice(64, 128), 16)
+  const wallets: string[] = []
+  for (let i = 0; i < count; i++) {
+    const addr = '0x' + hex.slice(128 + i * 64 + 24, 128 + (i + 1) * 64)
+    wallets.push('0x' + addr.slice(2).toLowerCase())
+  }
+  return wallets
+}
 
 // ─── Wallet options ───────────────────────────────────────────────────────────
 
@@ -51,6 +79,8 @@ export default function PasskeySetupContent() {
   const [loading, setLoading]   = useState(false)
   const [result, setResult]     = useState<{ credId: string; x: string; y: string } | null>(null)
   const [error, setError]       = useState('')
+  const [arc402Wallets, setArc402Wallets] = useState<string[]>([])
+  const [selectedWallet, setSelectedWallet] = useState('')
 
   // ── Step 1: WalletConnect ──────────────────────────────────────────────────
 
@@ -91,7 +121,13 @@ export default function PasskeySetupContent() {
 
       try { await client.disconnect({ topic: session.topic, reason: { code: 6000, message: 'done' } }) } catch { /* ok */ }
 
+      // Look up ARC-402 wallets owned by this address
       setWcUriRaw('')
+      setLoading(true)
+      const wallets = await getARC402Wallets(account)
+      setArc402Wallets(wallets)
+      if (wallets.length === 1) setSelectedWallet(wallets[0])
+      setLoading(false)
       setStep('passkey')
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -254,20 +290,67 @@ export default function PasskeySetupContent() {
           {/* ── PASSKEY STEP ── */}
           {step === 'passkey' && (
             <div>
-              <div style={{ background: '#0a180a', border: '1px solid #1a3a1a', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
-                <div style={{ fontSize: '0.72rem', color: '#444', marginBottom: 4 }}>Wallet verified</div>
-                <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#4ade80', wordBreak: 'break-all' }}>{walletAddr}</div>
+              {/* Owner EOA */}
+              <div style={{ background: '#0a180a', border: '1px solid #1a3a1a', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
+                <div style={{ fontSize: '0.7rem', color: '#444', marginBottom: 3 }}>Owner (MetaMask) ✓</div>
+                <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#4ade80', wordBreak: 'break-all' }}>{walletAddr}</div>
               </div>
-              <p style={{ color: '#666', fontSize: '0.82rem', marginBottom: 16, lineHeight: 1.5 }}>
-                Your Face ID key is generated in this device&apos;s secure enclave. It never leaves your phone.
-              </p>
-              <button
-                onClick={registerPasskey}
-                disabled={loading}
-                style={{ width: '100%', padding: '14px', background: loading ? '#1a1a1a' : '#16a34a', color: loading ? '#444' : 'white', border: 'none', borderRadius: 12, fontSize: '1rem', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer' }}
-              >
-                {loading ? '⏳ Waiting for Face ID...' : '👤 Register with Face ID'}
-              </button>
+
+              {/* ARC-402 wallet selector */}
+              {loading && (
+                <div style={{ color: '#555', fontSize: '0.8rem', textAlign: 'center', padding: '12px 0', marginBottom: 12 }}>
+                  ⏳ Looking up ARC-402 wallets...
+                </div>
+              )}
+
+              {!loading && arc402Wallets.length === 0 && (
+                <div style={{ background: '#1a0f00', border: '1px solid #3a2000', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
+                  <div style={{ fontSize: '0.78rem', color: '#f59e0b' }}>⚠️ No ARC-402 wallets found for this owner</div>
+                  <div style={{ fontSize: '0.72rem', color: '#555', marginTop: 4 }}>Deploy one first: <code style={{ color: '#818cf8' }}>arc402 wallet deploy</code></div>
+                </div>
+              )}
+
+              {!loading && arc402Wallets.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: '0.7rem', color: '#444', marginBottom: 6 }}>
+                    ARC-402 wallet{arc402Wallets.length > 1 ? 's' : ''} — passkey will be registered on:
+                  </div>
+                  {arc402Wallets.map(w => (
+                    <button
+                      key={w}
+                      onClick={() => setSelectedWallet(w)}
+                      style={{
+                        width: '100%', textAlign: 'left', padding: '10px 12px', marginBottom: 6,
+                        background: selectedWallet === w ? '#0a1a2e' : '#0d0d0d',
+                        border: `1px solid ${selectedWallet === w ? '#2563eb' : '#1a1a1a'}`,
+                        borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
+                      }}
+                    >
+                      <span style={{ color: selectedWallet === w ? '#60a5fa' : '#333', fontSize: 14 }}>
+                        {selectedWallet === w ? '●' : '○'}
+                      </span>
+                      <span style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: selectedWallet === w ? '#93c5fd' : '#666', wordBreak: 'break-all' }}>
+                        {w}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {!loading && arc402Wallets.length > 0 && (
+                <>
+                  <p style={{ color: '#555', fontSize: '0.78rem', marginBottom: 14, lineHeight: 1.5 }}>
+                    Face ID key is generated in your device&apos;s secure enclave. It never leaves your phone.
+                  </p>
+                  <button
+                    onClick={registerPasskey}
+                    disabled={loading || !selectedWallet}
+                    style={{ width: '100%', padding: '14px', background: (!selectedWallet || loading) ? '#1a1a1a' : '#16a34a', color: (!selectedWallet || loading) ? '#444' : 'white', border: 'none', borderRadius: 12, fontSize: '1rem', fontWeight: 600, cursor: (!selectedWallet || loading) ? 'not-allowed' : 'pointer' }}
+                  >
+                    {loading ? '⏳ Waiting for Face ID...' : '👤 Register with Face ID'}
+                  </button>
+                </>
+              )}
             </div>
           )}
 
@@ -275,8 +358,11 @@ export default function PasskeySetupContent() {
           {step === 'done' && result && (
             <div>
               <div style={{ background: '#0a180a', border: '1px solid #166534', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
-                <div style={{ color: '#4ade80', fontWeight: 600, marginBottom: 4 }}>✅ Passkey registered</div>
-                <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#666', wordBreak: 'break-all' }}>{walletAddr}</div>
+                <div style={{ color: '#4ade80', fontWeight: 600, marginBottom: 8 }}>✅ Passkey registered</div>
+                <div style={{ fontSize: '0.7rem', color: '#444', marginBottom: 3 }}>Owner (MetaMask)</div>
+                <div style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: '#555', wordBreak: 'break-all', marginBottom: 8 }}>{walletAddr}</div>
+                <div style={{ fontSize: '0.7rem', color: '#444', marginBottom: 3 }}>ARC-402 wallet</div>
+                <div style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: '#60a5fa', wordBreak: 'break-all' }}>{selectedWallet}</div>
               </div>
 
               {[

@@ -10,15 +10,23 @@ function b64url(buf: ArrayBuffer): string {
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
 
-function parseP256Key(spki: ArrayBuffer): { x: string; y: string } {
-  const b = new Uint8Array(spki)
-  let off = -1
-  for (let i = 0; i < b.length - 65; i++) {
-    if (b[i] === 0x04 && i > 20) { off = i + 1; break }
+// Use Web Crypto API to parse SPKI — handles all browser/device formats correctly
+async function parseP256Key(spki: ArrayBuffer): Promise<{ x: string; y: string }> {
+  const key = await crypto.subtle.importKey(
+    'spki',
+    spki,
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    true,  // extractable
+    ['verify']
+  )
+  const jwk = await crypto.subtle.exportKey('jwk', key)
+  if (!jwk.x || !jwk.y) throw new Error('Could not extract P256 coordinates from key')
+  // JWK uses base64url encoding — convert to hex bytes
+  const b64ToHex = (b64: string) => {
+    const bin = atob(b64.replace(/-/g, '+').replace(/_/g, '/'))
+    return '0x' + Array.from(bin).map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('')
   }
-  if (off === -1) throw new Error('P256 point not found in key')
-  const hex = (arr: Uint8Array) => '0x' + Array.from(arr).map(v => v.toString(16).padStart(2, '0')).join('')
-  return { x: hex(b.slice(off, off + 32)), y: hex(b.slice(off + 32, off + 64)) }
+  return { x: b64ToHex(jwk.x), y: b64ToHex(jwk.y) }
 }
 
 function short(addr: string) {
@@ -167,7 +175,7 @@ export default function PasskeySetupContent() {
 
       const spki = (cred.response as AuthenticatorAttestationResponse).getPublicKey()
       if (!spki) throw new Error('Could not extract public key')
-      const { x, y } = parseP256Key(spki)
+      const { x, y } = await parseP256Key(spki)
       setResult({ credId: b64url(cred.rawId), x, y })
       setStep('done')
     } catch (e: unknown) {

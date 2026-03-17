@@ -1,7 +1,7 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -29,78 +29,130 @@ function short(addr: string) {
 
 const card: React.CSSProperties = {
   background: '#111', border: '1px solid #222', borderRadius: '16px',
-  padding: '32px', maxWidth: '480px', width: '100%', color: '#f0f0f0', fontFamily: 'system-ui',
+  padding: '28px', maxWidth: '480px', width: '100%', color: '#f0f0f0', fontFamily: 'system-ui',
 }
-const btn = (active: boolean): React.CSSProperties => ({
-  width: '100%', padding: '14px', background: active ? '#3b82f6' : '#222',
+const btn = (active: boolean, color = '#3b82f6'): React.CSSProperties => ({
+  width: '100%', padding: '14px', background: active ? color : '#222',
   color: active ? 'white' : '#555', border: 'none', borderRadius: '10px',
   fontSize: '1rem', fontWeight: 500, cursor: active ? 'pointer' : 'not-allowed',
-  transition: 'background 0.2s',
 })
 const mono: React.CSSProperties = {
   fontFamily: 'monospace', fontSize: '0.7rem', wordBreak: 'break-all',
   background: '#1a1a1a', padding: '8px 10px', borderRadius: '6px',
 }
-const label: React.CSSProperties = { fontSize: '0.75rem', color: '#666', marginBottom: '4px' }
+const lbl: React.CSSProperties = { fontSize: '0.75rem', color: '#555', marginBottom: '4px', display: 'block' }
 const stepDot = (active: boolean, done: boolean): React.CSSProperties => ({
-  width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center',
-  justifyContent: 'center', fontSize: '0.75rem', fontWeight: 600, flexShrink: 0,
-  background: done ? '#166534' : active ? '#1d4ed8' : '#222',
-  color: done ? '#4ade80' : active ? '#93c5fd' : '#555',
-  border: `1px solid ${done ? '#166534' : active ? '#1d4ed8' : '#333'}`,
+  width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center',
+  justifyContent: 'center', fontSize: '0.72rem', fontWeight: 600, flexShrink: 0,
+  background: done ? '#166534' : active ? '#1d4ed8' : '#1a1a1a',
+  color: done ? '#4ade80' : active ? '#93c5fd' : '#444',
+  border: `1px solid ${done ? '#166534' : active ? '#2563eb' : '#333'}`,
 })
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 type Step = 'connect' | 'sign' | 'passkey' | 'done'
+
+// WalletConnect Project ID — from CLI config
+const WC_PROJECT_ID = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? '455e9425343b9156fce1428250c9a54a'
+const CHAIN_ID = 8453 // Base mainnet
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PasskeySetupContent() {
   const params = useSearchParams()
   const [step, setStep] = useState<Step>('connect')
-  const [connectedAddress, setConnectedAddress] = useState(params.get('wallet') ?? '')
-  const [ownershipSig, setOwnershipSig] = useState('')
+  const [walletAddress, setWalletAddress] = useState(params.get('wallet') ?? '')
+  const [wcUri, setWcUri] = useState('')
   const [result, setResult] = useState<{ credId: string; x: string; y: string } | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [status, setStatus] = useState('')
 
-  // ── Step 1: Connect MetaMask ────────────────────────────────────────────────
+  // ── Step 1+2: WalletConnect — connect + sign ownership ─────────────────────
 
-  async function connectWallet() {
-    setError('')
-    setLoading(true)
-    try {
-      const eth = (window as Window & { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum
-      if (!eth) throw new Error('MetaMask not found. Install MetaMask or open this page in MetaMask\'s browser.')
-      const accounts = await eth.request({ method: 'eth_requestAccounts' }) as string[]
-      if (!accounts?.length) throw new Error('No accounts returned from MetaMask.')
-      setConnectedAddress(accounts[0])
-      setStep('sign')
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // ── Step 2: Sign ownership proof ───────────────────────────────────────────
-
-  async function proveOwnership() {
-    setError('')
-    setLoading(true)
-    try {
-      const eth = (window as Window & { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum
-      if (!eth) throw new Error('MetaMask not available.')
-      const message = `ARC-402 Passkey Setup\nWallet: ${connectedAddress}\nTimestamp: ${Date.now()}\n\nI confirm I own this wallet and want to register a passkey for governance operations.`
-      const sig = await eth.request({
-        method: 'personal_sign',
-        params: [message, connectedAddress],
-      }) as string
-      setOwnershipSig(sig)
+  useEffect(() => {
+    // If wallet was pre-filled from URL param, skip to passkey step
+    if (params.get('wallet') && params.get('sig')) {
+      setWalletAddress(params.get('wallet') ?? '')
       setStep('passkey')
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
+    }
+  }, [params])
+
+  async function startWalletConnect() {
+    setError('')
+    setLoading(true)
+    setStatus('Initialising WalletConnect...')
+
+    try {
+      // Dynamically import to avoid SSR issues
+      const { SignClient } = await import('@walletconnect/sign-client')
+
+      const client = await SignClient.init({
+        projectId: WC_PROJECT_ID,
+        metadata: {
+          name: 'ARC-402 Passkey Setup',
+          description: 'Register your Face ID for ARC-402 governance',
+          url: 'https://app.arc402.xyz',
+          icons: [],
+        },
+      })
+
+      const { uri, approval } = await client.connect({
+        requiredNamespaces: {
+          eip155: {
+            methods: ['eth_requestAccounts', 'personal_sign'],
+            chains: [`eip155:${CHAIN_ID}`],
+            events: ['accountsChanged'],
+          },
+        },
+      })
+
+      if (!uri) throw new Error('Failed to create WalletConnect session')
+
+      // Show deep link for MetaMask
+      const encoded = encodeURIComponent(uri)
+      const mmDeepLink = `https://metamask.app.link/wc?uri=${encoded}`
+      setWcUri(mmDeepLink)
+      setStatus('Tap the button below to open MetaMask, then approve the connection.')
       setLoading(false)
+
+      // Wait for approval
+      const session = await approval()
+      const account = session.namespaces.eip155.accounts[0].split(':')[2]
+      setWalletAddress(account)
+      setStatus('Connected ✓ Signing ownership proof...')
+      setLoading(true)
+
+      // Sign ownership message
+      const message = `ARC-402 Passkey Setup\nWallet: ${account}\nTimestamp: ${Date.now()}\n\nI confirm I own this wallet and want to register a passkey for governance operations.`
+      const hexMessage = '0x' + Array.from(new TextEncoder().encode(message)).map(b => b.toString(16).padStart(2, '0')).join('')
+
+      await client.request({
+        topic: session.topic,
+        chainId: `eip155:${CHAIN_ID}`,
+        request: {
+          method: 'personal_sign',
+          params: [hexMessage, account],
+        },
+      })
+
+      // Disconnect — we only needed the sig for ownership proof
+      try { await client.disconnect({ topic: session.topic, reason: { code: 6000, message: 'done' } }) } catch { /* ok */ }
+
+      setStatus('')
+      setWcUri('')
+      setLoading(false)
+      setStep('passkey')
+
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!msg.includes('User rejected') && !msg.includes('cancelled')) {
+        setError(msg)
+      } else {
+        setError('Connection cancelled. Try again.')
+      }
+      setWcUri('')
+      setLoading(false)
+      setStatus('')
     }
   }
 
@@ -118,9 +170,9 @@ export default function PasskeySetupContent() {
           challenge,
           rp: { name: 'ARC-402', id: rpId },
           user: {
-            id: new TextEncoder().encode(connectedAddress),
-            name: connectedAddress,
-            displayName: 'ARC-402 Wallet ' + short(connectedAddress),
+            id: new TextEncoder().encode(walletAddress),
+            name: walletAddress,
+            displayName: 'ARC-402 ' + short(walletAddress),
           },
           pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
           authenticatorSelection: {
@@ -146,90 +198,95 @@ export default function PasskeySetupContent() {
     }
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Steps indicator ─────────────────────────────────────────────────────────
 
   const steps = [
-    { id: 'connect', label: 'Connect MetaMask', done: step !== 'connect' },
-    { id: 'sign', label: 'Prove ownership', done: step === 'passkey' || step === 'done' },
+    { id: 'connect', label: 'Connect wallet', done: step !== 'connect' },
     { id: 'passkey', label: 'Register Face ID', done: step === 'done' },
   ]
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0a0a0a', padding: '20px' }}>
       <div style={card}>
 
-        {/* Header */}
-        <h1 style={{ fontSize: '1.4rem', fontWeight: 600, marginBottom: '6px' }}>🔑 Register Passkey</h1>
-        <p style={{ color: '#666', fontSize: '0.85rem', marginBottom: '28px' }}>
-          Face ID replaces MetaMask for governance. One setup, permanent.
+        <h1 style={{ fontSize: '1.3rem', fontWeight: 600, marginBottom: '6px' }}>🔑 Register Passkey</h1>
+        <p style={{ color: '#555', fontSize: '0.82rem', marginBottom: '24px' }}>
+          Face ID replaces MetaMask for governance. One-time setup.
         </p>
 
         {/* Steps */}
-        <div style={{ display: 'flex', gap: 12, marginBottom: 28, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 24, alignItems: 'center' }}>
           {steps.map((s, i) => (
             <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: i < steps.length - 1 ? 1 : 0 }}>
-              <div style={stepDot(step === s.id, s.done)}>
+              <div style={stepDot(step === s.id || (step === 'sign' && s.id === 'connect'), s.done)}>
                 {s.done ? '✓' : i + 1}
               </div>
-              <span style={{ fontSize: '0.72rem', color: step === s.id ? '#93c5fd' : s.done ? '#4ade80' : '#555', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: '0.72rem', color: (step === s.id || (step === 'sign' && s.id === 'connect')) ? '#93c5fd' : s.done ? '#4ade80' : '#444', whiteSpace: 'nowrap' }}>
                 {s.label}
               </span>
-              {i < steps.length - 1 && (
-                <div style={{ flex: 1, height: 1, background: '#222', minWidth: 8 }} />
-              )}
+              {i < steps.length - 1 && <div style={{ flex: 1, height: 1, background: '#222', minWidth: 12 }} />}
             </div>
           ))}
         </div>
 
         {/* Error */}
         {error && (
-          <div style={{ color: '#ef4444', background: '#1a0a0a', border: '1px solid #3a1a1a', padding: '12px', borderRadius: '8px', fontSize: '0.82rem', marginBottom: 16 }}>
+          <div style={{ color: '#ef4444', background: '#1a0808', border: '1px solid #3a1a1a', padding: '10px 12px', borderRadius: '8px', fontSize: '0.8rem', marginBottom: 16 }}>
             ❌ {error}
           </div>
         )}
 
-        {/* Step 1: Connect */}
-        {step === 'connect' && (
-          <div>
-            <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>
-              Connect the MetaMask wallet that owns your ARC-402 wallet contract. This proves you have the right to register a passkey.
-            </p>
-            <button onClick={connectWallet} disabled={loading} style={btn(!loading)}>
-              {loading ? '⏳ Connecting...' : '🦊 Connect MetaMask'}
-            </button>
+        {/* Status */}
+        {status && !error && (
+          <div style={{ color: '#888', background: '#1a1a1a', padding: '10px 12px', borderRadius: '8px', fontSize: '0.8rem', marginBottom: 16 }}>
+            {status}
           </div>
         )}
 
-        {/* Step 2: Sign */}
-        {step === 'sign' && (
+        {/* Step: connect / sign */}
+        {(step === 'connect' || step === 'sign') && (
           <div>
-            <div style={{ background: '#1a1a1a', borderRadius: '10px', padding: '14px', marginBottom: 20 }}>
-              <div style={label}>Connected wallet</div>
-              <div style={{ ...mono, background: 'transparent', padding: 0, fontSize: '0.8rem', color: '#4ade80' }}>
-                {connectedAddress}
+            {!wcUri && (
+              <>
+                <p style={{ color: '#666', fontSize: '0.82rem', marginBottom: 16 }}>
+                  Tap below to open MetaMask and prove wallet ownership. After approval, you&apos;ll register Face ID on this page.
+                </p>
+                <button onClick={startWalletConnect} disabled={loading} style={btn(!loading)}>
+                  {loading ? '⏳ Connecting...' : '🦊 Connect & Sign with MetaMask'}
+                </button>
+              </>
+            )}
+
+            {wcUri && !loading && (
+              <div style={{ textAlign: 'center' }}>
+                <a
+                  href={wcUri}
+                  style={{ display: 'block', width: '100%', padding: '14px', background: '#f6851b', color: 'white', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: 500, textDecoration: 'none', marginBottom: 12 }}
+                >
+                  🦊 Open in MetaMask
+                </a>
+                <p style={{ color: '#444', fontSize: '0.75rem' }}>
+                  Tap above → approve connection in MetaMask → come back here
+                </p>
               </div>
-            </div>
-            <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>
-              Sign a message to prove you own this wallet. This signature stays in the browser — it&apos;s not sent anywhere.
-            </p>
-            <button onClick={proveOwnership} disabled={loading} style={btn(!loading)}>
-              {loading ? '⏳ Waiting for signature...' : '✍️ Sign ownership proof'}
-            </button>
+            )}
           </div>
         )}
 
-        {/* Step 3: Passkey */}
+        {/* Step: passkey */}
         {step === 'passkey' && (
           <div>
-            <div style={{ background: '#0f1a0f', border: '1px solid #1a3a1a', borderRadius: '10px', padding: '12px', marginBottom: 20, fontSize: '0.82rem' }}>
-              <span style={{ color: '#4ade80' }}>✓ Ownership verified</span>
-              <span style={{ color: '#666', marginLeft: 8 }}>{short(connectedAddress)}</span>
+            <div style={{ background: '#0a180a', border: '1px solid #1a3a1a', borderRadius: '8px', padding: '12px', marginBottom: 16 }}>
+              <span style={{ color: '#4ade80', fontSize: '0.82rem' }}>✓ Wallet verified</span>
+              <div style={{ ...mono, background: 'transparent', padding: '4px 0 0', color: '#666' }}>{walletAddress}</div>
             </div>
-            <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: 20 }}>
-              Register your Face ID or fingerprint. This creates a P256 key in your device&apos;s secure enclave — it never leaves your device.
+            <p style={{ color: '#666', fontSize: '0.82rem', marginBottom: 16 }}>
+              Now register your Face ID. The key is generated in your device&apos;s secure enclave and never leaves your phone.
             </p>
-            <button onClick={registerPasskey} disabled={loading} style={btn(!loading)}>
-              {loading ? '⏳ Waiting for Face ID...' : '👤 Register with Face ID / Fingerprint'}
+            <button onClick={registerPasskey} disabled={loading} style={btn(!loading, '#16a34a')}>
+              {loading ? '⏳ Waiting for Face ID...' : '👤 Register with Face ID'}
             </button>
           </div>
         )}
@@ -237,37 +294,29 @@ export default function PasskeySetupContent() {
         {/* Done */}
         {step === 'done' && result && (
           <div>
-            <div style={{ color: '#4ade80', fontWeight: 600, marginBottom: 16, fontSize: '1rem' }}>
-              ✅ Passkey registered
-            </div>
+            <div style={{ color: '#4ade80', fontWeight: 600, marginBottom: 16 }}>✅ Passkey registered</div>
 
-            <div style={{ background: '#0f1a0f', border: '1px solid #1a3a1a', borderRadius: '10px', padding: '16px', marginBottom: 16 }}>
-              <div style={{ ...label, marginBottom: 6 }}>Wallet</div>
-              <div style={mono}>{connectedAddress}</div>
-            </div>
-
-            <div style={{ marginBottom: 12 }}>
-              <div style={label}>Credential ID</div>
+            <div style={{ marginBottom: 10 }}>
+              <span style={lbl}>Credential ID</span>
               <div style={mono}>{result.credId}</div>
             </div>
             <div style={{ marginBottom: 8 }}>
-              <div style={label}>pubKeyX</div>
+              <span style={lbl}>pubKeyX</span>
               <div style={mono}>{result.x}</div>
             </div>
             <div style={{ marginBottom: 20 }}>
-              <div style={label}>pubKeyY</div>
+              <span style={lbl}>pubKeyY</span>
               <div style={mono}>{result.y}</div>
             </div>
 
-            <div style={{ background: '#111', border: '1px solid #222', borderRadius: '8px', padding: '14px' }}>
-              <div style={{ fontSize: '0.75rem', color: '#555', marginBottom: 8 }}>Run this command to activate on-chain:</div>
-              <div style={{ ...mono, color: '#93c5fd', lineHeight: 1.6 }}>
+            <div style={{ background: '#0d0d1a', border: '1px solid #1a1a3a', borderRadius: '8px', padding: '14px' }}>
+              <span style={{ fontSize: '0.72rem', color: '#444', display: 'block', marginBottom: 8 }}>
+                Run to activate on-chain (requires one MetaMask approval):
+              </span>
+              <div style={{ ...mono, color: '#818cf8', lineHeight: 1.7 }}>
                 arc402 wallet set-passkey \<br />
                 &nbsp;&nbsp;{result.x} \<br />
                 &nbsp;&nbsp;{result.y}
-              </div>
-              <div style={{ fontSize: '0.72rem', color: '#444', marginTop: 10 }}>
-                Requires one MetaMask approval to register the key on your wallet contract. After that, Face ID handles all governance operations.
               </div>
             </div>
           </div>

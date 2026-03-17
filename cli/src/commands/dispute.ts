@@ -1,4 +1,6 @@
 import { Command } from "commander";
+import { ethers } from "ethers";
+import prompts from "prompts";
 import { ArbitrationVote, DirectDisputeReason, DisputeClass, DisputeMode, DisputeOutcome, EvidenceType, ServiceAgreementClient, DisputeArbitrationClient } from "@arc402/sdk";
 import { loadConfig } from "../config";
 import { getClient, requireSigner } from "../client";
@@ -89,6 +91,52 @@ export function registerDisputeCommand(program: Command): void {
     .action(async (id, opts) => {
       const config = loadConfig();
       if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+
+      // Pre-flight: check disputeModule is configured (J4-01)
+      {
+        const { provider: dpProvider } = await getClient(config);
+        const saCheck = new ethers.Contract(
+          config.serviceAgreementAddress,
+          ["function disputeModule() external view returns (address)"],
+          dpProvider,
+        );
+        let disputeModuleAddr: string = ethers.ZeroAddress;
+        try {
+          disputeModuleAddr = await saCheck.disputeModule();
+        } catch { /* assume not configured */ }
+        if (disputeModuleAddr === ethers.ZeroAddress) {
+          console.error(`No dispute module configured on this ServiceAgreement.`);
+          console.error(`Disputes require a DisputeModule to be set by the SA owner.`);
+          console.error(`This protocol deployment may not support formal disputes.`);
+          process.exit(1);
+        }
+      }
+
+      // Pre-flight: read dispute fee and prompt user (J4-02)
+      if (config.disputeArbitrationAddress) {
+        const { provider: feeProvider } = await getClient(config);
+        const daCheck = new ethers.Contract(
+          config.disputeArbitrationAddress,
+          ["function getDisputeFee() external view returns (uint256)"],
+          feeProvider,
+        );
+        let feeWei = 0n;
+        try {
+          feeWei = await daCheck.getDisputeFee();
+        } catch { /* fee getter may not exist — assume 0 */ }
+        if (feeWei > 0n) {
+          const feeEth = ethers.formatEther(feeWei);
+          console.log(`\nDispute fee: ${feeEth} ETH. This will be deducted from your wallet.`);
+          const { proceed } = await prompts({
+            type: "confirm",
+            name: "proceed",
+            message: "Continue?",
+            initial: true,
+          });
+          if (!proceed) { console.log("Aborted."); process.exit(0); }
+        }
+      }
+
       const { signer } = await requireSigner(config);
       const directMap: Record<string, DirectDisputeReason> = {
         'no-delivery': DirectDisputeReason.NO_DELIVERY,
@@ -130,6 +178,19 @@ export function registerDisputeCommand(program: Command): void {
         }
       }
       console.log(`dispute opened for ${id}`);
+
+      // J4-04: Display arbitration selection window deadline
+      try {
+        const { provider: dpAW } = await getClient(config);
+        const saAW = new ethers.Contract(
+          config.serviceAgreementAddress,
+          ["function ARBITRATION_SELECTION_WINDOW() external view returns (uint256)"],
+          dpAW,
+        );
+        const selectionWindow: bigint = await saAW.ARBITRATION_SELECTION_WINDOW();
+        const deadlineDate = new Date(Date.now() + Number(selectionWindow) * 1000);
+        console.log(`Arbitration selection window closes: ${deadlineDate.toLocaleString()}. An arbitrator must be assigned before then.`);
+      } catch { /* not available on this deployment */ }
     });
 
   dispute.command("evidence <id>").requiredOption("--type <type>", "transcript|deliverable|acceptance|communication|external|other").option("--file <path>").option("--text <text>").option("--uri <uri>", "External evidence URI", "").action(async (id, opts) => {
@@ -171,6 +232,26 @@ export function registerDisputeCommand(program: Command): void {
     .action(async (id, opts) => {
       const config = loadConfig();
       if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
+
+      // Pre-flight: check arbitrator is approved (J4-03)
+      if (config.disputeArbitrationAddress) {
+        const { provider: arbProvider } = await getClient(config);
+        const daCheck = new ethers.Contract(
+          config.disputeArbitrationAddress,
+          ["function isApprovedArbitrator(address arbitrator) external view returns (bool)"],
+          arbProvider,
+        );
+        let isApproved = true;
+        try {
+          isApproved = await daCheck.isApprovedArbitrator(opts.arbitrator);
+        } catch { /* assume approved if read fails */ }
+        if (!isApproved) {
+          console.error(`Arbitrator ${opts.arbitrator} is not approved.`);
+          console.error(`Use \`arc402 dispute list-arbitrators\` to see approved arbitrators.`);
+          process.exit(1);
+        }
+      }
+
       const { signer } = await requireSigner(config);
       printSenderInfo(config);
       if (config.walletContractAddress) {
@@ -193,7 +274,22 @@ export function registerDisputeCommand(program: Command): void {
     .action(async (id, opts) => {
       const config = loadConfig();
       if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
-      const { signer } = await requireSigner(config);
+      const { signer, address: voterAddress, provider: voteProvider } = await requireSigner(config);
+
+      // J4-05: Pre-flight — verify caller is on the arbitration panel
+      try {
+        const saClient = new ServiceAgreementClient(config.serviceAgreementAddress, voteProvider);
+        const arbCase = await saClient.getArbitrationCase(BigInt(id));
+        const onPanel = arbCase.arbitrators.map((a: string) => a.toLowerCase()).includes(voterAddress.toLowerCase());
+        if (!onPanel) {
+          console.error(`You are not on the arbitration panel for agreement ${id}. Only assigned arbitrators can vote.`);
+          process.exit(1);
+        }
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException)?.code === 'ERR_USE_AFTER_CLOSE' || String(e).includes('process.exit')) throw e;
+        // If read fails, skip the check and let the transaction reveal the error
+      }
+
       const mapping: Record<string, ArbitrationVote> = {
         provider: ArbitrationVote.PROVIDER_WINS,
         refund: ArbitrationVote.CLIENT_REFUND,

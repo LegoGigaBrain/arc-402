@@ -8,11 +8,12 @@ import os from "os";
 import { Arc402Config, getConfigPath, getUsdcAddress, loadConfig, NETWORK_DEFAULTS, saveConfig } from "../config";
 import { getClient, requireSigner } from "../client";
 import { getTrustTier } from "../utils/format";
-import { ARC402_WALLET_EXECUTE_ABI, ARC402_WALLET_GUARDIAN_ABI, ARC402_WALLET_OWNER_ABI, ARC402_WALLET_PASSKEY_ABI, ARC402_WALLET_PROTOCOL_ABI, ARC402_WALLET_REGISTRY_ABI, POLICY_ENGINE_GOVERNANCE_ABI, POLICY_ENGINE_LIMITS_ABI, TRUST_REGISTRY_ABI, WALLET_FACTORY_ABI } from "../abis";
+import { ARC402_WALLET_EXECUTE_ABI, ARC402_WALLET_GUARDIAN_ABI, ARC402_WALLET_MACHINE_KEY_ABI, ARC402_WALLET_OWNER_ABI, ARC402_WALLET_PASSKEY_ABI, ARC402_WALLET_PROTOCOL_ABI, ARC402_WALLET_REGISTRY_ABI, POLICY_ENGINE_GOVERNANCE_ABI, POLICY_ENGINE_LIMITS_ABI, TRUST_REGISTRY_ABI, WALLET_FACTORY_ABI } from "../abis";
 import { warnIfPublicRpc } from "../config";
 import { connectPhoneWallet, sendTransactionWithSession, requestPhoneWalletSignature } from "../walletconnect";
 import { BundlerClient, buildSponsoredUserOp, PaymasterClient, DEFAULT_ENTRY_POINT } from "../bundler";
 import { clearWCSession } from "../walletconnect-session";
+import { handleWalletError } from "../wallet-router";
 import { requestCoinbaseSmartWalletSignature } from "../coinbase-smart-wallet";
 import { sendTelegramMessage } from "../telegram-notify";
 
@@ -111,7 +112,10 @@ async function runWalletOnboardingCeremony(
     }, `setCategoryLimitFor: ${name} → ${amountEth} ETH`);
   }
 
-  console.log("── Onboarding complete ─────────────────────────────────────────\n");
+  console.log("── Onboarding complete ─────────────────────────────────────────");
+  console.log("💡 Tip: For production security, also configure:");
+  console.log("  arc402 wallet set-velocity-limit <eth>   — wallet-level hourly ETH cap");
+  console.log("  arc402 wallet policy set-daily-limit --category general --amount <eth>   — daily per-category cap");
 }
 
 export function registerWalletCommands(program: Command): void {
@@ -507,6 +511,12 @@ export function registerWalletCommands(program: Command): void {
         console.log(`\n✓ ARC402Wallet deployed (sponsored) at: ${senderAddress}`);
         console.log("Gas sponsorship active — initial setup ops are free");
         console.log(`Owner: ${ownerAddress}`);
+        console.log(`\n⚠  IMPORTANT: Onboarding ceremony was not run on this wallet.`);
+        console.log(`   Category spend limits have NOT been configured. All executeSpend and`);
+        console.log(`   executeTokenSpend calls will fail with "PolicyEngine: category not configured"`);
+        console.log(`   until you run governance setup manually via WalletConnect:`);
+        console.log(`\n     arc402 wallet governance setup`);
+        console.log(`\n   This must be done before making any spend from this wallet.`);
         console.log(`\nNext: arc402 wallet set-passkey <x> <y> --sponsored`);
       } else if (opts.smartWallet) {
         const { txHash, account } = await requestCoinbaseSmartWalletSignature(
@@ -737,6 +747,10 @@ export function registerWalletCommands(program: Command): void {
       console.log(`Category:  ${opts.category}`);
       console.log(`Per-tx:    ${perTxLimit === 0n ? "(not set)" : ethers.formatEther(perTxLimit) + " ETH"}`);
       console.log(`Daily:     ${dailyLimit === 0n ? "(not set)" : ethers.formatEther(dailyLimit) + " ETH"}`);
+      if (dailyLimit > 0n) {
+        console.log(`\nNote: Daily limits use two 12-hour buckets (current + previous window).`);
+        console.log(`  The effective limit applies across a rolling 12-24 hour period, not a strict calendar day.`);
+      }
     });
 
   walletPolicy.command("set-limit")
@@ -783,6 +797,63 @@ export function registerWalletCommands(program: Command): void {
         const contract = new ethers.Contract(policyAddress, POLICY_ENGINE_LIMITS_ABI, signer);
         await (await contract.setCategoryLimitFor(address, opts.category, amount)).wait();
         console.log(`Spend limit for ${opts.category} set to ${opts.amount} ETH`);
+      }
+    });
+
+  // ─── policy set-daily-limit (J8-01) ──────────────────────────────────────
+  //
+  // Sets the daily (rolling 12/24h window) category limit on PolicyEngine.
+  // Note: the limit uses two 12-hour buckets — the effective maximum across
+  // any 24h window is up to 2× the configured value at bucket boundaries.
+
+  walletPolicy.command("set-daily-limit")
+    .description("Set a daily category spending limit (phone wallet signs via WalletConnect). Note: uses 12-hour rolling buckets — see below.")
+    .requiredOption("--category <cat>", "Category name (e.g. compute)")
+    .requiredOption("--amount <eth>", "Daily limit in ETH (e.g. 0.5)")
+    .action(async (opts) => {
+      const config = loadConfig();
+      console.log(`\nNote: ARC-402 has two independent velocity limit layers:`);
+      console.log(`  1. Wallet-level (arc402 wallet set-velocity-limit): ETH cap per rolling hour, enforced by ARC402Wallet contract. Breach auto-freezes wallet.`);
+      console.log(`  2. PolicyEngine-level (arc402 wallet policy set-daily-limit): Per-category daily cap, enforced by PolicyEngine. Breach returns a soft error without freezing.`);
+      console.log(`  Both must be configured for full protection.\n`);
+      const policyAddress = config.policyEngineAddress ?? POLICY_ENGINE_DEFAULT;
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const walletAddr = config.walletContractAddress;
+      if (!walletAddr) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      const amount = ethers.parseEther(opts.amount);
+      console.log(`\nNote: Daily limits use two 12-hour buckets (current + previous window).`);
+      console.log(`  The effective limit applies across a rolling 12-24 hour period, not a strict calendar day.`);
+      console.log(`  Setting daily limit for category "${opts.category}" to ${opts.amount} ETH.\n`);
+      const policyInterface = new ethers.Interface(POLICY_ENGINE_LIMITS_ABI);
+      if (config.walletConnectProjectId) {
+        const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+        const { txHash } = await requestPhoneWalletSignature(
+          config.walletConnectProjectId,
+          chainId,
+          () => ({
+            to: policyAddress,
+            data: policyInterface.encodeFunctionData("setDailyLimitFor", [walletAddr, opts.category, amount]),
+            value: "0x0",
+          }),
+          `Approve daily limit: ${opts.category} → ${opts.amount} ETH`,
+          config.telegramBotToken && config.telegramChatId ? {
+            botToken: config.telegramBotToken,
+            chatId: config.telegramChatId,
+            threadId: config.telegramThreadId,
+          } : undefined,
+          config
+        );
+        await provider.waitForTransaction(txHash);
+        console.log(`Daily limit for ${opts.category} set to ${opts.amount} ETH (12/24h rolling window)`);
+      } else {
+        console.warn("⚠ WalletConnect not configured. Using stored private key (insecure).");
+        const { signer, address } = await requireSigner(config);
+        const contract = new ethers.Contract(policyAddress, POLICY_ENGINE_LIMITS_ABI, signer);
+        await (await contract.setDailyLimitFor(address, opts.category, amount)).wait();
+        console.log(`Daily limit for ${opts.category} set to ${opts.amount} ETH (12/24h rolling window)`);
       }
     });
 
@@ -1204,12 +1275,23 @@ export function registerWalletCommands(program: Command): void {
         config
       );
 
+      // Wait for tx to confirm, then read back the active registry (J6-02)
+      await provider.waitForTransaction(txHash);
+      let confirmedRegistry = pendingRegistry;
+      try {
+        confirmedRegistry = await walletContract.registry();
+      } catch { /* use pendingRegistry as fallback */ }
+
       console.log(`\n✓ Registry upgrade executed`);
       console.log(`  Tx: ${txHash}`);
-      console.log(`  New registry: ${pendingRegistry}`);
+      console.log(`  New registry: ${confirmedRegistry}`);
+      if (confirmedRegistry.toLowerCase() === pendingRegistry.toLowerCase()) {
+        console.log(`  Registry updated successfully — addresses now resolve through new registry.`);
+      } else {
+        console.warn(`  WARN: Confirmed registry (${confirmedRegistry}) differs from expected (${pendingRegistry}). Check the transaction.`);
+      }
+      console.log(`\nVerify contracts resolve correctly with \`arc402 wallet status\``);
     });
-
-  // ─── cancel-registry-upgrade ───────────────────────────────────────────────
 
   // ─── whitelist-contract ────────────────────────────────────────────────────
   //
@@ -1364,6 +1446,10 @@ export function registerWalletCommands(program: Command): void {
     .description("Set the per-rolling-window ETH velocity limit on ARC402Wallet (limit in ETH, phone wallet signs via WalletConnect)")
     .action(async (limitEth) => {
       const config = loadConfig();
+      console.log(`\nNote: ARC-402 has two independent velocity limit layers:`);
+      console.log(`  1. Wallet-level (arc402 wallet set-velocity-limit): ETH cap per rolling hour, enforced by ARC402Wallet contract. Breach auto-freezes wallet.`);
+      console.log(`  2. PolicyEngine-level (arc402 wallet policy set-daily-limit): Per-category daily cap, enforced by PolicyEngine. Breach returns a soft error without freezing.`);
+      console.log(`  Both must be configured for full protection.\n`);
       if (!config.walletContractAddress) {
         console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
         process.exit(1);
@@ -1513,8 +1599,12 @@ export function registerWalletCommands(program: Command): void {
       const walletContract = new ethers.Contract(config.walletContractAddress, ARC402_WALLET_REGISTRY_ABI, provider);
 
       let pendingRegistry: string;
+      let unlockAtCancel: bigint = 0n;
       try {
-        pendingRegistry = await walletContract.pendingRegistry();
+        [pendingRegistry, unlockAtCancel] = await Promise.all([
+          walletContract.pendingRegistry(),
+          walletContract.registryUpdateUnlockAt().catch(() => 0n),
+        ]);
       } catch (e) {
         console.error("Failed to read pending registry from contract:", e);
         process.exit(1);
@@ -1525,7 +1615,18 @@ export function registerWalletCommands(program: Command): void {
         return;
       }
 
-      console.log(`Cancelling pending registry upgrade to: ${pendingRegistry}`);
+      const nowSecondsCancel = BigInt(Math.floor(Date.now() / 1000));
+      const unlockDateCancel = unlockAtCancel > 0n
+        ? new Date(Number(unlockAtCancel) * 1000).toISOString()
+        : "(unknown)";
+      const timelockStatus = unlockAtCancel > nowSecondsCancel
+        ? `ACTIVE — executes at ${unlockDateCancel}`
+        : `ELAPSED at ${unlockDateCancel} — execution window open`;
+
+      console.log(`\nPending registry upgrade:`);
+      console.log(`  Pending address: ${pendingRegistry}`);
+      console.log(`  Timelock:        ${timelockStatus}`);
+      console.log(`\nCancelling pending registry upgrade to: ${pendingRegistry}`);
 
       const telegramOpts = config.telegramBotToken && config.telegramChatId
         ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
@@ -1898,6 +1999,355 @@ export function registerWalletCommands(program: Command): void {
       process.exit(0);
     });
 
+  // ─── revoke-machine-key (J1-04 / J5-01) ───────────────────────────────────
+  //
+  // Revokes an authorized machine key via owner WalletConnect approval.
+  // Pre-checks that the key IS currently authorized before sending.
+
+  wallet.command("revoke-machine-key <address>")
+    .description("Revoke an authorized machine key on ARC402Wallet (phone wallet signs via WalletConnect)")
+    .action(async (keyAddress: string) => {
+      const config = loadConfig();
+      if (!config.walletContractAddress) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.walletConnectProjectId) {
+        console.error("walletConnectProjectId not set in config.");
+        process.exit(1);
+      }
+
+      let checksumKey: string;
+      try {
+        checksumKey = ethers.getAddress(keyAddress);
+      } catch {
+        console.error(`Invalid address: ${keyAddress}`);
+        process.exit(1);
+      }
+
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const walletContract = new ethers.Contract(config.walletContractAddress, ARC402_WALLET_MACHINE_KEY_ABI, provider);
+
+      // Pre-check: verify the key IS currently authorized
+      let isAuthorized = false;
+      try {
+        isAuthorized = await walletContract.authorizedMachineKeys(checksumKey);
+      } catch { /* ignore — attempt revoke anyway */ }
+
+      if (!isAuthorized) {
+        console.error(`Machine key ${checksumKey} is NOT currently authorized on ${config.walletContractAddress}.`);
+        console.error(`Run \`arc402 wallet list-machine-keys\` to see authorized keys.`);
+        process.exit(1);
+      }
+
+      console.log(`\nWallet:      ${config.walletContractAddress}`);
+      console.log(`Revoking:    ${checksumKey}`);
+
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      const walletInterface = new ethers.Interface(ARC402_WALLET_MACHINE_KEY_ABI);
+      const { client, session, account } = await connectPhoneWallet(
+        config.walletConnectProjectId,
+        chainId,
+        config,
+        { telegramOpts, prompt: `Revoke machine key ${checksumKey} on ARC402Wallet` }
+      );
+
+      console.log(`\n✓ Connected: ${account}`);
+      console.log("Sending revokeMachineKey transaction...");
+
+      const hash = await sendTransactionWithSession(client, session, account, chainId, {
+        to: config.walletContractAddress,
+        data: walletInterface.encodeFunctionData("revokeMachineKey", [checksumKey]),
+        value: "0x0",
+      });
+
+      console.log(`\nTransaction submitted: ${hash}`);
+      console.log("Waiting for confirmation...");
+
+      const receipt = await provider.waitForTransaction(hash, 1, 60000);
+      if (!receipt || receipt.status !== 1) {
+        console.error("Transaction failed.");
+        process.exit(1);
+      }
+
+      const stillAuthorized = await walletContract.authorizedMachineKeys(checksumKey);
+      console.log(`\n✓ Machine key revoked: ${stillAuthorized ? "NO (still authorized — check tx)" : "YES"}`);
+      console.log(`  Wallet:      ${config.walletContractAddress}`);
+      console.log(`  Machine key: ${checksumKey}`);
+      console.log(`  Tx:          ${hash}`);
+
+      await client.disconnect({ topic: session.topic, reason: { code: 6000, message: "done" } });
+      process.exit(0);
+    });
+
+  // ─── list-machine-keys (J5-02) ─────────────────────────────────────────────
+  //
+  // Lists authorized machine keys by scanning MachineKeyAuthorized/MachineKeyRevoked
+  // events. Falls back to checking the configured machine key if no events found.
+
+  wallet.command("list-machine-keys")
+    .description("List authorized machine keys by scanning contract events")
+    .option("--json")
+    .action(async (opts) => {
+      const config = loadConfig();
+      const walletAddr = config.walletContractAddress;
+      if (!walletAddr) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const walletContract = new ethers.Contract(walletAddr, ARC402_WALLET_MACHINE_KEY_ABI, provider);
+
+      // Scan for MachineKeyAuthorized and MachineKeyRevoked events
+      const authorizedTopic = ethers.id("MachineKeyAuthorized(address)");
+      const revokedTopic = ethers.id("MachineKeyRevoked(address)");
+
+      const authorizedKeys = new Set<string>();
+      const revokedKeys = new Set<string>();
+
+      try {
+        const [authLogs, revokeLogs] = await Promise.all([
+          provider.getLogs({ address: walletAddr, topics: [authorizedTopic], fromBlock: 0 }),
+          provider.getLogs({ address: walletAddr, topics: [revokedTopic], fromBlock: 0 }),
+        ]);
+        for (const log of authLogs) {
+          const key = ethers.getAddress("0x" + log.topics[1].slice(26));
+          authorizedKeys.add(key);
+        }
+        for (const log of revokeLogs) {
+          const key = ethers.getAddress("0x" + log.topics[1].slice(26));
+          revokedKeys.add(key);
+        }
+      } catch { /* event scan failed — fall back to config key */ }
+
+      // Build active key list: authorized but not revoked
+      const activeFromEvents = [...authorizedKeys].filter((k) => !revokedKeys.has(k));
+
+      // Also check configured machine key
+      const configMachineKey = config.privateKey ? new ethers.Wallet(config.privateKey).address : null;
+
+      // Verify each candidate against chain
+      const candidates = new Set<string>(activeFromEvents);
+      if (configMachineKey) candidates.add(configMachineKey);
+
+      const results: Array<{ address: string; authorized: boolean }> = [];
+      for (const addr of candidates) {
+        let authorized = false;
+        try {
+          authorized = await walletContract.authorizedMachineKeys(addr);
+        } catch { /* ignore */ }
+        results.push({ address: addr, authorized });
+      }
+
+      if (opts.json) {
+        console.log(JSON.stringify({ walletAddress: walletAddr, machineKeys: results }, null, 2));
+      } else {
+        console.log(`\nMachine keys for wallet: ${walletAddr}\n`);
+        if (results.length === 0) {
+          console.log("  No machine keys found.");
+        } else {
+          for (const r of results) {
+            const status = r.authorized ? "AUTHORIZED" : "not authorized";
+            const tag = r.address === configMachineKey ? "  [configured]" : "";
+            console.log(`  ${r.address}  ${status}${tag}`);
+          }
+        }
+        console.log(`\nTo authorize: arc402 wallet authorize-machine-key <address>`);
+        console.log(`To revoke:    arc402 wallet revoke-machine-key <address>`);
+      }
+    });
+
+  // ─── open-context (J1-03) ──────────────────────────────────────────────────
+  //
+  // Standalone command for opening a spend context via machine key.
+  // Note: each context allows only one spend — a new context must be opened per payment.
+
+  wallet.command("open-context")
+    .description("Open a spend context on the wallet via machine key (each context allows only one spend)")
+    .option("--task-type <type>", "Task type string for the context", "general")
+    .option("--json")
+    .action(async (opts) => {
+      const config = loadConfig();
+      warnIfPublicRpc(config);
+      const walletAddr = config.walletContractAddress;
+      if (!walletAddr) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.privateKey) {
+        console.error("privateKey not set in config — machine key required for open-context.");
+        process.exit(1);
+      }
+
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const machineKey = new ethers.Wallet(config.privateKey, provider);
+      const walletContract = new ethers.Contract(walletAddr, ARC402_WALLET_PROTOCOL_ABI, machineKey);
+
+      // Check context isn't already open
+      const isOpen: boolean = await walletContract.contextOpen();
+      if (isOpen) {
+        console.error("A context is already open on this wallet.");
+        console.error("Close it first: arc402 wallet close-context");
+        process.exit(1);
+      }
+
+      const contextId = ethers.hexlify(ethers.randomBytes(32));
+      console.log(`Opening context (taskType: ${opts.taskType})...`);
+      const tx = await walletContract.openContext(contextId, opts.taskType);
+      const receipt = await tx.wait(1);
+
+      if (opts.json) {
+        console.log(JSON.stringify({ walletAddress: walletAddr, contextId, taskType: opts.taskType, txHash: receipt?.hash }));
+      } else {
+        console.log(`✓ Context opened`);
+        console.log(`  contextId: ${contextId}`);
+        console.log(`  taskType:  ${opts.taskType}`);
+        console.log(`  Tx:        ${receipt?.hash}`);
+        console.log(`\nNote: Each context allows only one spend. Call \`arc402 wallet attest\` then \`arc402 wallet drain\` (or executeSpend directly).`);
+      }
+    });
+
+  // ─── attest (J1-03) ────────────────────────────────────────────────────────
+  //
+  // Standalone command for creating an attestation via machine key.
+  // Returns the attestationId for use in executeSpend / drain.
+
+  wallet.command("attest")
+    .description("Create an attestation via machine key directly on wallet, returns attestationId")
+    .requiredOption("--recipient <addr>", "Recipient address")
+    .requiredOption("--amount <eth>", "Amount in ETH")
+    .requiredOption("--category <cat>", "Spend category (used as action)")
+    .option("--token <addr>", "Token contract address (default: ETH / zero address)")
+    .option("--ttl <seconds>", "Attestation TTL in seconds (default: 600)", "600")
+    .option("--json")
+    .action(async (opts) => {
+      const config = loadConfig();
+      warnIfPublicRpc(config);
+      const walletAddr = config.walletContractAddress;
+      if (!walletAddr) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.privateKey) {
+        console.error("privateKey not set in config — machine key required for attest.");
+        process.exit(1);
+      }
+
+      let checksumRecipient: string;
+      try {
+        checksumRecipient = ethers.getAddress(opts.recipient);
+      } catch {
+        console.error(`Invalid recipient address: ${opts.recipient}`);
+        process.exit(1);
+      }
+
+      const tokenAddress = opts.token ? ethers.getAddress(opts.token) : ethers.ZeroAddress;
+      const amount = ethers.parseEther(opts.amount);
+      const expiresAt = Math.floor(Date.now() / 1000) + parseInt(opts.ttl, 10);
+      const attestationId = ethers.hexlify(ethers.randomBytes(32));
+
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const machineKey = new ethers.Wallet(config.privateKey, provider);
+      const walletContract = new ethers.Contract(walletAddr, ARC402_WALLET_PROTOCOL_ABI, machineKey);
+
+      console.log(`Creating attestation...`);
+      const tx = await walletContract.attest(
+        attestationId,
+        opts.category,
+        `cli attest: ${opts.category} to ${checksumRecipient}`,
+        checksumRecipient,
+        amount,
+        tokenAddress,
+        expiresAt,
+      );
+      const receipt = await tx.wait(1);
+
+      if (opts.json) {
+        console.log(JSON.stringify({
+          walletAddress: walletAddr,
+          attestationId,
+          recipient: checksumRecipient,
+          amount: opts.amount,
+          token: tokenAddress,
+          category: opts.category,
+          expiresAt,
+          txHash: receipt?.hash,
+        }));
+      } else {
+        console.log(`✓ Attestation created`);
+        console.log(`  attestationId: ${attestationId}`);
+        console.log(`  recipient:     ${checksumRecipient}`);
+        console.log(`  amount:        ${opts.amount} ETH`);
+        console.log(`  token:         ${tokenAddress === ethers.ZeroAddress ? "ETH" : tokenAddress}`);
+        console.log(`  expiresAt:     ${new Date(expiresAt * 1000).toISOString()}`);
+        console.log(`  Tx:            ${receipt?.hash}`);
+        console.log(`\nUse this attestationId in \`arc402 wallet drain\` or your spend flow.`);
+      }
+    });
+
+  // ─── velocity-status (J8-03) ───────────────────────────────────────────────
+  //
+  // Read-only: shows wallet-level velocity limit, window start, cumulative spend, and remaining.
+
+  wallet.command("velocity-status")
+    .description("Show wallet-level velocity limit, current window spend, and remaining budget")
+    .option("--json")
+    .action(async (opts) => {
+      const config = loadConfig();
+      const walletAddr = config.walletContractAddress;
+      if (!walletAddr) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const walletContract = new ethers.Contract(walletAddr, ARC402_WALLET_OWNER_ABI, provider);
+
+      let velocityLimit = 0n;
+      let velocityWindowStart = 0n;
+      let cumulativeSpend = 0n;
+
+      try {
+        [velocityLimit, velocityWindowStart, cumulativeSpend] = await Promise.all([
+          walletContract.velocityLimit(),
+          walletContract.velocityWindowStart(),
+          walletContract.cumulativeSpend(),
+        ]);
+      } catch (e) {
+        console.error("Failed to read velocity data from wallet:", e instanceof Error ? e.message : String(e));
+        process.exit(1);
+      }
+
+      const remaining = velocityLimit === 0n ? null : (velocityLimit > cumulativeSpend ? velocityLimit - cumulativeSpend : 0n);
+      const windowStartDate = velocityWindowStart === 0n ? null : new Date(Number(velocityWindowStart) * 1000);
+
+      if (opts.json) {
+        console.log(JSON.stringify({
+          walletAddress: walletAddr,
+          velocityLimit: ethers.formatEther(velocityLimit),
+          velocityLimitEnabled: velocityLimit > 0n,
+          velocityWindowStart: windowStartDate?.toISOString() ?? null,
+          cumulativeSpend: ethers.formatEther(cumulativeSpend),
+          remaining: remaining !== null ? ethers.formatEther(remaining) : null,
+        }, null, 2));
+      } else {
+        console.log(`\nWallet velocity status: ${walletAddr}\n`);
+        if (velocityLimit === 0n) {
+          console.log(`  Velocity limit: disabled (set with \`arc402 wallet set-velocity-limit <eth>\`)`);
+        } else {
+          console.log(`  Limit:          ${ethers.formatEther(velocityLimit)} ETH per rolling window`);
+          console.log(`  Window start:   ${windowStartDate?.toISOString() ?? "(no window yet)"}`);
+          console.log(`  Spent:          ${ethers.formatEther(cumulativeSpend)} ETH`);
+          console.log(`  Remaining:      ${remaining !== null ? ethers.formatEther(remaining) + " ETH" : "N/A"}`);
+        }
+      }
+    });
+
   // ─── check-context ─────────────────────────────────────────────────────────
   //
   // P1 guardrail: inspect on-chain context state before attempting openContext.
@@ -1977,7 +2427,7 @@ export function registerWalletCommands(program: Command): void {
   // All transactions signed by machine key (onlyOwnerOrMachineKey). No WalletConnect needed.
 
   wallet.command("drain")
-    .description("Drain ETH from wallet contract to recipient via machine key (openContext → attest → executeSpend → closeContext)")
+    .description("Drain ETH from wallet contract to recipient via machine key (openContext → attest → executeSpend → closeContext). Note: each context allows exactly one spend — a new context is opened per call.")
     .argument("[recipient]", "Recipient address (defaults to config.ownerAddress)")
     .option("--amount <eth>", "Amount to drain in ETH (default: all minus 0.00005 ETH gas reserve)")
     .option("--category <cat>", "Spend category (default: general)", "general")
@@ -2066,7 +2516,8 @@ export function registerWalletCommands(program: Command): void {
       console.log(`  Recipient: ${checksumRecipient}`);
       console.log(`  Amount:    ${ethers.formatEther(drainAmount)} ETH`);
       console.log(`  Category:  ${opts.category}`);
-      console.log(`  MachineKey: ${machineKey.address}\n`);
+      console.log(`  MachineKey: ${machineKey.address}`);
+      console.log(`\nNote: Each context allows exactly one spend. A new context is opened for each drain call.\n`);
 
       // ── Step 1: context cleanup ────────────────────────────────────────────
       const isOpen: boolean = await walletContract.contextOpen();
@@ -2085,7 +2536,7 @@ export function registerWalletCommands(program: Command): void {
       console.log(`  ✓ openContext: ${openReceipt?.hash}`);
 
       // ── Step 3: attest (direct on wallet — onlyOwnerOrMachineKey, NOT via executeContractCall)
-      const attestationId = ethers.keccak256(ethers.toUtf8Bytes(`attest-drain-${Date.now()}`));
+      const attestationId = ethers.hexlify(ethers.randomBytes(32));
       const expiry = Math.floor(Date.now() / 1000) + 600; // 10 min TTL
       console.log("Creating attestation (direct on wallet)...");
       const attestTx = await walletContract.attest(
@@ -2102,14 +2553,20 @@ export function registerWalletCommands(program: Command): void {
 
       // ── Step 4: executeSpend ───────────────────────────────────────────────
       console.log("Executing spend...");
-      const spendTx = await walletContract.executeSpend(
-        checksumRecipient,
-        drainAmount,
-        opts.category,
-        attestationId,
-      );
-      const spendReceipt = await spendTx.wait(1);
-      console.log(`  ✓ executeSpend: ${spendReceipt?.hash}`);
+      let spendReceiptHash: string | undefined;
+      try {
+        const spendTx = await walletContract.executeSpend(
+          checksumRecipient,
+          drainAmount,
+          opts.category,
+          attestationId,
+        );
+        const spendReceipt = await spendTx.wait(1);
+        spendReceiptHash = spendReceipt?.hash;
+      } catch (e) {
+        handleWalletError(e);
+      }
+      console.log(`  ✓ executeSpend: ${spendReceiptHash}`);
 
       // ── Step 5: closeContext ───────────────────────────────────────────────
       console.log("Closing context...");
@@ -2128,7 +2585,7 @@ export function registerWalletCommands(program: Command): void {
           txHashes: {
             openContext: openReceipt?.hash,
             attest: attestReceipt?.hash,
-            executeSpend: spendReceipt?.hash,
+            executeSpend: spendReceiptHash,
             closeContext: closeReceipt?.hash,
           },
           remainingBalance: ethers.formatEther(newBalance),
@@ -2137,6 +2594,202 @@ export function registerWalletCommands(program: Command): void {
         console.log(`\n✓ Drain complete`);
         console.log(`  Sent:      ${ethers.formatEther(drainAmount)} ETH → ${checksumRecipient}`);
         console.log(`  Remaining: ${ethers.formatEther(newBalance)} ETH`);
+      }
+    });
+
+  // ─── drain-token ───────────────────────────────────────────────────────────
+  //
+  // ERC-20 token drain via machine key (J1-07).
+  // Flow: check context → close if stale → openContext → attest (with token address)
+  //       → executeTokenSpend → closeContext
+  // Note: Each context can only be used for one spend. A new context must be opened
+  // for each payment.
+
+  wallet.command("drain-token")
+    .description("Drain ERC-20 tokens from wallet contract to recipient via machine key (openContext → attest → executeTokenSpend → closeContext). Note: each context allows exactly one spend.")
+    .argument("<recipient>", "Recipient address")
+    .argument("<amount>", "Token amount in human units (e.g. 1.5 for 1.5 USDC)")
+    .requiredOption("--token <address>", "ERC-20 token contract address (or 'usdc' for configured USDC address)")
+    .option("--category <cat>", "Spend category (default: general)", "general")
+    .option("--decimals <n>", "Token decimals override (default: auto-detect from contract)", "auto")
+    .option("--json")
+    .action(async (recipientArg: string, amountArg: string, opts) => {
+      const config = loadConfig();
+      warnIfPublicRpc(config);
+
+      const walletAddr = config.walletContractAddress;
+      if (!walletAddr) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.privateKey) {
+        console.error("privateKey not set in config — machine key required for drain-token.");
+        process.exit(1);
+      }
+
+      // Resolve token address
+      let tokenAddress: string;
+      if (opts.token.toLowerCase() === "usdc") {
+        tokenAddress = getUsdcAddress(config);
+      } else {
+        try {
+          tokenAddress = ethers.getAddress(opts.token);
+        } catch {
+          console.error(`Invalid token address: ${opts.token}`);
+          process.exit(1);
+        }
+      }
+
+      let checksumRecipient: string;
+      try {
+        checksumRecipient = ethers.getAddress(recipientArg);
+      } catch {
+        console.error(`Invalid recipient address: ${recipientArg}`);
+        process.exit(1);
+      }
+
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const machineKey = new ethers.Wallet(config.privateKey, provider);
+
+      // Determine token decimals
+      const erc20Abi = [
+        "function decimals() external view returns (uint8)",
+        "function balanceOf(address owner) external view returns (uint256)",
+      ];
+      const erc20 = new ethers.Contract(tokenAddress, erc20Abi, provider);
+
+      let decimals: number;
+      if (opts.decimals !== "auto") {
+        decimals = parseInt(opts.decimals, 10);
+      } else {
+        try {
+          decimals = Number(await erc20.decimals());
+        } catch {
+          decimals = 18;
+        }
+      }
+
+      let tokenAmount: bigint;
+      try {
+        tokenAmount = ethers.parseUnits(amountArg, decimals);
+      } catch {
+        console.error(`Invalid amount: ${amountArg}. Provide a decimal value (e.g. 1.5).`);
+        process.exit(1);
+      }
+
+      // Check token balance
+      const tokenBalance: bigint = await erc20.balanceOf(walletAddr);
+      if (tokenBalance < tokenAmount) {
+        console.error(`Insufficient token balance: ${ethers.formatUnits(tokenBalance, decimals)} < ${amountArg}`);
+        process.exit(1);
+      }
+
+      // Check category is configured on PolicyEngine
+      const policyAddressT = config.policyEngineAddress ?? POLICY_ENGINE_DEFAULT;
+      const policyContractT = new ethers.Contract(policyAddressT, POLICY_ENGINE_LIMITS_ABI, provider);
+      const categoryLimitT: bigint = await policyContractT.categoryLimits(walletAddr, opts.category);
+      if (categoryLimitT === 0n) {
+        console.error(`Category "${opts.category}" is not configured on PolicyEngine for this wallet.`);
+        console.error(`Fix: arc402 wallet policy set-limit --category ${opts.category} --amount <eth>`);
+        process.exit(1);
+      }
+
+      // Verify machine key is authorized
+      const mkAbi = ["function authorizedMachineKeys(address) external view returns (bool)"];
+      const walletCheckT = new ethers.Contract(walletAddr, mkAbi, provider);
+      let isAuthorizedT = false;
+      try {
+        isAuthorizedT = await walletCheckT.authorizedMachineKeys(machineKey.address);
+      } catch { isAuthorizedT = true; }
+      if (!isAuthorizedT) {
+        console.error(`Machine key ${machineKey.address} is not authorized on wallet ${walletAddr}`);
+        console.error(`Fix: arc402 wallet authorize-machine-key ${machineKey.address}`);
+        process.exit(1);
+      }
+
+      const walletContractT = new ethers.Contract(walletAddr, ARC402_WALLET_PROTOCOL_ABI, machineKey);
+
+      console.log(`\nDrain token plan:`);
+      console.log(`  Wallet:     ${walletAddr}`);
+      console.log(`  Recipient:  ${checksumRecipient}`);
+      console.log(`  Amount:     ${amountArg} (${tokenAmount.toString()} units)`);
+      console.log(`  Token:      ${tokenAddress}`);
+      console.log(`  Category:   ${opts.category}`);
+      console.log(`  MachineKey: ${machineKey.address}`);
+      console.log(`\nNote: Each context allows exactly one spend. A new context is opened for each drain-token call.\n`);
+
+      // ── Step 1: context cleanup ──────────────────────────────────────────────
+      const isOpenT: boolean = await walletContractT.contextOpen();
+      if (isOpenT) {
+        console.log("Stale context found — closing it first...");
+        const closeTxT = await walletContractT.closeContext();
+        await closeTxT.wait(2);
+        console.log(`  ✓ Closed: ${closeTxT.hash}`);
+      }
+
+      // ── Step 2: openContext ──────────────────────────────────────────────────
+      const contextIdT = ethers.keccak256(ethers.toUtf8Bytes(`drain-token-${Date.now()}`));
+      console.log("Opening context...");
+      const openTxT = await walletContractT.openContext(contextIdT, "drain");
+      const openReceiptT = await openTxT.wait(1);
+      console.log(`  ✓ openContext: ${openReceiptT?.hash}`);
+
+      // ── Step 3: attest with token address ────────────────────────────────────
+      const attestationIdT = ethers.hexlify(ethers.randomBytes(32));
+      const expiryT = Math.floor(Date.now() / 1000) + 600; // 10 min TTL
+      console.log("Creating attestation (with token address)...");
+      const attestTxT = await walletContractT.attest(
+        attestationIdT,
+        "spend",
+        `token drain to ${checksumRecipient}`,
+        checksumRecipient,
+        tokenAmount,
+        tokenAddress,
+        expiryT,
+      );
+      const attestReceiptT = await attestTxT.wait(1);
+      console.log(`  ✓ attest: ${attestReceiptT?.hash}`);
+
+      // ── Step 4: executeTokenSpend ────────────────────────────────────────────
+      console.log("Executing token spend...");
+      const spendTxT = await walletContractT.executeTokenSpend(
+        checksumRecipient,
+        tokenAmount,
+        tokenAddress,
+        opts.category,
+        attestationIdT,
+      );
+      const spendReceiptT = await spendTxT.wait(1);
+      console.log(`  ✓ executeTokenSpend: ${spendReceiptT?.hash}`);
+
+      // ── Step 5: closeContext ─────────────────────────────────────────────────
+      console.log("Closing context...");
+      const closeTxT2 = await walletContractT.closeContext();
+      const closeReceiptT = await closeTxT2.wait(1);
+      console.log(`  ✓ closeContext: ${closeReceiptT?.hash}`);
+
+      const newTokenBalance: bigint = await erc20.balanceOf(walletAddr);
+      if (opts.json) {
+        console.log(JSON.stringify({
+          ok: true,
+          walletAddress: walletAddr,
+          recipient: checksumRecipient,
+          amount: amountArg,
+          token: tokenAddress,
+          category: opts.category,
+          txHashes: {
+            openContext: openReceiptT?.hash,
+            attest: attestReceiptT?.hash,
+            executeTokenSpend: spendReceiptT?.hash,
+            closeContext: closeReceiptT?.hash,
+          },
+          remainingTokenBalance: ethers.formatUnits(newTokenBalance, decimals),
+        }));
+      } else {
+        console.log(`\n✓ Token drain complete`);
+        console.log(`  Sent:      ${amountArg} → ${checksumRecipient}`);
+        console.log(`  Token:     ${tokenAddress}`);
+        console.log(`  Remaining: ${ethers.formatUnits(newTokenBalance, decimals)}`);
       }
     });
 

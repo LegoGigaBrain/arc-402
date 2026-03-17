@@ -1,7 +1,8 @@
 import { Command } from "commander";
 import { ServiceAgreementClient, uploadEncryptedIPFS } from "@arc402/sdk";
+import { ethers } from "ethers";
 import { loadConfig } from "../config";
-import { requireSigner } from "../client";
+import { getClient, requireSigner } from "../client";
 import { hashFile, hashString } from "../utils/hash";
 import { printSenderInfo, executeContractWriteViaWallet } from "../wallet-router";
 import { SERVICE_AGREEMENT_ABI } from "../abis";
@@ -19,8 +20,52 @@ export function registerDeliverCommand(program: Command): void {
     .action(async (id, opts) => {
       const config = loadConfig();
       if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
-      const { signer } = await requireSigner(config);
+      const { signer, address: signerAddress } = await requireSigner(config);
       printSenderInfo(config);
+
+      // Pre-flight: check deadline and legacyFulfillEnabled (J3-01, J3-02)
+      {
+        const { provider: prefProvider } = await getClient(config);
+        const saAbi = [
+          "function getAgreement(uint256 id) external view returns (tuple(uint256 id, address client, address provider, string serviceType, string description, uint256 price, address token, uint256 deadline, bytes32 deliverablesHash, uint8 status, uint256 createdAt, uint256 resolvedAt, uint256 verifyWindowEnd, bytes32 committedHash))",
+          "function legacyFulfillEnabled() external view returns (bool)",
+          "function legacyFulfillProviders(address) external view returns (bool)",
+        ];
+        const saContract = new ethers.Contract(config.serviceAgreementAddress!, saAbi, prefProvider);
+        try {
+          const ag = await saContract.getAgreement(BigInt(id));
+          const deadline = Number(ag.deadline);
+          const nowSec = Math.floor(Date.now() / 1000);
+          if (nowSec > deadline) {
+            const deadlineDate = new Date(deadline * 1000).toISOString();
+            console.error(`Delivery deadline has passed (${deadlineDate}). This transaction will revert.`);
+            console.error(`Contact the client to open a new agreement.`);
+            process.exit(1);
+          }
+        } catch (e) {
+          // If it's a contract read failure, skip the check (let the tx reveal the error)
+          if (e instanceof Error && !e.message.includes("CALL_EXCEPTION") && !e.message.includes("could not decode")) throw e;
+        }
+
+        if (opts.fulfill) {
+          let legacyEnabled = false;
+          try {
+            legacyEnabled = await saContract.legacyFulfillEnabled();
+          } catch { /* assume enabled if read fails */ legacyEnabled = true; }
+          if (!legacyEnabled) {
+            console.error("Legacy fulfill is disabled on this deployment. Use `arc402 deliver <id>` (without --fulfill) to deliver via the standard flow.");
+            process.exit(1);
+          }
+          let isLegacyProvider = false;
+          try {
+            isLegacyProvider = await saContract.legacyFulfillProviders(signerAddress);
+          } catch { /* assume allowed if read fails */ isLegacyProvider = true; }
+          if (!isLegacyProvider) {
+            console.error("You are not in the legacy fulfill providers list for this agreement.");
+            process.exit(1);
+          }
+        }
+      }
 
       if (opts.encrypt) {
         if (!opts.output) throw new Error("--encrypt requires --output <filepath>");

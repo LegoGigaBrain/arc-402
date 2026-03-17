@@ -3,10 +3,11 @@ import { AgentRegistryClient } from "@arc402/sdk";
 import { buildMetadata, uploadMetadata, decodeMetadata } from "@arc402/sdk";
 import { ethers } from "ethers";
 import { loadConfig, NETWORK_DEFAULTS } from "../config";
-import { getClient, requireSigner } from "../client";
+import { requireSigner } from "../client";
 import { formatDate, getTrustTier } from "../utils/format";
 import { AGENT_REGISTRY_ABI } from "../abis";
 import { executeContractWriteViaWallet } from "../wallet-router";
+import { getClient } from "../client";
 import prompts from "prompts";
 import chalk from "chalk";
 
@@ -58,8 +59,34 @@ export function registerAgentCommands(program: Command): void {
 
       if (config.walletContractAddress) {
         // ── wallet contract path (machine key signs, wallet is msg.sender) ──
+        // Pre-flight: check machine key is authorized (J5-03)
+        if (config.privateKey) {
+          const machineKeyAddr = new ethers.Wallet(config.privateKey).address;
+          const { provider: agentProvider } = await getClient(config);
+          const mkCheck = new ethers.Contract(
+            config.walletContractAddress,
+            ["function authorizedMachineKeys(address) external view returns (bool)"],
+            agentProvider,
+          );
+          let isAuthorized = true;
+          try {
+            isAuthorized = await mkCheck.authorizedMachineKeys(machineKeyAddr);
+          } catch { /* older wallet — assume authorized */ }
+          if (!isAuthorized) {
+            console.error(`Machine key ${machineKeyAddr} is not authorized on wallet ${config.walletContractAddress}.`);
+            console.error(`Run \`arc402 wallet authorize-machine-key ${machineKeyAddr}\` first.`);
+            process.exit(1);
+          }
+        }
+
         console.log(`Registering via ARC402Wallet: ${config.walletContractAddress}`);
-        const { signer } = await requireSigner(config);
+        const { signer, provider: regProvider } = await requireSigner(config);
+        {
+          const walletBalance = await regProvider.getBalance(config.walletContractAddress);
+          if (walletBalance < ethers.parseEther("0.0001")) {
+            console.warn(chalk.yellow(`⚠️  Low wallet balance: ${ethers.formatEther(walletBalance)} ETH. Registration may fail due to insufficient gas. Fund your wallet with at least 0.0001 ETH first.`));
+          }
+        }
         const tx = await executeContractWriteViaWallet(
           config.walletContractAddress,
           signer,
@@ -76,7 +103,13 @@ export function registerAgentCommands(program: Command): void {
       } else {
         // ── EOA fallback ──
         console.warn(chalk.yellow("⚠ No walletContractAddress in config — registering from EOA key (msg.sender = hot key)."));
-        const { signer } = await requireSigner(config);
+        const { signer, address: regAddress, provider: regProvider } = await requireSigner(config);
+        {
+          const walletBalance = await regProvider.getBalance(regAddress);
+          if (walletBalance < ethers.parseEther("0.0001")) {
+            console.warn(chalk.yellow(`⚠️  Low wallet balance: ${ethers.formatEther(walletBalance)} ETH. Registration may fail due to insufficient gas. Fund your wallet with at least 0.0001 ETH first.`));
+          }
+        }
         const client = new AgentRegistryClient(registryAddress, signer);
         await client.register({ name: opts.name, serviceType: opts.serviceType, capabilities, endpoint: opts.endpoint ?? "", metadataURI: metadataUri });
         console.log(chalk.green("✓ Registered in AgentRegistry"));

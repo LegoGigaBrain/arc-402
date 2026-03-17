@@ -144,7 +144,15 @@ export default function PasskeySetupContent() {
     setError('')
     setLoading(true)
     try {
-      const rpId = window.location.hostname === 'localhost' ? 'localhost' : 'arc402.xyz'
+      // rpId must match the serving domain exactly
+      // arc402-app.pages.dev → arc402-app.pages.dev
+      // app.arc402.xyz       → arc402.xyz (parent domain allowed)
+      const hostname = window.location.hostname
+      const rpId = hostname === 'localhost'
+        ? 'localhost'
+        : (hostname.endsWith('.arc402.xyz') || hostname === 'arc402.xyz')
+          ? 'arc402.xyz'
+          : hostname
       const challenge = crypto.getRandomValues(new Uint8Array(32))
       const cred = await navigator.credentials.create({
         publicKey: {

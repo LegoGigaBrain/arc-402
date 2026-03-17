@@ -23,7 +23,7 @@ type State = 'idle' | 'waiting' | 'done' | 'error'
 
 export default function PasskeySetupContent() {
   const params = useSearchParams()
-  const wallet = params.get('wallet') ?? '0x0000...0000'
+  const [wallet, setWallet] = useState(params.get('wallet') ?? '')
   const [state, setState] = useState<State>('idle')
   const [result, setResult] = useState<{ credId: string; x: string; y: string } | null>(null)
   const [error, setError] = useState('')
@@ -66,12 +66,24 @@ export default function PasskeySetupContent() {
           One-time setup. Your Face ID / fingerprint will replace MetaMask for all governance operations.
         </p>
 
-        <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', background: '#1a1a1a', padding: '10px 14px', borderRadius: '8px', color: '#888', marginBottom: '24px', wordBreak: 'break-all' }}>
-          {wallet}
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ fontSize: '0.8rem', color: '#666', display: 'block', marginBottom: '6px' }}>
+            Wallet address
+          </label>
+          <input
+            type="text"
+            value={wallet}
+            onChange={e => setWallet(e.target.value)}
+            placeholder="0xb4aF8760..."
+            style={{ width: '100%', background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px', padding: '10px 14px', color: '#f0f0f0', fontFamily: 'monospace', fontSize: '0.75rem', outline: 'none' }}
+          />
         </div>
 
         {state === 'idle' && (
-          <button onClick={register} style={{ width: '100%', padding: '14px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: 500, cursor: 'pointer' }}>
+          <button
+            onClick={register}
+            disabled={!wallet || !wallet.startsWith('0x') || wallet.length !== 42}
+            style={{ width: '100%', padding: '14px', background: (!wallet || !wallet.startsWith('0x') || wallet.length !== 42) ? '#333' : '#3b82f6', color: (!wallet || !wallet.startsWith('0x') || wallet.length !== 42) ? '#666' : 'white', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: 500, cursor: (!wallet || !wallet.startsWith('0x') || wallet.length !== 42) ? 'not-allowed' : 'pointer' }}>
             Register with Face ID / Fingerprint
           </button>
         )}

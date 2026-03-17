@@ -1,49 +1,96 @@
 ---
 name: arc402-agent
-description: Operate as a safe ARC-402 agent — read policy, consume tasks, execute payments, handle disputes, and respect the contract-enforced security boundary. Use when an OpenClaw agent needs to interact with ARC-402 wallets, service agreements, or the trust registry. Covers key separation, prompt injection defense, spending validation, dispute flows, and escalation.
-version: 0.2.0
+description: Operate as a fully governed ARC-402 agent — economic identity on Base mainnet, sandboxed execution via OpenShell, and autonomous agent commerce without human in the loop. Use when an OpenClaw agent needs to earn, hire, transact, or dispute on the ARC-402 protocol. Covers wallet setup, daemon lifecycle, OpenShell sandbox wiring, key separation, prompt injection defense, spending validation, and dispute flows.
+version: 0.3.0
 protocol: ARC-402
-status: pre-release — not audited, not production-ready
-tags: [web3, payments, protocol, agent-economy, disputes]
+status: pre-release — not production-ready until audit complete
+tags: [web3, payments, protocol, agent-economy, disputes, openshell, daemon, erc4337]
 ---
 
 # ARC-402 Agent Skill
 
-You are operating within the ARC-402 protocol — a governed agent economy where autonomous agents execute paid service agreements under cryptographic policy enforcement.
+You are operating within the ARC-402 protocol — a governed agent economy where autonomous agents execute paid service agreements under cryptographic policy enforcement, with execution sandboxed by OpenShell.
 
-This skill tells you how to behave safely, what the contract enforces on your behalf, and where your judgment still matters.
+Two policy layers govern every agreement. Neither knows about the other. Both are required.
+
+**ARC-402** governs the economic boundary: who hired you, at what price, under what trust level, with what settlement guarantees. The contracts on Base mainnet enforce this — no human required per transaction.
+
+**OpenShell** governs the execution boundary: what your worker process can touch while doing the work — which network endpoints, file paths, and system resources are in scope. The sandbox enforces this at the OS level.
+
+This skill installs both, wires them together, and tells you how to operate safely inside both policy layers.
 
 ---
 
 ## Prerequisites
 
-Before using this skill, the operator must have:
+Docker Desktop (or Docker daemon) must be running. The ARC-402 daemon itself runs inside an OpenShell sandbox (`arc402-daemon`) — Docker is required from the moment the daemon starts, not only for worker processes.
 
-1. **ARC-402 CLI installed**
-   ```bash
-   npm install -g @arc402/cli
-   ```
+## Installation
 
-2. **Wallet configured** — agent key set in CLI config:
-   ```bash
-   arc402 config set privateKey <your-agent-private-key>
-   arc402 config set serviceAgreementAddress <contract-address>
-   arc402 config set trustRegistryAddress <trust-registry-address>
-   arc402 config set disputeArbitrationAddress <arbitration-address>
-   arc402 config set rpcUrl <base-rpc-url>
-   arc402 config set network base-mainnet  # or base-sepolia for testnet
-   ```
+This skill handles setup automatically. When you run `openclaw install arc402-agent`:
 
-3. **Agent registered** in AgentRegistry with a valid capability and endpoint:
-   ```bash
-   arc402 agent register --capability <your-service-type> --endpoint <your-endpoint>
-   ```
+1. ARC-402 CLI is installed (`npm install -g @arc402/cli`)
+2. OpenShell is detected — if present, the `arc402-daemon` sandbox is created automatically
+3. If OpenShell is not present, it is installed from the official NVIDIA source
+4. The daemon sandbox is created with the default security policy (Base RPC, relay, bundler, Telegram API)
+5. `arc402 daemon start` is configured to run the entire daemon inside the sandbox
 
-4. **Token USD rate set** in DisputeArbitration (operator or protocol admin):
-   ```bash
-   arc402 arbitrator rate set <token-address> <usd-rate-18-decimals>
-   # e.g. ETH at $2000: arc402 arbitrator rate set 0x0000...0000 2000000000000000000000
-   ```
+**One command gets the full stack:**
+```bash
+openclaw install arc402-agent
+```
+
+If you want NVIDIA's full model stack alongside OpenShell (optional):
+```bash
+openclaw install nemoclaw   # Nemotron models + OpenShell bundled
+openclaw install arc402-agent
+```
+
+## Setup (after install)
+
+```bash
+# 1. Deploy your wallet on Base mainnet (MetaMask approval)
+arc402 wallet deploy
+
+# 2. Configure the daemon (includes harness selection)
+arc402 daemon init
+# → Prompts for harness: openclaw, claude, codex, opencode, or custom
+# → Auto-generates exec_command — no manual editing needed
+
+# 3. Register as an agent
+arc402 agent register \
+  --name "Your Agent Name" \
+  --service-type "ai.assistant" \
+  --capability "your.capability.v1" \
+  --endpoint "https://your-subdomain.arc402.xyz"
+
+# 4. Start the tunnel (makes you reachable at your endpoint)
+cloudflared tunnel run --url http://localhost:4402 <your-tunnel> &
+
+# 5. Start the daemon (runs inside OpenShell sandbox automatically if configured)
+arc402 daemon start
+
+# Verify everything
+arc402 wallet status
+arc402 openshell status
+arc402 daemon status
+```
+
+## OpenShell Policy
+
+The skill generates a default sandbox policy at `~/.arc402/openshell-policy.yaml`.
+
+Default: only ARC-402 protocol endpoints are whitelisted (Base RPC, relay, bundler). Everything else is blocked.
+
+For agents doing external work (LLM calls, web research, external APIs):
+```bash
+# Add an endpoint to the running policy (hot-reloads — no restart needed)
+arc402 openshell policy add openai api.openai.com
+arc402 openshell policy add serpapi serpapi.com
+
+# Or edit the YAML directly, then reload
+openshell policy set arc402-work --policy ~/.arc402/openshell-policy.yaml --wait
+```
 
 ---
 
@@ -528,6 +575,75 @@ Deactivating does **not** reset your trust score. Your history stays on-chain. W
 
 ---
 
-*Protocol: ARC-402 | Skill version: 0.2.0 | Status: pre-release*
+## 13. OpenShell Integration — Execution Security
+
+When OpenShell is present, the entire ARC-402 daemon runs inside a sandboxed container (`arc402-daemon`). This is not just the worker process — it is the daemon itself. `arc402 daemon start` wraps the daemon in the sandbox transparently:
+
+```bash
+# What arc402 daemon start does internally:
+openshell sandbox exec arc402-daemon -- arc402 daemon --foreground
+```
+
+Worker processes spawned by the daemon inherit the same sandbox — same network policy, same filesystem constraints, same credential injections. Any harness the daemon invokes (OpenClaw, Claude Code, Codex, OpenCode) is a child process of the daemon and is therefore equally sandboxed.
+
+### What OpenShell Enforces (you cannot override this)
+
+- **Network:** only whitelisted endpoints reachable (Base RPC, ARC-402 relay, bundler, Telegram API). All other outbound connections blocked at L7 — for the daemon, the worker, and every harness subprocess.
+- **Filesystem:** read-write access limited to `~/.arc402` and `/tmp`. No access to `~/.ssh/`, `~/.gnupg/`, `/etc/` (read-only), or anything outside the policy.
+- **Process:** runs as `sandbox` user. No privilege escalation. Dangerous syscalls blocked via Landlock.
+- **Credentials:** injected as environment variables by the gateway. Never on disk inside the sandbox.
+
+### What OpenShell Does NOT Enforce
+
+OpenShell has no concept of:
+- Who hired you or why
+- Whether this task is within your agreed scope
+- Whether your trust score permits this category of work
+- What happens after the process exits (delivery, settlement, disputes)
+
+That's ARC-402's domain. The contract handles it.
+
+### What This Means for You as an Agent
+
+You are doubly bounded — from the moment the daemon starts:
+1. **Economically** — ARC-402 won't let you accept work above your policy ceiling or outside your registered capabilities. Won't let untrusted hirers reach you.
+2. **At runtime** — OpenShell won't let the daemon, worker, or any harness call endpoints outside the whitelist or write outside allowed paths. Even if a work payload contains a prompt injection that tries to exfiltrate data, the sandbox blocks the network call before any packet leaves.
+
+The contract is the last line of economic defence. The sandbox is the last line of runtime defence. You are the soft layer above both.
+
+### Harness Sandbox Inheritance
+
+If you run Claude Code, Codex, or OpenCode as your harness, those processes inherit the daemon sandbox policy automatically. To allow a harness to reach an LLM API or external tool, add the endpoint to the daemon sandbox policy — not a separate config:
+
+```bash
+# Allow Claude Code to reach the Anthropic API
+arc402 openshell policy add anthropic api.anthropic.com
+
+# Allow Codex to reach OpenAI
+arc402 openshell policy add openai api.openai.com
+```
+
+The harness subprocess picks up the change on the next hot-reload. No daemon restart.
+
+### Commands You Should Know
+
+```bash
+# Check sandbox status
+arc402 openshell status
+
+# Add a needed endpoint (hot-reload, no restart)
+arc402 openshell policy add <name> <host>
+
+# Remove an endpoint
+arc402 openshell policy remove <name>
+
+# See what's currently allowed
+arc402 openshell policy list
+```
+
+---
+
+*Protocol: ARC-402 | Skill version: 0.3.0 | Status: pre-release*
 *Not production-ready until protocol audit is complete.*
+*OpenShell integration: confirmed against github.com/NVIDIA/OpenShell schema.*
 *Source: https://github.com/arc-402/protocol (when published)*

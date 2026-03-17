@@ -442,6 +442,31 @@ export default function OnboardContent() {
         approvalToken: ethers.ZeroAddress,
       }])
 
+      // Enable DeFi access + whitelist AgentRegistry on PolicyEngine (owner-only calls)
+      const peIface = new ethers.Interface([
+        'function enableDefiAccess(address wallet) external',
+        'function whitelistContract(address wallet, address target) external',
+        'function defiAccessEnabled(address) external view returns (bool)',
+        'function isContractWhitelisted(address wallet, address target) external view returns (bool)',
+      ])
+      const PE = '0xAA5Ef3489C929bFB3BFf5D5FE15aa62d3763c847'
+
+      // Check and enable DeFi access
+      const rpcProvider = new ethers.JsonRpcProvider(BASE_RPC)
+      const pe = new ethers.Contract(PE, peIface, rpcProvider)
+      const defiEnabled = await pe.defiAccessEnabled(arc402Wallet).catch(() => false)
+      if (!defiEnabled) {
+        setStatusMsg('Enabling DeFi access...')
+        await sendWCTx(wc, PE, peIface.encodeFunctionData('enableDefiAccess', [arc402Wallet]))
+      }
+
+      // Check and whitelist AgentRegistry
+      const whitelisted = await pe.isContractWhitelisted(arc402Wallet, AGENT_REGISTRY).catch(() => false)
+      if (!whitelisted) {
+        setStatusMsg('Whitelisting AgentRegistry...')
+        await sendWCTx(wc, PE, peIface.encodeFunctionData('whitelistContract', [arc402Wallet, AGENT_REGISTRY]))
+      }
+
       setStatusMsg('Registering agent...')
       await sendWCTx(wc, arc402Wallet, execData)
       setAgentDone(true)

@@ -8,7 +8,7 @@ import os from "os";
 import { Arc402Config, getConfigPath, getUsdcAddress, loadConfig, NETWORK_DEFAULTS, saveConfig } from "../config";
 import { getClient, requireSigner } from "../client";
 import { getTrustTier } from "../utils/format";
-import { ARC402_WALLET_EXECUTE_ABI, ARC402_WALLET_GUARDIAN_ABI, ARC402_WALLET_OWNER_ABI, ARC402_WALLET_REGISTRY_ABI, POLICY_ENGINE_LIMITS_ABI, TRUST_REGISTRY_ABI, WALLET_FACTORY_ABI } from "../abis";
+import { ARC402_WALLET_EXECUTE_ABI, ARC402_WALLET_GUARDIAN_ABI, ARC402_WALLET_OWNER_ABI, ARC402_WALLET_PASSKEY_ABI, ARC402_WALLET_REGISTRY_ABI, POLICY_ENGINE_LIMITS_ABI, TRUST_REGISTRY_ABI, WALLET_FACTORY_ABI } from "../abis";
 import { connectPhoneWallet, sendTransactionWithSession, requestPhoneWalletSignature } from "../walletconnect";
 import { clearWCSession } from "../walletconnect-session";
 import { requestCoinbaseSmartWalletSignature } from "../coinbase-smart-wallet";
@@ -1627,6 +1627,89 @@ export function registerWalletCommands(program: Command): void {
       console.log(`  Wallet:      ${config.walletContractAddress}`);
       console.log(`  Machine key: ${checksumKey}`);
       console.log(`  Tx:          ${hash}`);
+
+      await client.disconnect({ topic: session.topic, reason: { code: 6000, message: "done" } });
+      process.exit(0);
+    });
+
+  // ─── set-passkey ───────────────────────────────────────────────────────────
+  //
+  // Called after registering a Face ID on app.arc402.xyz/onboard (Step 2).
+  // Takes the P256 public key coordinates extracted from the WebAuthn credential
+  // and writes them on-chain via ARC402Wallet.setPasskey(bytes32, bytes32).
+  // After this call, governance UserOps must carry a P256 signature (Face ID).
+
+  wallet.command("set-passkey <pubKeyX> <pubKeyY>")
+    .description("Activate passkey (Face ID) on ARC402Wallet — takes P256 x/y coords from passkey setup (phone wallet signs via WalletConnect)")
+    .action(async (pubKeyX: string, pubKeyY: string) => {
+      const config = loadConfig();
+      if (!config.walletContractAddress) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.walletConnectProjectId) {
+        console.error("walletConnectProjectId not set in config.");
+        process.exit(1);
+      }
+
+      // Validate hex bytes32 format
+      const isBytes32Hex = (v: string) => /^0x[0-9a-fA-F]{64}$/.test(v);
+      if (!isBytes32Hex(pubKeyX)) {
+        console.error(`Invalid pubKeyX: expected 0x-prefixed 32-byte hex, got: ${pubKeyX}`);
+        process.exit(1);
+      }
+      if (!isBytes32Hex(pubKeyY)) {
+        console.error(`Invalid pubKeyY: expected 0x-prefixed 32-byte hex, got: ${pubKeyY}`);
+        process.exit(1);
+      }
+
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const walletInterface = new ethers.Interface(ARC402_WALLET_PASSKEY_ABI);
+
+      console.log(`\nWallet:   ${config.walletContractAddress}`);
+      console.log(`pubKeyX:  ${pubKeyX}`);
+      console.log(`pubKeyY:  ${pubKeyY}`);
+
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      const txData = {
+        to: config.walletContractAddress,
+        data: walletInterface.encodeFunctionData("setPasskey", [pubKeyX, pubKeyY]),
+        value: "0x0",
+      };
+
+      const { client, session, account } = await connectPhoneWallet(
+        config.walletConnectProjectId,
+        chainId,
+        config,
+        {
+          telegramOpts,
+          prompt: `Activate passkey (Face ID) on ARC402Wallet — enables P256 governance signing`,
+        }
+      );
+
+      console.log(`\n✓ Connected: ${account}`);
+      console.log("Sending setPasskey transaction...");
+
+      const hash = await sendTransactionWithSession(client, session, account, chainId, txData);
+      console.log(`\nTransaction submitted: ${hash}`);
+      console.log("Waiting for confirmation...");
+
+      const receipt = await provider.waitForTransaction(hash, 1, 60000);
+      if (!receipt || receipt.status !== 1) {
+        console.error("Transaction failed.");
+        process.exit(1);
+      }
+
+      console.log(`\n✓ Passkey activated on ARC402Wallet`);
+      console.log(`  Wallet:   ${config.walletContractAddress}`);
+      console.log(`  pubKeyX:  ${pubKeyX}`);
+      console.log(`  pubKeyY:  ${pubKeyY}`);
+      console.log(`  Tx:       ${hash}`);
+      console.log(`\nGovernance ops now require Face ID instead of MetaMask.`);
 
       await client.disconnect({ topic: session.topic, reason: { code: 6000, message: "done" } });
       process.exit(0);

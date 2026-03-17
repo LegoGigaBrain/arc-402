@@ -153,3 +153,7 @@ export const ARC402_WALLET_MACHINE_KEY_ABI = [
   "function revokeMachineKey(address key) external",
   "function authorizedMachineKeys(address key) external view returns (bool)",
 ] as const;
+
+export const ARC402_WALLET_PASSKEY_ABI = [
+  "function setPasskey(bytes32 pubKeyX, bytes32 pubKeyY) external",
+] as const;

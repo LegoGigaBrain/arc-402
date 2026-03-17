@@ -315,7 +315,7 @@ export function registerOpenShellCommands(program: Command): void {
       console.log(`  Created: ${SANDBOX_NAME}`);
 
       // Step 6: Write openshell.toml
-      const tomlContent = `# ARC-402 OpenShell configuration\n# Written by: arc402 openshell init\nsandbox = "${SANDBOX_NAME}"\n`;
+      const tomlContent = `# ARC-402 OpenShell configuration\n# Written by: arc402 openshell init\n\n[sandbox]\nname = "${SANDBOX_NAME}"\npolicy = "${POLICY_FILE}"\nproviders = ["arc402-machine-key", "arc402-notifications"]\n`;
       fs.mkdirSync(ARC402_DIR, { recursive: true, mode: 0o700 });
       fs.writeFileSync(OPENSHELL_TOML, tomlContent, { mode: 0o600 });
       console.log(`  Config:  ${OPENSHELL_TOML}`);

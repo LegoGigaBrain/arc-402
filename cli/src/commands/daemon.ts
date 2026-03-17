@@ -3,8 +3,10 @@ import * as fs from "fs";
 import * as path from "path";
 import * as net from "net";
 import * as os from "os";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { ethers } from "ethers";
+import prompts from "prompts";
+import { parse as parseToml } from "smol-toml";
 import { loadConfig } from "../config";
 import { requireSigner } from "../client";
 import { SERVICE_AGREEMENT_ABI } from "../abis";
@@ -20,6 +22,35 @@ import {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CHANNEL_STATES_DIR = path.join(os.homedir(), ".arc402", "channel-states");
+const OPENSHELL_TOML = path.join(os.homedir(), ".arc402", "openshell.toml");
+
+// ─── OpenShell helpers ────────────────────────────────────────────────────────
+
+interface OpenShellConfig {
+  sandbox: { name: string; policy?: string; providers?: string[] };
+}
+
+function readOpenShellConfig(): OpenShellConfig | null {
+  if (!fs.existsSync(OPENSHELL_TOML)) return null;
+  try {
+    const raw = fs.readFileSync(OPENSHELL_TOML, "utf-8");
+    const parsed = parseToml(raw) as Record<string, unknown>;
+    const sb = parsed.sandbox as Record<string, unknown> | undefined;
+    if (!sb || typeof sb.name !== "string") return null;
+    return { sandbox: { name: sb.name, policy: sb.policy as string | undefined, providers: sb.providers as string[] | undefined } };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Harness registry ─────────────────────────────────────────────────────────
+
+const HARNESS_REGISTRY: Record<string, string> = {
+  openclaw: "openclaw run {task}",
+  claude:   "claude --dangerously-skip-permissions {task}",
+  codex:    "codex {task}",
+  opencode: "opencode {task}",
+};
 
 // ChannelStatus enum (mirrors ServiceAgreement.ChannelStatus)
 const ChannelStatus = { OPEN: 0, CLOSING: 1, CHALLENGED: 2, SETTLED: 3 } as const;
@@ -233,7 +264,7 @@ function isProcessAlive(pid: number): boolean {
 
 // ─── Start helpers ────────────────────────────────────────────────────────────
 
-async function startDaemonBackground(): Promise<void> {
+async function startDaemonBackground(sandboxName?: string): Promise<void> {
   // Resolve the compiled daemon entry point
   const daemonEntry = path.join(__dirname, "..", "daemon", "index.js");
   if (!fs.existsSync(daemonEntry)) {
@@ -241,32 +272,45 @@ async function startDaemonBackground(): Promise<void> {
     process.exit(1);
   }
 
-  // Load CLI config to pass machine key
-  let machineKey: string | undefined;
-  let telegramBotToken: string | undefined;
-  let telegramChatId: string | undefined;
-  try {
-    const config = loadConfig();
-    machineKey = config.privateKey;
-    telegramBotToken = config.telegramBotToken;
-    telegramChatId = config.telegramChatId;
-  } catch {
-    // Config load is optional here — daemon will use its own daemon.toml
-  }
-
   const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
     ARC402_DAEMON_PROCESS: "1",
   };
-  if (machineKey) childEnv["ARC402_MACHINE_KEY"] = machineKey;
-  if (telegramBotToken) childEnv["TELEGRAM_BOT_TOKEN"] = telegramBotToken;
-  if (telegramChatId) childEnv["TELEGRAM_CHAT_ID"] = telegramChatId;
 
-  const child = spawn(process.execPath, [daemonEntry], {
-    detached: true,
-    stdio: "ignore",
-    env: childEnv,
-  });
+  let child: ReturnType<typeof spawn>;
+  if (sandboxName) {
+    // OpenShell sandbox mode — credentials injected by providers, run inside sandbox
+    child = spawn("openshell", [
+      "sandbox", "exec", sandboxName, "--",
+      process.execPath, daemonEntry,
+    ], {
+      detached: true,
+      stdio: "ignore",
+      env: childEnv,
+    });
+  } else {
+    // Direct mode — pass credentials from CLI config
+    let machineKey: string | undefined;
+    let telegramBotToken: string | undefined;
+    let telegramChatId: string | undefined;
+    try {
+      const config = loadConfig();
+      machineKey = config.privateKey;
+      telegramBotToken = config.telegramBotToken;
+      telegramChatId = config.telegramChatId;
+    } catch {
+      // Config load is optional here — daemon will use its own daemon.toml
+    }
+    if (machineKey) childEnv["ARC402_MACHINE_KEY"] = machineKey;
+    if (telegramBotToken) childEnv["TELEGRAM_BOT_TOKEN"] = telegramBotToken;
+    if (telegramChatId) childEnv["TELEGRAM_CHAT_ID"] = telegramChatId;
+
+    child = spawn(process.execPath, [daemonEntry], {
+      detached: true,
+      stdio: "ignore",
+      env: childEnv,
+    });
+  }
   child.unref();
 
   // Wait up to 5 seconds for PID file to appear
@@ -408,11 +452,28 @@ export function registerDaemonCommands(program: Command): void {
     .action(async (opts) => {
       const foreground = opts.foreground as boolean | undefined;
 
+      // Check for OpenShell sandbox configuration
+      const openShellCfg = readOpenShellConfig();
+      const sandboxName = openShellCfg?.sandbox.name;
+
       if (foreground) {
-        // Foreground mode: import and run directly (blocking)
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { runDaemon } = require("../daemon/index") as { runDaemon: (fg: boolean) => Promise<void> };
-        await runDaemon(true);
+        if (sandboxName) {
+          // Run inside OpenShell sandbox (blocking)
+          const daemonEntry = path.join(__dirname, "..", "daemon", "index.js");
+          const result = spawnSync("openshell", [
+            "sandbox", "exec", sandboxName, "--",
+            process.execPath, daemonEntry,
+          ], {
+            stdio: "inherit",
+            env: { ...process.env, ARC402_DAEMON_PROCESS: "1" },
+          });
+          process.exit(result.status ?? 0);
+        } else {
+          // Foreground mode without sandbox: import and run directly (blocking)
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { runDaemon } = require("../daemon/index") as { runDaemon: (fg: boolean) => Promise<void> };
+          await runDaemon(true);
+        }
         return;
       }
 
@@ -426,7 +487,10 @@ export function registerDaemonCommands(program: Command): void {
       // Remove stale PID file if present
       if (fs.existsSync(DAEMON_PID)) fs.unlinkSync(DAEMON_PID);
 
-      await startDaemonBackground();
+      if (sandboxName) {
+        console.log(`Starting ARC-402 daemon inside OpenShell sandbox: ${sandboxName}`);
+      }
+      await startDaemonBackground(sandboxName);
     });
 
   // ── daemon stop ─────────────────────────────────────────────────────────────
@@ -621,18 +685,98 @@ export function registerDaemonCommands(program: Command): void {
     .command("init")
     .description("Generate a template ~/.arc402/daemon.toml configuration file.")
     .option("--force", "Overwrite existing daemon.toml")
-    .action((opts) => {
+    .option("--reconfigure-harness", "Re-run harness selection on an existing daemon.toml")
+    .action(async (opts) => {
       const force = opts.force as boolean | undefined;
+      const reconfigureHarness = opts.reconfigureHarness as boolean | undefined;
 
-      if (fs.existsSync(DAEMON_TOML) && !force) {
+      if (fs.existsSync(DAEMON_TOML) && !force && !reconfigureHarness) {
         console.log(`daemon.toml already exists at ${DAEMON_TOML}`);
-        console.log("Use --force to overwrite.");
+        console.log("Use --force to overwrite, or --reconfigure-harness to update the harness only.");
         process.exit(0);
       }
 
+      // ── Harness selection ────────────────────────────────────────────────────
+      console.log("Which harness should execute work tasks?");
+      console.log();
+      console.log("  1. openclaw  (OpenClaw agent runtime — default)");
+      console.log("  2. claude    (Claude Code — Anthropic)");
+      console.log("  3. codex     (Codex CLI — OpenAI)");
+      console.log("  4. opencode  (OpenCode)");
+      console.log("  5. custom    (enter your own exec_command)");
+      console.log();
+
+      const harnessResponse = await prompts({
+        type: "select",
+        name: "harness",
+        message: "Select harness",
+        choices: [
+          { title: "openclaw", value: "openclaw" },
+          { title: "claude", value: "claude" },
+          { title: "codex", value: "codex" },
+          { title: "opencode", value: "opencode" },
+          { title: "custom", value: "custom" },
+        ],
+        initial: 0,
+      });
+
+      const selectedHarness: string = harnessResponse.harness ?? "openclaw";
+      let execCommand = HARNESS_REGISTRY[selectedHarness] ?? "";
+
+      if (selectedHarness === "custom") {
+        const customResponse = await prompts({
+          type: "text",
+          name: "exec_command",
+          message: "Enter your exec_command (use {task} as placeholder)",
+          validate: (v: string) => v.trim().length > 0 || "exec_command cannot be empty",
+        });
+        execCommand = (customResponse.exec_command as string | undefined) ?? "";
+      }
+
+      if (reconfigureHarness && fs.existsSync(DAEMON_TOML)) {
+        // Patch only the [work] section in the existing file
+        let existing = fs.readFileSync(DAEMON_TOML, "utf-8");
+
+        // Replace or insert harness and exec_command in [work] section
+        const harnessLine = selectedHarness === "custom"
+          ? `harness = "${selectedHarness}"\nexec_command = "${execCommand}"`
+          : `harness = "${selectedHarness}"\n# exec_command: ${execCommand}\n# To change: arc402 daemon init --reconfigure-harness`;
+
+        if (/^\[work\]/m.test(existing)) {
+          // Remove old harness/exec_command lines if present, then insert after [work]
+          existing = existing
+            .replace(/^harness\s*=.*$/m, "")
+            .replace(/^exec_command\s*=.*$/m, "")
+            .replace(/^# exec_command:.*$/m, "")
+            .replace(/^# To change:.*$/m, "")
+            .replace(/^\[work\]/m, `[work]\n${harnessLine}`);
+          fs.writeFileSync(DAEMON_TOML, existing, { mode: 0o600 });
+        } else {
+          console.error("[work] section not found in daemon.toml. Run: arc402 daemon init --force");
+          process.exit(1);
+        }
+
+        console.log(`\nHarness updated: ${selectedHarness}`);
+        if (selectedHarness !== "custom") {
+          console.log(`exec_command:    ${execCommand}`);
+        }
+        return;
+      }
+
+      // ── Write full daemon.toml ────────────────────────────────────────────────
+      const harnessSection = selectedHarness === "custom"
+        ? `[work]\nharness = "${selectedHarness}"\nexec_command = "${execCommand}"              # Your custom command\nhttp_url = ""                  # POST {agreementId, specHash, deadline} as JSON (http mode)\nhttp_auth_token = "env:WORKER_AUTH_TOKEN"\n`
+        : `[work]\nharness = "${selectedHarness}"\n# exec_command: ${execCommand}\n# To change: arc402 daemon init --reconfigure-harness\nhttp_url = ""                  # POST {agreementId, specHash, deadline} as JSON (http mode)\nhttp_auth_token = "env:WORKER_AUTH_TOKEN"\n`;
+
+      const toml = TEMPLATE_DAEMON_TOML.replace(
+        /^\[work\].*?(?=\n\[|\n*$)/ms,
+        harnessSection
+      );
+
       fs.mkdirSync(DAEMON_DIR, { recursive: true, mode: 0o700 });
-      fs.writeFileSync(DAEMON_TOML, TEMPLATE_DAEMON_TOML, { mode: 0o600 });
-      console.log(`Created ${DAEMON_TOML}`);
+      fs.writeFileSync(DAEMON_TOML, toml, { mode: 0o600 });
+      console.log(`\nCreated ${DAEMON_TOML}`);
+      console.log(`Harness: ${selectedHarness}${selectedHarness !== "custom" ? ` (${execCommand})` : ""}`);
       console.log();
       console.log("Next steps:");
       console.log("  1. Edit daemon.toml — fill in wallet.contract_address and network.rpc_url");

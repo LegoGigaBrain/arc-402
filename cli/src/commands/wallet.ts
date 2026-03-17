@@ -5,6 +5,7 @@ import prompts from "prompts";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { spawnSync } from "child_process";
 import { Arc402Config, getConfigPath, getUsdcAddress, loadConfig, NETWORK_DEFAULTS, saveConfig } from "../config";
 import { getClient, requireSigner } from "../client";
 import { getTrustTier } from "../utils/format";
@@ -116,6 +117,15 @@ async function runWalletOnboardingCeremony(
   console.log("💡 Tip: For production security, also configure:");
   console.log("  arc402 wallet set-velocity-limit <eth>   — wallet-level hourly ETH cap");
   console.log("  arc402 wallet policy set-daily-limit --category general --amount <eth>   — daily per-category cap");
+}
+
+function printOpenShellHint(): void {
+  const r = spawnSync("which", ["openshell"], { encoding: "utf-8" });
+  if (r.status === 0 && r.stdout.trim()) {
+    console.log("\nOpenShell detected. Run: arc402 openshell init");
+  } else {
+    console.log("\nOptional: install OpenShell for sandboxed execution: arc402 openshell install");
+  }
 }
 
 export function registerWalletCommands(program: Command): void {
@@ -518,6 +528,7 @@ export function registerWalletCommands(program: Command): void {
         console.log(`\n     arc402 wallet governance setup`);
         console.log(`\n   This must be done before making any spend from this wallet.`);
         console.log(`\nNext: arc402 wallet set-passkey <x> <y> --sponsored`);
+        printOpenShellHint();
       } else if (opts.smartWallet) {
         const { txHash, account } = await requestCoinbaseSmartWalletSignature(
           chainId,
@@ -557,6 +568,7 @@ export function registerWalletCommands(program: Command): void {
         console.log(`Owner: ${account} (your Base Smart Wallet)`);
         console.log(`Your wallet contract is ready for policy enforcement`);
         console.log(`\nNext: run 'arc402 wallet set-guardian' to configure the emergency guardian key.`);
+        printOpenShellHint();
       } else if (config.walletConnectProjectId) {
         const telegramOpts = config.telegramBotToken && config.telegramChatId
           ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
@@ -647,6 +659,7 @@ export function registerWalletCommands(program: Command): void {
           console.log("Gas sponsorship active — initial setup ops are free");
         }
         console.log(`\nNext: run 'arc402 wallet set-guardian' to configure the emergency guardian key.`);
+        printOpenShellHint();
       } else {
         console.warn("⚠ WalletConnect not configured. Using stored private key (insecure).");
         console.warn("  Run `arc402 config set walletConnectProjectId <id>` to enable phone wallet signing.");
@@ -703,6 +716,7 @@ export function registerWalletCommands(program: Command): void {
         console.log(`Guardian key generated: ${guardianWallet.address}`);
         console.log(`Guardian private key saved to config (keep it safe — used for emergency freeze only)`);
         console.log(`Your wallet contract is ready for policy enforcement`);
+        printOpenShellHint();
       }
     });
 

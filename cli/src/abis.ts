@@ -87,10 +87,10 @@ export const ERC20_ABI = [
 ] as const;
 
 export const WALLET_FACTORY_ABI = [
-  "function createWallet() external returns (address)",
+  "function createWallet(address _entryPoint) external returns (address)",
   "function getWallets(address owner) external view returns (address[] memory)",
   "function totalWallets() external view returns (uint256)",
-  "event WalletCreated(address indexed owner, address indexed wallet)",
+  "event WalletCreated(address indexed owner, address indexed walletAddress)",
 ] as const;
 
 export const POLICY_ENGINE_LIMITS_ABI = [

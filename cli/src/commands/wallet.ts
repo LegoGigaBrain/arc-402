@@ -95,12 +95,12 @@ export function registerWalletCommands(program: Command): void {
       // 1. Clear from config
       clearWCSession(config);
 
-      // 2. Wipe WC SDK storage file
+      // 2. Wipe WC SDK storage (may be a file or a directory depending on SDK version)
       const wcStoragePath = path.join(os.homedir(), ".arc402", "wc-storage.json");
       let storageWiped = false;
       try {
         if (fs.existsSync(wcStoragePath)) {
-          fs.unlinkSync(wcStoragePath);
+          fs.rmSync(wcStoragePath, { recursive: true, force: true });
           storageWiped = true;
         }
       } catch (e) {
@@ -984,6 +984,93 @@ export function registerWalletCommands(program: Command): void {
     });
 
   // ─── cancel-registry-upgrade ───────────────────────────────────────────────
+
+  // ─── whitelist-contract ────────────────────────────────────────────────────
+  //
+  // Adds a contract to the per-wallet DeFi whitelist on PolicyEngine so that
+  // executeContractCall can target it. Called directly by the owner (MetaMask)
+  // on PolicyEngine — does NOT route through the wallet contract.
+
+  wallet.command("whitelist-contract <target>")
+    .description("Whitelist a contract address on PolicyEngine so this wallet can call it via executeContractCall (phone wallet signs via WalletConnect)")
+    .option("--hardware", "Hardware wallet mode: show raw wc: URI only")
+    .option("--json")
+    .action(async (target, opts) => {
+      const config = loadConfig();
+      if (!config.walletContractAddress) {
+        console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.walletConnectProjectId) {
+        console.error("walletConnectProjectId not set in config.");
+        process.exit(1);
+      }
+
+      let checksumTarget: string;
+      try {
+        checksumTarget = ethers.getAddress(target);
+      } catch {
+        console.error(`Invalid address: ${target}`);
+        process.exit(1);
+      }
+
+      const policyAddress = config.policyEngineAddress ?? POLICY_ENGINE_DEFAULT;
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+
+      // Check if already whitelisted
+      const peAbi = [
+        "function whitelistContract(address wallet, address target) external",
+        "function isContractWhitelisted(address wallet, address target) external view returns (bool)",
+      ];
+      const pe = new ethers.Contract(policyAddress, peAbi, provider);
+      let alreadyWhitelisted = false;
+      try {
+        alreadyWhitelisted = await pe.isContractWhitelisted(config.walletContractAddress, checksumTarget);
+      } catch { /* ignore */ }
+
+      if (alreadyWhitelisted) {
+        console.log(`✓ ${checksumTarget} is already whitelisted for ${config.walletContractAddress}`);
+        process.exit(0);
+      }
+
+      console.log(`\nWallet:       ${config.walletContractAddress}`);
+      console.log(`PolicyEngine: ${policyAddress}`);
+      console.log(`Whitelisting: ${checksumTarget}`);
+
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      const policyIface = new ethers.Interface(peAbi);
+
+      const { txHash } = await requestPhoneWalletSignature(
+        config.walletConnectProjectId,
+        chainId,
+        () => ({
+          to: policyAddress,
+          data: policyIface.encodeFunctionData("whitelistContract", [
+            config.walletContractAddress!,
+            checksumTarget,
+          ]),
+          value: "0x0",
+        }),
+        `Approve: whitelist ${checksumTarget} on PolicyEngine for your wallet`,
+        telegramOpts,
+        config
+      );
+
+      await provider.waitForTransaction(txHash);
+
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: true, txHash, wallet: config.walletContractAddress, target: checksumTarget }));
+      } else {
+        console.log(`\n✓ Contract whitelisted`);
+        console.log(`  Tx:     ${txHash}`);
+        console.log(`  Wallet: ${config.walletContractAddress}`);
+        console.log(`  Target: ${checksumTarget}`);
+      }
+    });
 
   // ─── set-interceptor ───────────────────────────────────────────────────────
 

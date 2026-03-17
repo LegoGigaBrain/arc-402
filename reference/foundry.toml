@@ -13,7 +13,8 @@ remappings = [
 # Use: FOUNDRY_PROFILE=deploy forge build
 [profile.deploy]
 src = "contracts"
-out = "out"
+test = "test_disabled"
+out = "out-deploy"
 libs = ["lib"]
 solc = "0.8.24"
 optimizer = true

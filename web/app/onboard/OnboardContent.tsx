@@ -7,9 +7,9 @@ import { ethers } from 'ethers'
 
 const WC_PROJECT_ID   = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? '455e9425343b9156fce1428250c9a54a'
 const CHAIN_ID        = 8453
-const BASE_RPC        = 'https://mainnet.base.org'
+const BASE_RPC        = 'https://base-mainnet.g.alchemy.com/v2/YIA2uRCsFI-j5pqH-aRzflrACSlV1Qrs'
 const BUNDLER_URL     = process.env.NEXT_PUBLIC_BUNDLER_URL ?? 'https://api.pimlico.io/v2/base/rpc'
-const WALLET_FACTORY  = '0x35075D293E39d271860fe942cDA208A907990Cc0'
+const WALLET_FACTORY  = '0x6a46e51fA3B28eBF2D1adA81a4a3CA1cEd2fC245'
 const ENTRY_POINT     = '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
 const AGENT_REGISTRY  = '0xcc0D8731ccCf6CFfF4e66F6d68cA86330Ea8B622'
 const POLICY_ENGINE   = '0xAA5Ef3489C929bFB3BFf5D5FE15aa62d3763c847'

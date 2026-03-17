@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head><title>ARC-402: Authorize Machine Key</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0a0a0a;color:#f0f0f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.card{background:#111;border:1px solid #222;border-radius:16px;padding:32px;max-width:480px;width:100%}
+h1{font-size:1.4rem;font-weight:600;margin-bottom:8px}
+.sub{color:#888;font-size:0.9rem;margin-bottom:24px}
+.info{background:#1a1a1a;border-radius:10px;padding:14px;margin-bottom:20px;font-size:0.8rem}
+.info .label{color:#888;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px}
+.info .val{font-family:monospace;word-break:break-all}
+button{width:100%;padding:14px;background:#3b82f6;color:white;border:none;border-radius:10px;font-size:1rem;font-weight:500;cursor:pointer}
+button:hover{background:#2563eb}
+button:disabled{background:#333;color:#666;cursor:not-allowed}
+#status{margin-top:20px;padding:14px;border-radius:10px;background:#1a1a1a;font-size:0.85rem;display:none}
+.done{color:#22c55e}.err{color:#ef4444}.info-t{color:#888}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>ARC-402 Authorize Machine Key</h1>
+  <p class="sub">One-time setup. After this the daemon runs autonomously.</p>
+
+  <div class="info">
+    <div class="label">New Wallet (v3)</div>
+    <div class="val">0xe5E47ff346146517E2a380e80674CF20603B89D5</div>
+  </div>
+  <div class="info">
+    <div class="label">Machine Key to Authorize</div>
+    <div class="val">0x747024C2e59C523E3B1621A4b3F92366C1E28A30</div>
+  </div>
+
+  <button id="btn" onclick="authorize()">Authorize Machine Key</button>
+  <div id="status"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
+<script>
+const WALLET      = '0xe5E47ff346146517E2a380e80674CF20603B89D5';
+const MACHINE_KEY = '0x747024C2e59C523E3B1621A4b3F92366C1E28A30';
+
+async function authorize() {
+  const s = document.getElementById('status');
+  const btn = document.getElementById('btn');
+  s.style.display = 'block';
+  btn.disabled = true;
+
+  try {
+    if (!window.ethereum) { s.innerHTML = '<span class="err">[Error] No wallet extension found.</span>'; btn.disabled=false; return; }
+
+    s.innerHTML = '<span class="info-t"> Connecting...</span>';
+    await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+    const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+    if (chainId !== '0x2105') {
+      s.innerHTML = '<span class="info-t"> Switching to Base...</span>';
+      try { await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] }); }
+      catch { await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [{ chainId: '0x2105', chainName: 'Base', nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 }, rpcUrls: ['https://mainnet.base.org'], blockExplorerUrls: ['https://basescan.org'] }]}); }
+    }
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+
+    s.innerHTML = '<span class="info-t"> Sending authorizeMachineKey... (confirm in Rabby)</span>';
+
+    const wallet = new ethers.Contract(WALLET, ['function authorizeMachineKey(address key) external'], signer);
+    const tx = await wallet.authorizeMachineKey(MACHINE_KEY);
+    s.innerHTML = `<span class="info-t"> Confirming... <a href="https://basescan.org/tx/${tx.hash}" target="_blank" style="color:#3b82f6">${tx.hash.slice(0,18)}...</a></span>`;
+    await tx.wait();
+
+    const check = new ethers.Contract(WALLET, ['function authorizedMachineKeys(address)(bool)'], provider);
+    const authorized = await check.authorizedMachineKeys(MACHINE_KEY);
+
+    if (authorized) {
+      s.innerHTML = `<div class="done">[OK] Machine key authorized on-chain!</div><div style="margin-top:8px;font-size:0.8rem;color:#888">Tx: <a href="https://basescan.org/tx/${tx.hash}" target="_blank" style="color:#22c55e">${tx.hash}</a></div><div style="margin-top:8px;font-size:0.8rem;color:#888">Daemon can now run autonomously. Run: <code>arc402 daemon start</code></div>`;
+    } else {
+      s.innerHTML = '<span class="err">[Warning] Tx confirmed but key not showing as authorized. Check Basescan.</span>';
+    }
+  } catch(e) {
+    s.innerHTML = `<span class="err">[Error] ${e.reason || e.message}</span>`;
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>

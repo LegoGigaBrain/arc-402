@@ -68,9 +68,24 @@ export function saveConfig(config: Arc402Config): void {
 
 export const configExists = () => fs.existsSync(CONFIG_PATH);
 
+// Public Base RPC — stale state, do not use for production. Alchemy recommended.
+export const PUBLIC_BASE_RPC = "https://mainnet.base.org";
+export const ALCHEMY_BASE_RPC = "https://base-mainnet.g.alchemy.com/v2/YIA2uRCsFI-j5pqH-aRzflrACSlV1Qrs";
+
+/**
+ * Warn at runtime if the configured RPC is the public Base endpoint.
+ * Public Base RPC has delayed state propagation — use Alchemy for production.
+ */
+export function warnIfPublicRpc(config: Arc402Config): void {
+  if (config.rpcUrl === PUBLIC_BASE_RPC || config.rpcUrl === "https://sepolia.base.org") {
+    console.warn("WARN: Using public Base RPC — state reads may be stale. Set rpcUrl to an Alchemy endpoint for production.");
+    console.warn(`  Recommended: arc402 config set rpcUrl ${ALCHEMY_BASE_RPC}`);
+  }
+}
+
 export const NETWORK_DEFAULTS: Record<string, Partial<Arc402Config> & { usdcAddress: string }> = {
   "base-mainnet": {
-    rpcUrl: "https://mainnet.base.org",
+    rpcUrl: ALCHEMY_BASE_RPC,
     usdcAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     paymasterUrl: "https://api.developer.coinbase.com/rpc/v1/base/dca85088-a2ac-4ec3-8647-5154b150e7a9",
     // Base Mainnet deployments — v2 deployed 2026-03-15
@@ -81,7 +96,7 @@ export const NETWORK_DEFAULTS: Record<string, Partial<Arc402Config> & { usdcAddr
     settlementCoordinatorAddress: "0xd52d8Be9728976E0D70C89db9F8ACeb5B5e97cA2",  // SettlementCoordinatorV2
     agentRegistryAddress:          "0xcc0D8731ccCf6CFfF4e66F6d68cA86330Ea8B622",   // ARC402RegistryV2
     agentRegistryV2Address:        "0xD5c2851B00090c92Ba7F4723FB548bb30C9B6865",   // AgentRegistry
-    walletFactoryAddress:          "0x35075D293E39d271860fe942cDA208A907990Cc0",   // WalletFactoryV4 — deployed 2026-03-17 (passkey P256 support)
+    walletFactoryAddress:          "0x6a46e51fA3B28eBF2D1adA81a4a3CA1cEd2fC245",   // WalletFactoryV4 — deployed 2026-03-17 (passkey P256 support)
     sponsorshipAttestationAddress: "0xD6c2edE89Ea71aE19Db2Be848e172b444Ed38f22",
     serviceAgreementAddress:       "0xC98B402CAB9156da68A87a69E3B4bf167A3CCcF6",
     sessionChannelsAddress:        "0x578f8d1bd82E8D6268E329d664d663B4d985BE61",

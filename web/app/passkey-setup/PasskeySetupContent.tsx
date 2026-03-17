@@ -36,7 +36,7 @@ function short(addr: string) {
 const WC_PROJECT_ID = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? '455e9425343b9156fce1428250c9a54a'
 const CHAIN_ID = 8453
 const BASE_RPC = 'https://mainnet.base.org'
-const WALLET_FACTORY = '0x35075D293E39d271860fe942cDA208A907990Cc0'
+const WALLET_FACTORY = '0x6a46e51fA3B28eBF2D1adA81a4a3CA1cEd2fC245'
 
 async function getARC402Wallets(owner: string): Promise<string[]> {
   const response = await fetch(BASE_RPC, {

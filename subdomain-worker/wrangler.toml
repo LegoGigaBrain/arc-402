@@ -4,7 +4,7 @@ compatibility_date = "2024-01-01"
 
 [vars]
 CLOUDFLARE_ZONE_ID = "69161b69f1fde206874f69a2b9b21033"
-BASE_RPC_URL = "https://base.llamarpc.com"
+BASE_RPC_URL = "https://base-mainnet.g.alchemy.com/v2/YIA2uRCsFI-j5pqH-aRzflrACSlV1Qrs"
 
 [[routes]]
 pattern = "api.arc402.xyz/*"

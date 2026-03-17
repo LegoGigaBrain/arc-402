@@ -1,5 +1,5 @@
 # ARC-402 Engineering State
-*Last updated: 2026-03-17 (WalletFactory v4 deployed — passkey P256 live)*
+*Last updated: 2026-03-17 22:50 SAST (v5 wallet deployed, ETH transfer pending MetaMask)*
 
 ---
 
@@ -29,13 +29,22 @@ WalletFactory v4 deployed 2026-03-17 with native passkey (Face ID) P256 signatur
 - `WalletFactoryV4` ← active: `0x35075D293E39d271860fe942cDA208A907990Cc0`
 - `WalletCodeOracle v4`: `0x9D19DB7511C06B8D0bD3aB49c20b3eF13d19C592`
 
-### GigaBrain Agent Wallet — DEPLOYED ✅
-`0xb4aF8760d349a6A4C8495Ae4da9089bC84994eE6`
-- Deployed 2026-03-17 by Lego via MetaMask (WalletConnect)
+### GigaBrain Agent Wallet v5 (ACTIVE) — DEPLOYED ✅
+`0xCC0Ee5899787607C01D2a97fC4c488f64694bbb1`
+- Deployed 2026-03-17 (protocol bypass fix — no whitelist needed for core protocol contracts)
 - Owner: `0x7745772d67Cd52c1F38706bF5550AdcD925c7c00` (Lego's MetaMask)
-- Factory: WalletFactoryV3 `0x974d2ae81cC9B4955e325890f4247AC76c92148D`
-- Bytecode: correct (24,300 bytes, has `authorizeMachineKey`)
-- Machine key: ✅ AUTHORIZED — `0x747024C2e59C523E3B1621A4b3F92366C1E28A30`
+- Factory: WalletFactoryV4 `0x35075D293E39d271860fe942cDA208A907990Cc0`
+- Machine key: ⏳ NOT YET AUTHORIZED (needs MetaMask → `authorizeMachineKey`)
+- Balance: 0.000771 ETH
+- CLI config: ✅ pointing here
+
+### GigaBrain Agent Wallet v4 (OLD — drain pending)
+`0xb4aF8760d349a6A4C8495Ae4da9089bC84994eE6`
+- Owner: `0x7745772d67Cd52c1F38706bF5550AdcD925c7c00` (Lego's MetaMask)
+- Factory: WalletFactoryV3
+- Machine key: ✅ authorized — `0x747024C2e59C523E3B1621A4b3F92366C1E28A30`
+- Balance: 0.0005 ETH — ⏳ PENDING DRAIN to MetaMask (blocked by MetaMask crash)
+- v5 already whitelisted on PolicyEngine ✅
 - Auth tx: `0x3b906fb2f1a9948bca0c1a3f32e7019a97459a06fe42716813398483925e1d1d`
 
 ---

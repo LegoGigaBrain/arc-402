@@ -102,8 +102,28 @@ export const POLICY_ENGINE_LIMITS_ABI = [
   "function setDailyLimitFor(address wallet, string category, uint256 limit) external",
 ] as const;
 
+// PolicyEngine governance functions — for onboarding ceremony
+export const POLICY_ENGINE_GOVERNANCE_ABI = [
+  // registerWallet requires msg.sender == wallet — route through wallet's executeContractCall
+  "function registerWallet(address wallet, address owner) external",
+  // enableDefiAccess: onlyWalletOwnerOrWallet — owner can call directly on PolicyEngine
+  "function enableDefiAccess(address wallet) external",
+  // isRegistered check helper
+  "function walletOwners(address wallet) external view returns (address)",
+  "function defiAccessEnabled(address wallet) external view returns (bool)",
+] as const;
+
 export const ARC402_WALLET_EXECUTE_ABI = [
   "function executeContractCall((address target, bytes data, uint256 value, uint256 minReturnValue, uint256 maxApprovalAmount, address approvalToken) params) external returns (bytes memory)",
+] as const;
+
+// Direct protocol functions — all onlyOwnerOrMachineKey, never route through executeContractCall
+export const ARC402_WALLET_PROTOCOL_ABI = [
+  "function openContext(bytes32 contextId, string calldata taskType) external",
+  "function closeContext() external",
+  "function contextOpen() external view returns (bool)",
+  "function attest(bytes32 attestationId, string calldata action, string calldata reason, address recipient, uint256 amount, address token, uint256 expiresAt) external returns (bytes32)",
+  "function executeSpend(address payable recipient, uint256 amount, string calldata category, bytes32 attestationId) external",
 ] as const;
 
 export const ARC402_WALLET_GUARDIAN_ABI = [

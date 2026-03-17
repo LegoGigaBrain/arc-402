@@ -697,3 +697,48 @@ While `executeContractCall()` has a `minReturnValue` slippage check, the core sp
 8. Replace direct arbitrator nomination with a neutral selection mechanism. Neither party alone should be able to fill a majority of the panel.
 9. Decouple `DisputeModule` privilege from `DisputeArbitration` — `resolveDisputeFee()` should only be callable via ServiceAgreement, not directly from DisputeModule.
 10. Implement an emergency migration path for escrowed funds in ServiceAgreement.
+
+---
+
+## Audit Round 4 — Passkey/WebAuthn Signature Validation
+**Date:** 2026-03-17
+**Scope:** Spec 33 P256/passkey additions to ARC402Wallet.sol
+**Model:** First pass — claude-sonnet-4-6 | Second pass — claude-opus-4-6
+**Auditors:** neat-ocean (first pass), plaid-pine-2 Opus (second pass)
+
+### Process
+
+1. tender-prairie implemented Spec 33 (passkey P256 support)
+2. neat-ocean (sonnet) ran targeted audit → found 2 blockers + 1 medium
+3. cool-mist-2 fixed all three findings
+4. plaid-pine-2 (opus) ran second-eyes on the fixes → found 1 new critical (challenge verification missing)
+5. nimble-slug fixing the critical → final Opus pass before deploy
+
+This is the established pattern for cryptographic code:
+**Implement → Audit (sonnet) → Fix → Second-eyes (Opus) → Fix any new findings → Final Opus pass → Deploy**
+
+### Findings
+
+| ID | Severity | Title | Status |
+|---|---|---|---|
+| AUD-PK-01 | Critical | Contract 2,266 bytes over EIP-170 limit | ✅ Fixed — P256VerifierLib extracted, 17,639 bytes |
+| AUD-PK-02 | High | WebAuthn hash not reconstructed — all real Face ID sigs fail | ✅ Fixed — sha256(authData\|\|sha256(clientDataJSON)) |
+| AUD-PK-03 | Medium | clearPasskey/emergencyOwnerOverride emit no events | ✅ Fixed — PasskeyCleared + EmergencyOverride events added |
+| AUD-PK-FIX-01 | Critical | No challenge verification — governance sig replay attack | ⏳ Fix in progress (nimble-slug) |
+
+### AUD-PK-FIX-01 — Replay Attack Description
+
+**Vector:** WebAuthn signature (r, s, authData, clientDataJSON) is visible on-chain in UserOp calldata. Without verifying that clientDataJSON contains userOpHash as the challenge, any observed governance signature can be copied into a new UserOp with a different governance call and a fresh nonce. The P256 math passes because the WebAuthn hash is unchanged.
+
+**Example:** User approves `setGuardian` with Face ID. Attacker copies the sig bytes, crafts a new UserOp calling `proposeRegistryUpdate`, reuses the same sig. Contract accepts it.
+
+**Fix:** Parse clientDataJSON on-chain, extract the `challenge` field, base64url-decode it, verify it equals userOpHash. Each Face ID tap is cryptographically bound to exactly one operation.
+
+**Why Opus caught it and sonnet missed it:** The userOpHash parameter was present but silently suppressed `(userOpHash);`. The logic appeared correct superficially. Opus recognized this as an intentional no-op that defeated the binding purpose.
+
+### Lesson Locked
+
+> **Cryptographic signature validation requires Opus second-eyes before mainnet. Always.**
+> The first audit pass catches structural issues. Opus catches subtle protocol-level flaws.
+> This is now mandatory policy for any crypto code in ARC-402.
+

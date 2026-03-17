@@ -39,7 +39,7 @@ async function getARC402Wallets(owner: string): Promise<string[]> {
       params: [{
         to: WALLET_FACTORY,
         // getWallets(address) selector = keccak256("getWallets(address)")[0:4]
-        data: '0xbfa2f4f2' + owner.slice(2).toLowerCase().padStart(64, '0'),
+        data: '0x422c29a4' + owner.slice(2).toLowerCase().padStart(64, '0'),
       }, 'latest'],
     }),
   })

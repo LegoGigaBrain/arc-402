@@ -11,12 +11,7 @@ const BASE_RPC        = 'https://base-mainnet.g.alchemy.com/v2/YIA2uRCsFI-j5pqH-
 const BUNDLER_URL     = process.env.NEXT_PUBLIC_BUNDLER_URL ?? 'https://api.pimlico.io/v2/base/rpc'
 const WALLET_FACTORY  = '0x3f4d4b19a69344B04fd9653E1bB12883e97300fE' // v5 (passkey P256, split-chunk) — active factory
 const ALL_WALLET_FACTORIES = [
-  '0x3f4d4b19a69344B04fd9653E1bB12883e97300fE', // v5 active
-  '0x35075D293E39d271860fe942cDA208A907990Cc0', // v4 frozen
-  '0x974d2ae81cC9B4955e325890f4247AC76c92148D', // v3
-  '0x67b92B842Ee44671762E44D347d76a6895EFF9e2', // v2
-  '0x0092E5bC265103070FDB19a8bf3Fa03A46c65ED2', // v1
-  '0x6a46e51fA3B28eBF2D1adA81a4a3CA1cEd2fC245', // legacy
+  '0x3f4d4b19a69344B04fd9653E1bB12883e97300fE', // v5 active — only detect from current factory
 ]
 const ENTRY_POINT     = '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
 const AGENT_REGISTRY  = '0xcc0D8731ccCf6CFfF4e66F6d68cA86330Ea8B622'

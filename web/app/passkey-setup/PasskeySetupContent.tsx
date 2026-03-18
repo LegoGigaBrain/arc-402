@@ -38,12 +38,7 @@ const CHAIN_ID = 8453
 const BASE_RPC = 'https://mainnet.base.org'
 // All WalletFactory versions — newest first so latest wallet sorts to top
 const WALLET_FACTORIES = [
-  '0x3f4d4b19a69344B04fd9653E1bB12883e97300fE', // v5 (passkey P256, split-chunk) — active
-  '0x35075D293E39d271860fe942cDA208A907990Cc0', // v4 frozen
-  '0x974d2ae81cC9B4955e325890f4247AC76c92148D', // v3 (ERC-4337)
-  '0x67b92B842Ee44671762E44D347d76a6895EFF9e2', // v2
-  '0x0092E5bC265103070FDB19a8bf3Fa03A46c65ED2', // v1
-  '0x6a46e51fA3B28eBF2D1adA81a4a3CA1cEd2fC245', // legacy
+  '0x3f4d4b19a69344B04fd9653E1bB12883e97300fE', // v5 active — only detect from current factory
 ]
 
 async function getWalletsFromFactory(factory: string, owner: string): Promise<string[]> {

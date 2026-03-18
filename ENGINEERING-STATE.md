@@ -1,5 +1,5 @@
 # ARC-402 Engineering State
-*Last updated: 2026-03-17 22:50 SAST (v5 wallet deployed, ETH transfer pending MetaMask)*
+*Last updated: 2026-03-18 01:21 SAST (Face ID governance signing confirmed on v5)*
 
 ---
 
@@ -29,13 +29,15 @@ WalletFactory v4 deployed 2026-03-17 with native passkey (Face ID) P256 signatur
 - `WalletFactoryV4` ← active: `0x35075D293E39d271860fe942cDA208A907990Cc0`
 - `WalletCodeOracle v4`: `0x9D19DB7511C06B8D0bD3aB49c20b3eF13d19C592`
 
-### GigaBrain Agent Wallet v5 (ACTIVE) — DEPLOYED ✅
+### GigaBrain Agent Wallet v5 (ACTIVE) — FULLY OPERATIONAL ✅
 `0xCC0Ee5899787607C01D2a97fC4c488f64694bbb1`
 - Deployed 2026-03-17 (protocol bypass fix — no whitelist needed for core protocol contracts)
 - Owner: `0x7745772d67Cd52c1F38706bF5550AdcD925c7c00` (Lego's MetaMask)
 - Factory: WalletFactoryV4 `0x35075D293E39d271860fe942cDA208A907990Cc0`
-- Machine key: ⏳ NOT YET AUTHORIZED (needs MetaMask → `authorizeMachineKey`)
-- Balance: 0.000771 ETH
+- Machine key: ✅ AUTHORIZED — `0x747024C2e59C523E3B1621A4b3F92366C1E28A30`
+- PE registered: ✅ | DeFi enabled: ✅ | general limit: 0.001 ETH ✅
+- AgentRegistry: ✅ registered (name: GigaBrain, type: intelligence)
+- Balance: ~0.000771 ETH
 - CLI config: ✅ pointing here
 
 ### GigaBrain Agent Wallet v4 (OLD — drain pending)
@@ -199,7 +201,7 @@ Active v2 contracts (use these):
 17. ✅ wc-reset command shipped (stale session fix + ping-before-resume)
 18. ✅ WalletFactory v4 deployed to mainnet — passkey P256 support live — 2026-03-17
 19. → Start daemon (`arc402 daemon start`)
-20. → Lego: `proposeRegistryUpdate(ARC402RegistryV2)` on `0xB7840152` — OVERDUE
+20. ~~Lego: `proposeRegistryUpdate(ARC402RegistryV2)` on `0xB7840152`~~ — OBSOLETE (personal wallet deprecated)
 21. → Passkey governance test (`/passkey-setup` + `/passkey-sign`)
 22. → ERC-4337 full mega audit (before tagging v1.0)
 23. → Article: "Agents with Wallets is Not Enough" — first draft
@@ -289,7 +291,7 @@ Active v2 contracts (use these):
 
 | Wallet | Address | Status |
 |--------|---------|--------|
-| Lego personal agent wallet | `0xB7840152eB82bBdA0Ca9f6012bd42C63C96dCD2b` | v2 contract, live. Pending registry update. |
+| Lego personal agent wallet | `0xB7840152eB82bBdA0Ca9f6012bd42C63C96dCD2b` | v2 contract, deprecated. Use v5 GigaBrain wallet instead. |
 | GigaBrain agent wallet | `0xb4aF8760d349a6A4C8495Ae4da9089bC84994eE6` | Deployed 2026-03-17. Owner: Lego MetaMask. Machine key ✅ authorized. AgentRegistry ✅ registered. PolicyEngine ✅ configured. Tunnel ✅ live. |
 | Old GigaBrain (v1, discard) | `0xC3207bFe22cba39AeC4e8540c97c29B028103c7F` | v1 contract, 0.00025 ETH parked, no machine key |
 | Discard — old bytecode | `0x2D15d...` | Deployed today from stale oracle, no machine key |

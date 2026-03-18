@@ -36,24 +36,29 @@ function short(addr: string) {
 const WC_PROJECT_ID = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? '455e9425343b9156fce1428250c9a54a'
 const CHAIN_ID = 8453
 const BASE_RPC = 'https://mainnet.base.org'
-const WALLET_FACTORY = '0x6a46e51fA3B28eBF2D1adA81a4a3CA1cEd2fC245'
+// All WalletFactory versions — newest first so latest wallet sorts to top
+const WALLET_FACTORIES = [
+  '0x35075D293E39d271860fe942cDA208A907990Cc0', // v4 (passkey P256) — active
+  '0x974d2ae81cC9B4955e325890f4247AC76c92148D', // v3 (ERC-4337)
+  '0x67b92B842Ee44671762E44D347d76a6895EFF9e2', // v2
+  '0x0092E5bC265103070FDB19a8bf3Fa03A46c65ED2', // v1
+  '0x6a46e51fA3B28eBF2D1adA81a4a3CA1cEd2fC245', // legacy
+]
 
-async function getARC402Wallets(owner: string): Promise<string[]> {
+async function getWalletsFromFactory(factory: string, owner: string): Promise<string[]> {
   const response = await fetch(BASE_RPC, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       jsonrpc: '2.0', id: 1, method: 'eth_call',
       params: [{
-        to: WALLET_FACTORY,
-        // getWallets(address) selector = keccak256("getWallets(address)")[0:4]
+        to: factory,
         data: '0x422c29a4' + owner.slice(2).toLowerCase().padStart(64, '0'),
       }, 'latest'],
     }),
   })
   const json = await response.json() as { result?: string }
   if (!json.result || json.result === '0x') return []
-  // Decode address[] — offset(32) + length(32) + addresses
   const hex = json.result.slice(2)
   const count = parseInt(hex.slice(64, 128), 16)
   const wallets: string[] = []
@@ -62,6 +67,23 @@ async function getARC402Wallets(owner: string): Promise<string[]> {
     wallets.push('0x' + addr.slice(2).toLowerCase())
   }
   return wallets
+}
+
+async function getARC402Wallets(owner: string): Promise<string[]> {
+  // Query all factories, newest first — deduplicate and return all wallets
+  const results = await Promise.allSettled(
+    WALLET_FACTORIES.map(f => getWalletsFromFactory(f, owner))
+  )
+  const seen = new Set<string>()
+  const all: string[] = []
+  for (const r of results) {
+    if (r.status === 'fulfilled') {
+      for (const w of r.value) {
+        if (!seen.has(w)) { seen.add(w); all.push(w) }
+      }
+    }
+  }
+  return all
 }
 
 // ─── Wallet options ───────────────────────────────────────────────────────────

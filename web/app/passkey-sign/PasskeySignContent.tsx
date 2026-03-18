@@ -47,18 +47,24 @@ export default function PasskeySignContent() {
   async function sign() {
     setState('waiting')
     try {
-      if (!credId) throw new Error('No credential ID — run passkey setup first')
-
-      const credIdBytes = Uint8Array.from(
-        atob(credId.replace(/-/g, '+').replace(/_/g, '/')),
-        c => c.charCodeAt(0)
-      )
       const challengeBytes = challengeHex ? hexToBytes(challengeHex) : crypto.getRandomValues(new Uint8Array(32))
+
+      // If credId provided, restrict to that credential. Otherwise let device offer all available credentials.
+      const allowCredentials = credId ? [{
+        id: Uint8Array.from(atob(credId.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)).buffer as ArrayBuffer,
+        type: 'public-key' as const
+      }] : []
+
+      const hostname = window.location.hostname
+      const rpId = (hostname.endsWith('.arc402.xyz') || hostname === 'arc402.xyz')
+        ? 'arc402.xyz'
+        : hostname === 'localhost' ? 'localhost' : hostname
 
       const assertion = await navigator.credentials.get({
         publicKey: {
           challenge: challengeBytes.buffer as ArrayBuffer,
-          allowCredentials: [{ id: credIdBytes.buffer as ArrayBuffer, type: 'public-key' }],
+          allowCredentials,
+          rpId,
           userVerification: 'required',
           timeout: 60000,
         },

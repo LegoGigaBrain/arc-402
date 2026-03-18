@@ -62,6 +62,53 @@ export function registerHireCommand(program: Command): void {
       }
       if (price <= 0n) throw new Error(`--max must be greater than zero`);
 
+      // Pre-flight: check client !== provider (J2-03)
+      if (address.toLowerCase() === opts.agent.toLowerCase()) {
+        console.error("Cannot hire yourself: client and provider addresses are the same.");
+        process.exit(1);
+      }
+
+      // Pre-flight: check provider is registered in AgentRegistry (J2-02)
+      const agentRegistryAddress = config.agentRegistryV2Address ?? config.agentRegistryAddress;
+      if (agentRegistryAddress) {
+        const arProvider = new ethers.JsonRpcProvider(config.rpcUrl);
+        const arCheck = new ethers.Contract(
+          agentRegistryAddress,
+          ["function isRegistered(address wallet) external view returns (bool)"],
+          arProvider,
+        );
+        let isRegistered = true;
+        try {
+          isRegistered = await arCheck.isRegistered(opts.agent);
+        } catch { /* assume registered if read fails */ }
+        if (!isRegistered) {
+          console.error(`Provider ${opts.agent} is not registered in AgentRegistry.`);
+          console.error(`Verify the agent address is correct, or check the registry at ${agentRegistryAddress}.`);
+          process.exit(1);
+        }
+      }
+
+      // Pre-flight: check token is allowed on this ServiceAgreement (J2-01)
+      if (useUsdc) {
+        const saProvider = new ethers.JsonRpcProvider(config.rpcUrl);
+        const saCheck = new ethers.Contract(
+          config.serviceAgreementAddress,
+          ["function allowedTokens(address) external view returns (bool)"],
+          saProvider,
+        );
+        let isAllowed = false;
+        try {
+          isAllowed = await saCheck.allowedTokens(token);
+        } catch { isAllowed = true; /* assume allowed if read fails */ }
+        if (!isAllowed) {
+          console.error(`Token ${token} is not allowed on this ServiceAgreement.`);
+          console.error(`Only the SA owner can allowlist tokens via:`);
+          console.error(`  cast send ${config.serviceAgreementAddress} "allowToken(address)" ${token}`);
+          console.error(`For ETH payments, use --token eth`);
+          process.exit(1);
+        }
+      }
+
       // Use spec hash as deliverables hash; if transcript exists, incorporate it
       const baseHash = opts.deliverableSpec ? hashFile(opts.deliverableSpec) : hashString(opts.task);
       const deliverablesHash = transcriptHash

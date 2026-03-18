@@ -9,7 +9,14 @@ const WC_PROJECT_ID   = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? '455e9425343b91
 const CHAIN_ID        = 8453
 const BASE_RPC        = 'https://base-mainnet.g.alchemy.com/v2/YIA2uRCsFI-j5pqH-aRzflrACSlV1Qrs'
 const BUNDLER_URL     = process.env.NEXT_PUBLIC_BUNDLER_URL ?? 'https://api.pimlico.io/v2/base/rpc'
-const WALLET_FACTORY  = '0x6a46e51fA3B28eBF2D1adA81a4a3CA1cEd2fC245'
+const WALLET_FACTORY  = '0x35075D293E39d271860fe942cDA208A907990Cc0' // v4 (passkey P256) — active factory
+const ALL_WALLET_FACTORIES = [
+  '0x35075D293E39d271860fe942cDA208A907990Cc0', // v4 active
+  '0x974d2ae81cC9B4955e325890f4247AC76c92148D', // v3
+  '0x67b92B842Ee44671762E44D347d76a6895EFF9e2', // v2
+  '0x0092E5bC265103070FDB19a8bf3Fa03A46c65ED2', // v1
+  '0x6a46e51fA3B28eBF2D1adA81a4a3CA1cEd2fC245', // legacy
+]
 const ENTRY_POINT     = '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
 const AGENT_REGISTRY  = '0xcc0D8731ccCf6CFfF4e66F6d68cA86330Ea8B622'
 const POLICY_ENGINE   = '0xAA5Ef3489C929bFB3BFf5D5FE15aa62d3763c847'
@@ -85,16 +92,13 @@ async function parseP256Key(spki: ArrayBuffer): Promise<{ x: string; y: string }
   return { x: b64ToHex(jwk.x), y: b64ToHex(jwk.y) }
 }
 
-async function getARC402Wallets(owner: string): Promise<string[]> {
+async function getWalletsFromFactory(factory: string, owner: string): Promise<string[]> {
   const res = await fetch(BASE_RPC, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       jsonrpc: '2.0', id: 1, method: 'eth_call',
-      params: [{
-        to: WALLET_FACTORY,
-        data: '0x422c29a4' + owner.slice(2).toLowerCase().padStart(64, '0'),
-      }, 'latest'],
+      params: [{ to: factory, data: '0x422c29a4' + owner.slice(2).toLowerCase().padStart(64, '0') }, 'latest'],
     }),
   })
   const json = await res.json() as { result?: string }
@@ -102,10 +106,15 @@ async function getARC402Wallets(owner: string): Promise<string[]> {
   const hex = json.result.slice(2)
   const count = parseInt(hex.slice(64, 128), 16)
   const wallets: string[] = []
-  for (let i = 0; i < count; i++) {
-    wallets.push('0x' + hex.slice(128 + i * 64 + 24, 128 + (i + 1) * 64).toLowerCase())
-  }
+  for (let i = 0; i < count; i++) wallets.push('0x' + hex.slice(128 + i * 64 + 24, 128 + (i + 1) * 64).toLowerCase())
   return wallets
+}
+
+async function getARC402Wallets(owner: string): Promise<string[]> {
+  const results = await Promise.allSettled(ALL_WALLET_FACTORIES.map(f => getWalletsFromFactory(f, owner)))
+  const seen = new Set<string>(); const all: string[] = []
+  for (const r of results) if (r.status === 'fulfilled') for (const w of r.value) if (!seen.has(w)) { seen.add(w); all.push(w) }
+  return all
 }
 
 // ─── Wallet options ───────────────────────────────────────────────────────────
@@ -967,7 +976,19 @@ export default function OnboardContent() {
                 <div style={{ fontSize: '0.78rem', color: '#666', lineHeight: 1.8 }}>
                   {!PAYMASTER_URL && <>{`• Fund wallet with ETH for gas`}<br /></>}
                   • Run daemon: <span style={{ fontFamily: 'monospace', color: '#818cf8', fontSize: '0.72rem' }}>arc402 daemon start</span><br />
-                  • Sign governance ops: <span style={{ fontFamily: 'monospace', color: '#818cf8', fontSize: '0.72rem' }}>app.arc402.xyz/passkey-sign</span>
+                  • Sign governance ops:{' '}
+                  {passkeyResult ? (
+                    <a
+                      href={`https://app.arc402.xyz/passkey-sign?wallet=${arc402Wallet}&credId=${passkeyResult.credId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontFamily: 'monospace', color: '#4ade80', fontSize: '0.72rem', wordBreak: 'break-all' }}
+                    >
+                      {`app.arc402.xyz/passkey-sign?wallet=${arc402Wallet}&credId=${passkeyResult.credId}`}
+                    </a>
+                  ) : (
+                    <span style={{ fontFamily: 'monospace', color: '#818cf8', fontSize: '0.72rem' }}>app.arc402.xyz/passkey-sign</span>
+                  )}
                 </div>
               </div>
             </div>

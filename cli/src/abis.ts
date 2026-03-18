@@ -124,6 +124,7 @@ export const ARC402_WALLET_PROTOCOL_ABI = [
   "function contextOpen() external view returns (bool)",
   "function attest(bytes32 attestationId, string calldata action, string calldata reason, address recipient, uint256 amount, address token, uint256 expiresAt) external returns (bytes32)",
   "function executeSpend(address payable recipient, uint256 amount, string calldata category, bytes32 attestationId) external",
+  "function executeTokenSpend(address recipient, uint256 amount, address token, string calldata category, bytes32 attestationId) external",
 ] as const;
 
 export const ARC402_WALLET_GUARDIAN_ABI = [
@@ -165,6 +166,8 @@ export const ARC402_WALLET_OWNER_ABI = [
   // State queries
   "function authorizedInterceptor() external view returns (address)",
   "function velocityLimit() external view returns (uint256)",
+  "function velocityWindowStart() external view returns (uint256)",
+  "function cumulativeSpend() external view returns (uint256)",
   "function activePolicyId() external view returns (bytes32)",
 ] as const;
 

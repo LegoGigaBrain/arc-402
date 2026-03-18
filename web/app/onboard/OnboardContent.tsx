@@ -9,9 +9,10 @@ const WC_PROJECT_ID   = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? '455e9425343b91
 const CHAIN_ID        = 8453
 const BASE_RPC        = 'https://base-mainnet.g.alchemy.com/v2/YIA2uRCsFI-j5pqH-aRzflrACSlV1Qrs'
 const BUNDLER_URL     = process.env.NEXT_PUBLIC_BUNDLER_URL ?? 'https://api.pimlico.io/v2/base/rpc'
-const WALLET_FACTORY  = '0x3f4d4b19a69344B04fd9653E1bB12883e97300fE' // v5 (passkey P256, split-chunk) — active factory
+const WALLET_FACTORY  = '0xcB52B5d746eEc05e141039E92e3dBefeAe496051' // v5 (optimized bytecode, passkey P256) — active factory
 const ALL_WALLET_FACTORIES = [
-  '0x3f4d4b19a69344B04fd9653E1bB12883e97300fE', // v5 active — only detect from current factory
+  '0xcB52B5d746eEc05e141039E92e3dBefeAe496051', // v5 active (optimized, redeployed 2026-03-19)
+  '0x3f4d4b19a69344B04fd9653E1bB12883e97300fE', // v5 frozen (unoptimized)
 ]
 const ENTRY_POINT     = '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
 const AGENT_REGISTRY  = '0xcc0D8731ccCf6CFfF4e66F6d68cA86330Ea8B622'

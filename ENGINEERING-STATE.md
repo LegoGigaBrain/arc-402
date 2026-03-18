@@ -1,5 +1,5 @@
 # ARC-402 Engineering State
-*Last updated: 2026-03-18 21:34 SAST (WalletFactoryV5 0x3f4d4b deployed — V4 frozen)*
+*Last updated: 2026-03-19 00:30 SAST (WalletFactoryV5 redeployed with optimized bytecode — 0xcB52B5d7)*
 
 ---
 
@@ -30,11 +30,13 @@ WalletFactory v4 deployed 2026-03-17 with native passkey (Face ID) P256 signatur
 - `WalletCodeOracle v4` (frozen): `0x9D19DB7511C06B8D0bD3aB49c20b3eF13d19C592`
 
 ### v5 (Passkey P256, current) — LIVE ON BASE MAINNET ✅
-WalletFactory v5 deployed 2026-03-18 — latest passkey P256 factory, split-chunk deploy.
+WalletFactory v5 redeployed 2026-03-19 with optimized bytecode (FOUNDRY_PROFILE=deploy). Previous v5 (`0x3f4d…`) frozen — unoptimized bytecode.
 
-- `WalletFactoryV5` ← active: `0x3f4d4b19a69344B04fd9653E1bB12883e97300fE`
-- `WalletFactoryV5 chunk1` / `WalletCodeOracle v5`: `0xd5e015a3F6A608888fe7d3EEd0A990562F692a43`
-- `WalletFactoryV5 chunk2`: `0xca331Db70228875acC57eda60127Af7c38Ab53D2`
+- `WalletFactoryV5` ← active: `0xcB52B5d746eEc05e141039E92e3dBefeAe496051`
+- `WalletCodeOracle v5` ← active: `0x594B1afdBb899F598fdbe468449EC202f4c4D7BD`
+- `WalletFactoryV5` (frozen, unoptimized): `0x3f4d4b19a69344B04fd9653E1bB12883e97300fE`
+- `WalletFactoryV5 chunk1` / `WalletCodeOracle v5` (frozen): `0xd5e015a3F6A608888fe7d3EEd0A990562F692a43`
+- `WalletFactoryV5 chunk2` (frozen): `0xca331Db70228875acC57eda60127Af7c38Ab53D2`
 - Registry: ARC402RegistryV2 `0xcc0D8731ccCf6CFfF4e66F6d68cA86330Ea8B622`
 - EntryPoint v0.7: `0x0000000071727De22E5E9d8BAf0edAc6f37da032`
 
@@ -42,7 +44,7 @@ WalletFactory v5 deployed 2026-03-18 — latest passkey P256 factory, split-chun
 `0xCC0Ee5899787607C01D2a97fC4c488f64694bbb1`
 - Deployed 2026-03-17 (protocol bypass fix — no whitelist needed for core protocol contracts)
 - Owner: `0x7745772d67Cd52c1F38706bF5550AdcD925c7c00` (Lego's MetaMask)
-- Factory: WalletFactoryV5 `0x3f4d4b19a69344B04fd9653E1bB12883e97300fE`
+- Factory: WalletFactoryV5 `0xcB52B5d746eEc05e141039E92e3dBefeAe496051`
 - Machine key: ✅ AUTHORIZED — `0x747024C2e59C523E3B1621A4b3F92366C1E28A30`
 - PE registered: ✅ | DeFi enabled: ✅ | general limit: 0.001 ETH ✅
 - AgentRegistry: ✅ registered (name: GigaBrain, type: intelligence)
@@ -82,9 +84,11 @@ Active v2 contracts (use these):
 | WalletFactory v3 chunk2 | `0x05CCeC2EbD262752cb033F5a73ca0601E7DbcEd8` |
 | WalletFactory v4 (frozen) | `0x35075D293E39d271860fe942cDA208A907990Cc0` |
 | WalletCodeOracle v4 (frozen) | `0x9D19DB7511C06B8D0bD3aB49c20b3eF13d19C592` |
-| WalletFactory v5 ← active | `0x3f4d4b19a69344B04fd9653E1bB12883e97300fE` |
-| WalletFactory v5 chunk1 / WalletCodeOracle v5 | `0xd5e015a3F6A608888fe7d3EEd0A990562F692a43` |
-| WalletFactory v5 chunk2 | `0xca331Db70228875acC57eda60127Af7c38Ab53D2` |
+| WalletFactory v5 (frozen, unoptimized) | `0x3f4d4b19a69344B04fd9653E1bB12883e97300fE` |
+| WalletFactory v5 chunk1 / WalletCodeOracle v5 (frozen) | `0xd5e015a3F6A608888fe7d3EEd0A990562F692a43` |
+| WalletFactory v5 chunk2 (frozen) | `0xca331Db70228875acC57eda60127Af7c38Ab53D2` |
+| WalletFactory v5 ← active (optimized) | `0xcB52B5d746eEc05e141039E92e3dBefeAe496051` |
+| WalletCodeOracle v5 ← active | `0x594B1afdBb899F598fdbe468449EC202f4c4D7BD` |
 | SponsorshipAttestation | `0xD6c2edE89Ea71aE19Db2Be848e172b444Ed38f22` |
 | ServiceAgreement (v1, frozen) | `0x78C8e4d26D74d8da80d03Df04767D3Fdc3D9340f` |
 | ServiceAgreement ← active | `0xC98B402CAB9156da68A87a69E3B4bf167A3CCcF6` |
@@ -212,7 +216,8 @@ Active v2 contracts (use these):
 16. ✅ Daemon config written (`~/.arc402/daemon.toml`)
 17. ✅ wc-reset command shipped (stale session fix + ping-before-resume)
 18. ✅ WalletFactory v4 deployed to mainnet — passkey P256 support live — 2026-03-17 (now frozen)
-18b. ✅ WalletFactory v5 redeployed to mainnet — `0x3f4d4b19a69344B04fd9653E1bB12883e97300fE` — 2026-03-18
+18b. ✅ WalletFactory v5 deployed to mainnet (unoptimized, now frozen) — `0x3f4d4b19a69344B04fd9653E1bB12883e97300fE` — 2026-03-18
+18c. ✅ WalletFactory v5 redeployed with optimized bytecode (FOUNDRY_PROFILE=deploy) — `0xcB52B5d746eEc05e141039E92e3dBefeAe496051` — 2026-03-19
 19. → Start daemon (`arc402 daemon start`)
 20. ~~Lego: `proposeRegistryUpdate(ARC402RegistryV2)` on `0xB7840152`~~ — OBSOLETE (personal wallet deprecated)
 21. → Passkey governance test (`/passkey-setup` + `/passkey-sign`)
@@ -238,6 +243,7 @@ Active v2 contracts (use these):
 - **Guardian key = emergency freeze only.** Cannot unfreeze — only owner can.
 - **EntryPoint v0.7.** Base mainnet: `0x0000000071727De22E5E9d8BAf0edAc6f37da032`.
 - **`via_ir = false`.** Causes 40+ min compile hangs. Keep OFF.
+- **`FOUNDRY_PROFILE=deploy` is MANDATORY for all deployments.** The default profile produces unoptimized bytecode that exceeds EIP-170 (24KB). The `deploy` profile enables the optimizer (runs=200). Lesson from 2026-03-19: v5 factory `0x3f4d…` was deployed without optimizer — bytecode was valid but unoptimized, now frozen.
 - **Repo private** until 5 days before article.
 
 ---

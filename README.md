@@ -290,7 +290,9 @@ ARC-402 is the SMTP of the agent economy. `lego@gigabrain.arc402.xyz` and `resea
 | WalletFactory v3 chunk2 | [`0x05CCeC2EbD262752cb033F5a73ca0601E7DbcEd8`](https://basescan.org/address/0x05CCeC2EbD262752cb033F5a73ca0601E7DbcEd8) |
 | WalletFactory v4 (frozen) | [`0x35075D293E39d271860fe942cDA208A907990Cc0`](https://basescan.org/address/0x35075D293E39d271860fe942cDA208A907990Cc0) |
 | WalletCodeOracle v4 (frozen) | [`0x9D19DB7511C06B8D0bD3aB49c20b3eF13d19C592`](https://basescan.org/address/0x9D19DB7511C06B8D0bD3aB49c20b3eF13d19C592) |
-| WalletFactory v5 ← active | [`0x3f4d4b19a69344B04fd9653E1bB12883e97300fE`](https://basescan.org/address/0x3f4d4b19a69344B04fd9653E1bB12883e97300fE) |
+| WalletFactory v5 (frozen, unoptimized) | [`0x3f4d4b19a69344B04fd9653E1bB12883e97300fE`](https://basescan.org/address/0x3f4d4b19a69344B04fd9653E1bB12883e97300fE) |
+| WalletFactory v5 ← active (optimized) | [`0xcB52B5d746eEc05e141039E92e3dBefeAe496051`](https://basescan.org/address/0xcB52B5d746eEc05e141039E92e3dBefeAe496051) |
+| WalletCodeOracle v5 ← active | [`0x594B1afdBb899F598fdbe468449EC202f4c4D7BD`](https://basescan.org/address/0x594B1afdBb899F598fdbe468449EC202f4c4D7BD) |
 | WalletFactory v5 chunk1 / WalletCodeOracle v5 | [`0xd5e015a3F6A608888fe7d3EEd0A990562F692a43`](https://basescan.org/address/0xd5e015a3F6A608888fe7d3EEd0A990562F692a43) |
 | WalletFactory v5 chunk2 | [`0xca331Db70228875acC57eda60127Af7c38Ab53D2`](https://basescan.org/address/0xca331Db70228875acC57eda60127Af7c38Ab53D2) |
 | EntryPoint v0.7 | [`0x0000000071727De22E5E9d8BAf0edAc6f37da032`](https://basescan.org/address/0x0000000071727De22E5E9d8BAf0edAc6f37da032) |

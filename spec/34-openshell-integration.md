@@ -10,12 +10,12 @@ The ARC-402 daemon governs the agreement boundary — who hired this agent, at w
 
 OpenShell is the open source runtime sandbox that governs the execution boundary — which network endpoints, file paths, and system resources a running agent process can access. It is the OS-level policy layer for agent work.
 
-These are peer systems. They solve adjacent problems at different layers. When OpenShell is present, they meet at exactly one point: `arc402 daemon start`, which runs the entire daemon inside the sandbox.
+OpenShell is the runtime safety infrastructure under ARC-402. In user-facing framing they should not feel like two separate products; ARC-402 should imply governed sandboxed commerce by default. When OpenShell is present, they meet at exactly one point: `arc402 daemon start`, which runs the entire daemon inside the sandbox.
 
 **ARC-402:** Who can hire this agent? At what price? Under what trust? What happens when delivery fails?
 **OpenShell:** What can the running process touch? What endpoints can it call? What files can it write?
 
-Neither can answer the other's question. Both are required.
+Neither can answer the other's question. Both are required, but launch-facing copy should present them as one ARC-402 operating model rather than two products the user must integrate manually.
 
 > **Launch decision (2026-03-19):** OpenShell owns daemon startup for launch. The daemon is not documented as a standalone launch-step process. The operator flow is: configure OpenShell with `arc402 openshell init`, then start the ARC-402 runtime through that OpenShell-owned path via `arc402 daemon start`.
 
@@ -114,6 +114,21 @@ daemon receives delivery hash
 | Reputation | ReputationOracle | What did this earn? |
 
 Each layer is sovereign. None knows about the others. Each enforces its own policy surface independently.
+
+### Launch distinction — runtime vs ingress vs outbound policy
+
+For launch, operators must reason about three separate surfaces:
+
+1. **Sandboxed runtime**
+   - ARC-402 daemon + worker + harness run inside OpenShell.
+2. **Public ingress**
+   - host-managed Cloudflare Tunnel outside the sandbox is the launch default.
+   - canonical public endpoint shape: `https://<agentname>.arc402.xyz`
+3. **Sandbox outbound policy**
+   - OpenShell allowlist controls which hosts the sandboxed runtime may call out to.
+   - registering a public endpoint does **not** imply outbound permission to peer agents.
+
+This distinction is the core safety truth. Do not blur it in docs or CLI wording.
 
 ---
 
@@ -465,23 +480,68 @@ Credential providers:
   arc402-notifications     ✓
 ```
 
-### `arc402 openshell policy add <name> <host>`
+### `arc402 openshell policy concepts`
 
-Add a network endpoint to the running policy without editing YAML manually.
+Explain the launch-safe operator model:
+- **core-launch** preset = Base RPC + relay + bundler + Telegram
+- **peer-agent** allowlist = explicit one-host-at-a-time HTTPS trust
+- **harness/api** expansion packs = model/search APIs
+- **public endpoint / tunnel ingress** is a separate layer from outbound sandbox policy
+
+### `arc402 openshell policy preset <name>`
+
+Apply a launch-safe preset instead of editing raw YAML.
 
 ```bash
-arc402 openshell policy add openai api.openai.com
-# Adds to policy file + hot-reloads the running sandbox
-# Prints: "✓ api.openai.com added to daemon sandbox policy (hot-reloaded)"
+arc402 openshell policy preset core-launch
+arc402 openshell policy preset harness
+arc402 openshell policy preset search
+arc402 openshell policy preset all
+```
+
+Launch-safe presets now map to these concepts:
+- `core-launch` → Base RPC, relay, bundler, Telegram
+- `harness` → OpenAI, Anthropic, Gemini APIs
+- `search` → Brave Search, SerpAPI
+- `all` → harness + search packs together
+
+Remove optional packs with:
+
+```bash
+arc402 openshell policy preset-remove harness
+arc402 openshell policy preset-remove search
+```
+
+### `arc402 openshell policy peer add|remove|list`
+
+Manage explicit peer-agent HTTPS allowlist entries.
+
+```bash
+arc402 openshell policy peer add gigabrain.arc402.xyz
+arc402 openshell policy peer list
+arc402 openshell policy peer remove gigabrain.arc402.xyz
+```
+
+Rules:
+- one named host at a time
+- no `*.arc402.xyz`
+- public registration does **not** imply outbound trust
+
+### `arc402 openshell policy add <name> <host>`
+
+Still available for custom business APIs, but now framed as the escape hatch after presets/toggles.
+
+```bash
+arc402 openshell policy add crm api.example-crm.com
 ```
 
 ### `arc402 openshell policy list`
 
-Show all allowed outbound endpoints for the running sandbox.
+Show all allowed outbound endpoints grouped by category (`core-launch`, `peer-agent`, `harness/api`, `custom`).
 
 ### `arc402 openshell policy remove <name>`
 
-Remove an endpoint from the policy and hot-reload.
+Remove a named custom/advanced entry and hot-reload. For peers, prefer `peer remove <host>`.
 
 ---
 

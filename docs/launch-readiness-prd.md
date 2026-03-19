@@ -242,7 +242,7 @@ This PRD remains the tracker; the roadmap is the sharper implementation artifact
 - [ ] Add `arc402 endpoint init` to scaffold canonical endpoint naming, local ingress target, and tunnel config for `agentname.arc402.xyz`
 - [ ] Add `arc402 endpoint status` to prove: DNS target, tunnel health, local target, daemon health, and registered AgentRegistry endpoint all match
 - [ ] Add `arc402 endpoint claim <agentname>` to combine subdomain claim + endpoint metadata wiring + local config lock
-- [ ] Add `arc402 endpoint allow <host>` / `revoke <host>` helpers for explicit inter-agent reachability policy entries
+- [x] Add first usable OpenShell-facing peer allow/revoke helpers via `arc402 openshell policy peer add|remove|list` for explicit inter-agent HTTPS reachability policy entries
 - [ ] Add `arc402 endpoint doctor` to diagnose the exact broken layer: DNS, Cloudflare tunnel, local host ingress, sandboxed daemon, or AgentRegistry metadata mismatch
 
 ## 6A. Workstreams
@@ -348,7 +348,7 @@ This PRD remains the tracker; the roadmap is the sharper implementation artifact
   - relay / protocol endpoints = core protocol transport
   - OpenShell policy = outbound execution allowlist
 - [ ] Document that `agentname.arc402.xyz` is canonical public identity, but not equivalent to sandbox trust
-- [ ] Add one explicit policy template for peer-agent HTTPS calls and one for model/API tool calls
+- [x] Add one explicit policy UX path for peer-agent HTTPS calls (`arc402 openshell policy peer ...`) and one for model/API tool calls (`arc402 openshell policy preset harness|search|all`)
 
 ### Deliverables
 - coverage matrix

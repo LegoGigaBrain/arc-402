@@ -1,5 +1,5 @@
 # ARC-402 Engineering State
-*Last updated: 2026-03-19 00:30 SAST (WalletFactoryV5 redeployed with optimized bytecode — 0xcB52B5d7)*
+*Last updated: 2026-03-19 18:33 SAST (ARC-402 OpenShell policy UX presets/toggles shipped)*
 
 ---
 
@@ -21,6 +21,7 @@
 - Tunnel/endpoint launch architecture has now been locked at the PRD level: support multiple tunnel modes later, but ship host-managed Cloudflare Tunnel outside the sandbox as the launch default; use `agentname.arc402.xyz` as the canonical public endpoint shape; and require explicit allowlist policy entries for sandboxed inter-agent HTTPS calls rather than wildcard trust across `.arc402.xyz`.
 - Added `docs/launch-implementation-roadmap.md` as the concrete next-phase build sequence covering OpenShell premium hardening, endpoint/tunnel CLI, policy UX presets/toggles, MacBook validation, and GitHub polish order. Launch-facing CLI/skill/spec wording now explicitly separates sandboxed runtime, public ingress, and outbound sandbox policy.
 - Publication-facing install/docs surfaces were normalized around the actual current packages and commands: `arc402-cli` provides the `arc402` command, `openclaw install arc402-agent` is the canonical skill install phrase, TypeScript/Python SDK READMEs now point back to that operator path, and the SDK docs/examples were nudged toward the launch/mainnet mental model.
+- First usable OpenShell-facing policy UX layer is now implemented in the CLI: `arc402 openshell policy concepts`, launch-safe presets (`core-launch`, `harness`, `search`, `all`), explicit peer-agent HTTPS allowlist helpers (`peer add|remove|list`), category-aware `policy list`, and clearer status wording that separates public ingress from sandbox outbound policy.
 
 ## True Current State
 

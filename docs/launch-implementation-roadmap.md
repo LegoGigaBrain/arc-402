@@ -123,9 +123,12 @@ These are locked truths for launch implementation. Every doc, CLI surface, and v
    - ingress ≠ outbound policy
    - public registration ≠ sandbox trust
 
-### Recommended commands
-- `arc402 endpoint allow <host>` / `revoke <host>` for peer-agent policy entries
-- or `arc402 openshell policy preset <name>` if policy preset UX stays under openshell namespace
+### First usable commands now implemented
+- `arc402 openshell policy concepts`
+- `arc402 openshell policy preset core-launch|harness|search|all`
+- `arc402 openshell policy preset-remove harness|search|all`
+- `arc402 openshell policy peer add|remove|list <host>`
+- `arc402 openshell policy add|remove|list` remains as the advanced escape hatch
 
 ### Exit criteria
 - Operators can reason in presets/toggles instead of editing YAML blindly.

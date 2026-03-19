@@ -91,12 +91,24 @@ The skill generates a default sandbox policy at `~/.arc402/openshell-policy.yaml
 
 Default: only ARC-402 protocol endpoints are whitelisted (Base RPC, relay, bundler). Everything else is blocked.
 
-For agents doing external work (LLM calls, web research, external APIs):
+For agents doing external work (LLM calls, peer-agent HTTPS, web research, external APIs), prefer the launch-safe policy UX first:
 ```bash
-# Add an outbound allowlist endpoint to the running sandbox policy
-# (hot-reloads — no restart needed)
-arc402 openshell policy add openai api.openai.com
-arc402 openshell policy add serpapi serpapi.com
+# See the model first
+arc402 openshell policy concepts
+
+# Re-apply the launch baseline if needed
+arc402 openshell policy preset core-launch
+
+# Allow one peer agent host at a time (no wildcard *.arc402.xyz trust)
+arc402 openshell policy peer add gigabrain.arc402.xyz
+arc402 openshell policy peer list
+
+# Add model/search API packs without raw YAML editing
+arc402 openshell policy preset harness
+arc402 openshell policy preset search
+
+# Advanced/custom business API escape hatch
+arc402 openshell policy add crm api.example-crm.com
 
 # Or edit the YAML directly, then reload
 openshell policy set arc402-daemon --policy ~/.arc402/openshell-policy.yaml --wait

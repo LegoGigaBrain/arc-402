@@ -20,6 +20,35 @@ import {
 
 const POLICY_FILE = path.join(ARC402_DIR, "openshell-policy.yaml");
 const SANDBOX_NAME = "arc402-daemon";
+const NODE_BINARIES = [
+  { path: "/usr/bin/node" },
+  { path: "/usr/local/bin/node" },
+];
+const PYTHON_BINARIES = [
+  { path: "/usr/bin/python3" },
+  { path: "/usr/local/bin/python3" },
+];
+const DEFAULT_POLICY_KEYS = ["base_rpc", "arc402_relay", "bundler", "telegram"] as const;
+const CORE_LAUNCH_HOSTS = [
+  ["mainnet.base.org", "Base RPC"],
+  ["relay.arc402.xyz", "ARC-402 relay"],
+  ["public.pimlico.io", "Bundler"],
+  ["api.telegram.org", "Telegram notifications"],
+] as const;
+
+const EXPANSION_PACKS: Record<string, Array<{ key: string; label: string; host: string; binaries?: Array<{ path: string }> }>> = {
+  harness: [
+    { key: "api_openai", label: "OpenAI", host: "api.openai.com" },
+    { key: "api_anthropic", label: "Anthropic", host: "api.anthropic.com" },
+    { key: "api_google_generativeai", label: "Google Gemini", host: "generativelanguage.googleapis.com" },
+  ],
+  search: [
+    { key: "api_brave_search", label: "Brave Search", host: "api.search.brave.com" },
+    { key: "api_serpapi", label: "SerpAPI", host: "serpapi.com" },
+  ],
+  all: [],
+};
+EXPANSION_PACKS.all = [...EXPANSION_PACKS.harness, ...EXPANSION_PACKS.search];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,11 +82,6 @@ interface PolicyFile {
 // ─── Default policy ───────────────────────────────────────────────────────────
 
 function buildDefaultPolicy(): PolicyFile {
-  const nodeBinaries = [
-    { path: "/usr/bin/node" },
-    { path: "/usr/local/bin/node" },
-  ];
-
   return {
     version: 1,
     filesystem_policy: {
@@ -73,62 +97,10 @@ function buildDefaultPolicy(): PolicyFile {
       run_as_group: "sandbox",
     },
     network_policies: {
-      base_rpc: {
-        name: "base-mainnet-rpc",
-        endpoints: [
-          {
-            host: "mainnet.base.org",
-            port: 443,
-            protocol: "rest",
-            tls: "terminate",
-            enforcement: "enforce",
-            access: "read-write",
-          },
-        ],
-        binaries: nodeBinaries,
-      },
-      arc402_relay: {
-        name: "arc402-relay",
-        endpoints: [
-          {
-            host: "relay.arc402.xyz",
-            port: 443,
-            protocol: "rest",
-            tls: "terminate",
-            enforcement: "enforce",
-            access: "read-write",
-          },
-        ],
-        binaries: nodeBinaries,
-      },
-      bundler: {
-        name: "pimlico-bundler",
-        endpoints: [
-          {
-            host: "public.pimlico.io",
-            port: 443,
-            protocol: "rest",
-            tls: "terminate",
-            enforcement: "enforce",
-            access: "read-write",
-          },
-        ],
-        binaries: nodeBinaries,
-      },
-      telegram: {
-        name: "telegram-notifications",
-        endpoints: [
-          {
-            host: "api.telegram.org",
-            port: 443,
-            protocol: "rest",
-            tls: "terminate",
-            enforcement: "enforce",
-            access: "read-write",
-          },
-        ],
-        binaries: nodeBinaries,
-      },
+      base_rpc: buildPolicyEntry("base-mainnet-rpc", "mainnet.base.org"),
+      arc402_relay: buildPolicyEntry("arc402-relay", "relay.arc402.xyz"),
+      bundler: buildPolicyEntry("pimlico-bundler", "public.pimlico.io"),
+      telegram: buildPolicyEntry("telegram-notifications", "api.telegram.org"),
     },
   };
 }
@@ -181,6 +153,163 @@ function hotReloadPolicy(): void {
   }
 }
 
+function requirePolicyFile(): PolicyFile {
+  const policy = loadPolicyFile();
+  if (!policy) {
+    console.error(`Policy file not found: ${POLICY_FILE}`);
+    console.error("Run: arc402 openshell init");
+    process.exit(1);
+  }
+  return policy;
+}
+
+function buildPolicyEntry(name: string, host: string, binaries = NODE_BINARIES): NetworkPolicy {
+  return {
+    name,
+    endpoints: [
+      {
+        host,
+        port: 443,
+        protocol: "rest",
+        tls: "terminate",
+        enforcement: "enforce",
+        access: "read-write",
+      },
+    ],
+    binaries,
+  };
+}
+
+function sanitizeKeySegment(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64) || "entry";
+}
+
+function peerPolicyKey(host: string): string {
+  return `peer_${sanitizeKeySegment(host)}`;
+}
+
+function customPolicyKey(name: string): string {
+  return `custom_${sanitizeKeySegment(name)}`;
+}
+
+function ensurePolicyEntry(policy: PolicyFile, key: string, entry: NetworkPolicy): "added" | "updated" | "unchanged" {
+  const existing = policy.network_policies[key];
+  const next = JSON.stringify(entry);
+  if (!existing) {
+    policy.network_policies[key] = entry;
+    return "added";
+  }
+  if (JSON.stringify(existing) === next) {
+    return "unchanged";
+  }
+  policy.network_policies[key] = entry;
+  return "updated";
+}
+
+function removePolicyEntry(policy: PolicyFile, key: string): boolean {
+  if (!policy.network_policies[key]) return false;
+  delete policy.network_policies[key];
+  return true;
+}
+
+function applyAndPersistPolicy(policy: PolicyFile): void {
+  writePolicyFile(policy);
+  hotReloadPolicy();
+}
+
+function summarizeCategory(key: string): string {
+  if (DEFAULT_POLICY_KEYS.includes(key as typeof DEFAULT_POLICY_KEYS[number])) return "core-launch";
+  if (key.startsWith("peer_")) return "peer-agent";
+  if (key.startsWith("api_")) return "harness/api";
+  if (key.startsWith("custom_")) return "custom";
+  return "other";
+}
+
+function printPolicyTable(policy: PolicyFile): void {
+  const policies = Object.entries(policy.network_policies ?? {});
+  if (policies.length === 0) {
+    console.log("No network policies defined.");
+    return;
+  }
+
+  console.log("Network policies (allowed outbound):");
+  console.log();
+  const col1 = 24;
+  const col2 = 32;
+  const col3 = 16;
+  console.log(
+    "Key".padEnd(col1) +
+    "Host".padEnd(col2) +
+    "Category".padEnd(col3) +
+    "Name"
+  );
+  console.log("─".repeat(col1 + col2 + col3 + 24));
+
+  for (const [key, np] of policies) {
+    for (const ep of np.endpoints) {
+      console.log(
+        key.padEnd(col1) +
+        ep.host.padEnd(col2) +
+        summarizeCategory(key).padEnd(col3) +
+        np.name,
+      );
+    }
+  }
+}
+
+function ensureCoreLaunchPreset(policy: PolicyFile): Array<{ key: string; result: string }> {
+  const entries: Array<{ key: string; result: string }> = [];
+  entries.push({ key: "base_rpc", result: ensurePolicyEntry(policy, "base_rpc", buildPolicyEntry("base-mainnet-rpc", "mainnet.base.org")) });
+  entries.push({ key: "arc402_relay", result: ensurePolicyEntry(policy, "arc402_relay", buildPolicyEntry("arc402-relay", "relay.arc402.xyz")) });
+  entries.push({ key: "bundler", result: ensurePolicyEntry(policy, "bundler", buildPolicyEntry("pimlico-bundler", "public.pimlico.io")) });
+  entries.push({ key: "telegram", result: ensurePolicyEntry(policy, "telegram", buildPolicyEntry("telegram-notifications", "api.telegram.org")) });
+  return entries;
+}
+
+function applyExpansionPack(policy: PolicyFile, packName: string): Array<{ key: string; label: string; result: string }> {
+  const pack = EXPANSION_PACKS[packName];
+  if (!pack) {
+    console.error(`Unknown expansion pack '${packName}'. Use: harness, search, all`);
+    process.exit(1);
+  }
+  return pack.map((item) => ({
+    key: item.key,
+    label: item.label,
+    result: ensurePolicyEntry(
+      policy,
+      item.key,
+      buildPolicyEntry(item.label, item.host, [...NODE_BINARIES, ...PYTHON_BINARIES]),
+    ),
+  }));
+}
+
+function removeExpansionPack(policy: PolicyFile, packName: string): Array<{ key: string; label: string; removed: boolean }> {
+  const pack = EXPANSION_PACKS[packName];
+  if (!pack) {
+    console.error(`Unknown expansion pack '${packName}'. Use: harness, search, all`);
+    process.exit(1);
+  }
+  return pack.map((item) => ({ key: item.key, label: item.label, removed: removePolicyEntry(policy, item.key) }));
+}
+
+function printPolicyConcepts(): void {
+  console.log("Policy concepts");
+  console.log("───────────────");
+  console.log("core-launch      Default outbound runtime policy for launch: Base RPC, relay, bundler, Telegram.");
+  console.log("peer-agent       Explicit HTTPS allowlist for one counterparty host at a time. No *.arc402.xyz wildcard trust.");
+  console.log("harness/api      Optional expansion packs for model APIs and search APIs used by your harness/tools.");
+  console.log();
+  console.log("Important separation:");
+  console.log("  • public endpoint / tunnel ingress tells the outside world how to reach you");
+  console.log("  • OpenShell policy tells your sandboxed runtime what it may call outbound");
+  console.log("  • registering https://agent.arc402.xyz does NOT grant outbound trust to that host");
+}
+
 // ─── Command registration ─────────────────────────────────────────────────────
 
 export function registerOpenShellCommands(program: Command): void {
@@ -196,7 +325,6 @@ export function registerOpenShellCommands(program: Command): void {
       console.log("OpenShell Install");
       console.log("─────────────────");
 
-      // Check Docker
       process.stdout.write("Checking Docker... ");
       const docker = detectDockerAccess();
       if (!docker.ok) {
@@ -205,7 +333,6 @@ export function registerOpenShellCommands(program: Command): void {
       }
       console.log(docker.detail);
 
-      // Download + install OpenShell
       console.log("\nDownloading OpenShell from github.com/NVIDIA/OpenShell ...");
       const install = runCmd("sh", ["-c",
         "curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh"
@@ -219,7 +346,6 @@ export function registerOpenShellCommands(program: Command): void {
 
       if (install.stdout) console.log(install.stdout);
 
-      // Verify
       process.stdout.write("Verifying... ");
       const verify = runCmd("openshell", ["--version"]);
       if (!verify.ok) {
@@ -387,9 +513,11 @@ arc402 daemon start will now use the provisioned ARC-402 runtime inside ${SANDBO
 Default policy: Base RPC + relay + bundler + Telegram API. All other network access blocked.
 
 To allow additional endpoints for your harness or worker tools:
-  Edit ${POLICY_FILE} → network_policies section
-  Or: arc402 openshell policy add <name> <host>
-  Then hot-reload: openshell policy set ${SANDBOX_NAME} --policy ${POLICY_FILE} --wait
+  See the launch-safe presets and toggles: arc402 openshell policy concepts
+  Core preset:         arc402 openshell policy preset core-launch
+  Peer agent allow:    arc402 openshell policy peer add gigabrain.arc402.xyz
+  Harness/API pack:    arc402 openshell policy preset harness
+  List current policy: arc402 openshell policy list
   No daemon restart needed.
 
 If you update the local CLI build and want the sandbox to pick it up immediately:
@@ -439,7 +567,6 @@ If you update the local CLI build and want the sandbox to pick it up immediately
       const line = (label: string, value: string) =>
         console.log(`${label.padEnd(14)}${value}`);
 
-      // Installed?
       const shellPath = checkOpenShellInstalled();
       if (shellPath) {
         const vr = runCmd("openshell", ["--version"]);
@@ -448,11 +575,9 @@ If you update the local CLI build and want the sandbox to pick it up immediately
         line("Installed:", "no  ← run: arc402 openshell install");
       }
 
-      // Docker
       const docker = detectDockerAccess();
       line("Docker:", docker.detail);
 
-      // Sandbox
       if (shellPath) {
         const listR = runCmd("sh", ["-c",
           `openshell sandbox list 2>/dev/null | grep "${SANDBOX_NAME}"`
@@ -464,17 +589,16 @@ If you update the local CLI build and want the sandbox to pick it up immediately
         }
       }
 
-      // Policy file
       if (fs.existsSync(POLICY_FILE)) {
         line("Policy file:", `${POLICY_FILE} ✓`);
       } else {
         line("Policy file:", `${POLICY_FILE} (not found)`);
       }
 
-      // Daemon mode + runtime bundle
       const openShellConfig = readOpenShellConfig();
       if (openShellConfig) {
-        line("Daemon mode:", "OpenShell-owned (arc402 daemon start via provisioned sandbox runtime)");
+        line("Daemon mode:", "OpenShell-owned governed workroom runtime");
+        line("Public mode:", "separate layer — endpoint/tunnel ingress is host-facing, not a sandbox policy toggle");
         line("Runtime root:", openShellConfig.runtime?.remote_root ?? DEFAULT_RUNTIME_REMOTE_ROOT);
         line("Last sync:", openShellConfig.runtime?.synced_at ?? "unknown");
 
@@ -486,6 +610,19 @@ If you update the local CLI build and want the sandbox to pick it up immediately
           );
           const runtimeProbe = runCmd("ssh", ["-F", configPath, host, `test -f ${JSON.stringify(remoteDaemonEntry)} && echo present || echo missing`], { timeout: 60000 });
           line("Runtime sync:", runtimeProbe.ok && runtimeProbe.stdout.includes("present") ? "remote daemon bundle present ✓" : "remote daemon bundle missing");
+
+          const secretProbe = runCmd("ssh", [
+            "-F", configPath,
+            host,
+            "printf '%s' \"${ARC402_MACHINE_KEY:-missing}\"",
+          ], { timeout: 60000 });
+          if (secretProbe.ok && secretProbe.stdout.startsWith("openshell:resolve:env:")) {
+            line("Secret mode:", "raw SSH shows OpenShell placeholders; ARC-402 overlays real launch envs from local config ✓");
+          } else if (secretProbe.ok && secretProbe.stdout && secretProbe.stdout !== "missing") {
+            line("Secret mode:", "sandbox env already materialized ✓");
+          } else {
+            line("Secret mode:", "could not confirm machine-key materialization");
+          }
         } catch {
           line("Runtime sync:", "could not verify remote bundle");
         }
@@ -493,19 +630,17 @@ If you update the local CLI build and want the sandbox to pick it up immediately
         line("Daemon mode:", "not configured for launch (run: arc402 openshell init)");
       }
 
-      // Network policies
       const policy = loadPolicyFile();
       if (policy?.network_policies) {
         console.log("\nNetwork policy (allowed outbound):");
-        for (const [, np] of Object.entries(policy.network_policies)) {
+        for (const [key, np] of Object.entries(policy.network_policies)) {
           for (const ep of np.endpoints) {
-            console.log(`  ${ep.host.padEnd(30)} (${np.name})`);
+            console.log(`  ${ep.host.padEnd(30)} (${summarizeCategory(key)} · ${np.name})`);
           }
         }
         console.log("  [all others blocked]");
       }
 
-      // Providers
       if (shellPath) {
         console.log("\nCredential providers:");
         const provListR = runCmd("openshell", ["provider", "list"]);
@@ -523,114 +658,153 @@ If you update the local CLI build and want the sandbox to pick it up immediately
   // ── openshell policy ───────────────────────────────────────────────────────
   const policyCmd = openshell
     .command("policy")
-    .description("Manage the OpenShell network policy for the arc402-daemon sandbox.");
+    .description("Manage the OpenShell outbound network policy for the arc402-daemon sandbox. This is separate from public endpoint / tunnel ingress.");
+
+  policyCmd
+    .command("concepts")
+    .description("Explain the launch-safe policy UX: core launch preset, peer-agent HTTPS allowlist, harness/API expansion packs, and ingress wording.")
+    .action(() => {
+      printPolicyConcepts();
+    });
+
+  policyCmd
+    .command("preset <name>")
+    .description("Apply a launch-safe preset. Supported: core-launch, harness, search, all")
+    .action((name: string) => {
+      const policy = requirePolicyFile();
+
+      if (name === "core-launch") {
+        const changes = ensureCoreLaunchPreset(policy);
+        applyAndPersistPolicy(policy);
+        console.log("Applied core-launch preset:");
+        for (const change of changes) {
+          console.log(`  ${change.key}: ${change.result}`);
+        }
+        console.log();
+        console.log("Launch core outbound hosts:");
+        for (const [host, label] of CORE_LAUNCH_HOSTS) console.log(`  ${host} — ${label}`);
+        console.log("  Peer-agent wildcard trust remains OFF by default.");
+        return;
+      }
+
+      const changes = applyExpansionPack(policy, name);
+      applyAndPersistPolicy(policy);
+      console.log(`Applied ${name} expansion pack:`);
+      for (const change of changes) {
+        console.log(`  ${change.label} (${change.key}): ${change.result}`);
+      }
+    });
+
+  policyCmd
+    .command("preset-remove <name>")
+    .description("Remove a previously applied expansion preset. Supported: harness, search, all")
+    .action((name: string) => {
+      if (name === "core-launch") {
+        console.error("core-launch is the launch baseline. Remove individual entries only if you explicitly want to break the default runtime path.");
+        process.exit(1);
+      }
+      const policy = requirePolicyFile();
+      const changes = removeExpansionPack(policy, name);
+      applyAndPersistPolicy(policy);
+      console.log(`Removed ${name} expansion pack entries:`);
+      for (const change of changes) {
+        console.log(`  ${change.label} (${change.key}): ${change.removed ? "removed" : "not present"}`);
+      }
+    });
+
+  const peerCmd = policyCmd
+    .command("peer")
+    .description("Manage explicit peer-agent HTTPS allowlist entries. Public registration does not imply outbound trust.");
+
+  peerCmd
+    .command("add <host>")
+    .description("Allow outbound HTTPS calls to one peer agent host. No *.arc402.xyz wildcard support.")
+    .action((host: string) => {
+      if (host.includes("*")) {
+        console.error("Wildcard peer trust is not allowed. Add one host at a time.");
+        process.exit(1);
+      }
+      const cleanedHost = host.replace(/^https?:\/\//, "").replace(/\/$/, "");
+      const policy = requirePolicyFile();
+      const key = peerPolicyKey(cleanedHost);
+      const result = ensurePolicyEntry(policy, key, buildPolicyEntry(`peer-agent:${cleanedHost}`, cleanedHost));
+      applyAndPersistPolicy(policy);
+      console.log(`✓ Peer agent host ${cleanedHost} ${result} under ${key}`);
+      console.log("  This only affects sandbox outbound access. It does not claim or expose a public endpoint.");
+    });
+
+  peerCmd
+    .command("remove <host>")
+    .description("Revoke outbound HTTPS access to a peer agent host.")
+    .action((host: string) => {
+      const cleanedHost = host.replace(/^https?:\/\//, "").replace(/\/$/, "");
+      const policy = requirePolicyFile();
+      const key = peerPolicyKey(cleanedHost);
+      const removed = removePolicyEntry(policy, key);
+      if (!removed) {
+        console.error(`Peer host ${cleanedHost} is not allowlisted.`);
+        process.exit(1);
+      }
+      applyAndPersistPolicy(policy);
+      console.log(`✓ Peer agent host ${cleanedHost} removed (${key})`);
+    });
+
+  peerCmd
+    .command("list")
+    .description("List all explicit peer-agent outbound allowlist entries.")
+    .action(() => {
+      const policy = requirePolicyFile();
+      const peers = Object.entries(policy.network_policies).filter(([key]) => key.startsWith("peer_"));
+      if (peers.length === 0) {
+        console.log("No peer-agent HTTPS hosts allowlisted.");
+        return;
+      }
+      console.log("Peer-agent HTTPS allowlist:");
+      for (const [key, entry] of peers) {
+        const host = entry.endpoints[0]?.host ?? "unknown";
+        console.log(`  ${host} (${key})`);
+      }
+    });
 
   // ── openshell policy add <name> <host> ────────────────────────────────────
   policyCmd
     .command("add <name> <host>")
-    .description("Add a network endpoint to the policy and hot-reload the sandbox.")
+    .description("Add a custom outbound allowlist endpoint to the sandbox policy and hot-reload it. Prefer preset/peer commands when they fit.")
     .action((name: string, host: string) => {
-      const policy = loadPolicyFile();
-      if (!policy) {
-        console.error(`Policy file not found: ${POLICY_FILE}`);
-        console.error("Run: arc402 openshell init");
-        process.exit(1);
-      }
-
-      if (policy.network_policies[name]) {
-        console.error(`Policy entry '${name}' already exists. Use a different name or remove it first.`);
-        process.exit(1);
-      }
-
-      policy.network_policies[name] = {
-        name,
-        endpoints: [
-          {
-            host,
-            port: 443,
-            protocol: "rest",
-            tls: "terminate",
-            enforcement: "enforce",
-            access: "read-write",
-          },
-        ],
-        binaries: [
-          { path: "/usr/bin/node" },
-          { path: "/usr/local/bin/node" },
-        ],
-      };
-
-      writePolicyFile(policy);
-      hotReloadPolicy();
-      console.log(`✓ ${host} added to daemon sandbox policy (hot-reloaded)`);
+      const policy = requirePolicyFile();
+      const key = customPolicyKey(name);
+      const result = ensurePolicyEntry(policy, key, buildPolicyEntry(name, host, [...NODE_BINARIES, ...PYTHON_BINARIES]));
+      applyAndPersistPolicy(policy);
+      console.log(`✓ ${host} ${result} as ${key}`);
+      console.log("  Prefer `arc402 openshell policy peer add <host>` for peer agents or `preset <name>` for launch-safe expansion packs.");
     });
 
   // ── openshell policy list ─────────────────────────────────────────────────
   policyCmd
     .command("list")
-    .description("List all allowed outbound endpoints in the policy.")
+    .description("List all sandbox outbound allowlist endpoints grouped by launch-safe category. These are runtime egress rules, not endpoint/tunnel registrations.")
     .action(() => {
-      const policy = loadPolicyFile();
-      if (!policy) {
-        console.error(`Policy file not found: ${POLICY_FILE}`);
-        console.error("Run: arc402 openshell init");
-        process.exit(1);
-      }
-
-      const policies = Object.entries(policy.network_policies ?? {});
-      if (policies.length === 0) {
-        console.log("No network policies defined.");
-        return;
-      }
-
-      console.log("Network policies (allowed outbound):");
-      console.log();
-      const col1 = 20;
-      const col2 = 32;
-      const col3 = 12;
-      console.log(
-        "Key".padEnd(col1) +
-        "Host".padEnd(col2) +
-        "Access".padEnd(col3) +
-        "Name"
-      );
-      console.log("─".repeat(col1 + col2 + col3 + 24));
-
-      for (const [key, np] of policies) {
-        for (const ep of np.endpoints) {
-          console.log(
-            key.padEnd(col1) +
-            ep.host.padEnd(col2) +
-            ep.access.padEnd(col3) +
-            np.name
-          );
-        }
-      }
+      const policy = requirePolicyFile();
+      printPolicyTable(policy);
     });
 
   // ── openshell policy remove <name> ────────────────────────────────────────
   policyCmd
     .command("remove <name>")
-    .description("Remove a named network policy entry and hot-reload the sandbox.")
+    .description("Remove a named outbound allowlist entry and hot-reload the sandbox. For peers, prefer `peer remove <host>`.")
     .action((name: string) => {
-      const policy = loadPolicyFile();
-      if (!policy) {
-        console.error(`Policy file not found: ${POLICY_FILE}`);
-        console.error("Run: arc402 openshell init");
-        process.exit(1);
-      }
-
-      if (!policy.network_policies[name]) {
+      const policy = requirePolicyFile();
+      const key = [name, customPolicyKey(name), peerPolicyKey(name)].find((candidate) => policy.network_policies[candidate]);
+      if (!key) {
         console.error(`Policy entry '${name}' not found.`);
         console.error("Run: arc402 openshell policy list");
         process.exit(1);
       }
 
-      const removedHost = policy.network_policies[name]?.endpoints[0]?.host ?? name;
-      delete policy.network_policies[name];
+      const removedHost = policy.network_policies[key]?.endpoints[0]?.host ?? key;
+      delete policy.network_policies[key];
 
-      writePolicyFile(policy);
-      hotReloadPolicy();
+      applyAndPersistPolicy(policy);
       console.log(`✓ ${removedHost} removed from daemon sandbox policy (hot-reloaded)`);
     });
 }

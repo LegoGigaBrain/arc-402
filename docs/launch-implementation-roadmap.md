@@ -78,13 +78,14 @@ These are locked truths for launch implementation. Every doc, CLI surface, and v
    - Record chosen hostname, local ingress target, and tunnel mode
    - Default to host-managed Cloudflare Tunnel
 2. `arc402 endpoint status`
-   - Verify hostname, DNS/tunnel, local ingress target, daemon health, and registered AgentRegistry endpoint all match
+   - First scaffold shipped: verifies hostname, local config, tunnel process presence, local ingress target reachability, daemon/runtime health, and claim state
+   - DNS + AgentRegistry metadata parity remain next-step validation items
 3. `arc402 endpoint claim <agentname>`
-   - Combine subdomain claim + local config lock + optional AgentRegistry endpoint wiring
+   - First scaffold shipped: combines subdomain claim + local config lock
+   - AgentRegistry endpoint wiring remains an explicit follow-up step for now
 4. `arc402 endpoint doctor`
-   - Diagnose the exact broken layer:
-     - subdomain claim
-     - DNS/Cloudflare
+   - First scaffold shipped: diagnoses the current broken layer:
+     - local endpoint config
      - tunnel process
      - local host ingress target
      - daemon/runtime

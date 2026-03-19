@@ -229,6 +229,7 @@ This PRD remains the tracker; the roadmap is the sharper implementation artifact
 - Status reporting could say "configured" even if the remote runtime bundle was missing.
 - Startup still risked feeling like "trust me, it synced" instead of giving the operator a proof-oriented readiness readout.
 - Docker failures surfaced as generic setup friction instead of actionable operator feedback.
+- Raw OpenShell SSH sessions surfaced provider placeholders (`openshell:resolve:env:...`) instead of real values, so daemon launch needed an ARC-402-side secret materialization seam.
 
 ### Premium one-click tasks
 - [x] Teach `arc402 openshell init` to reuse CLI config secrets when env vars are absent
@@ -239,11 +240,12 @@ This PRD remains the tracker; the roadmap is the sharper implementation artifact
 - [x] Tighten daemon/setup copy so the operator hears "OpenShell-owned runtime" rather than "manual daemon plumbing"
 - [ ] Validate the same path from a clean MacBook install
 - [ ] Add a single `arc402 openshell doctor` command if additional launch polish is needed after the MacBook pass
+- [x] Make daemon launch materialize real machine-key / notification envs even when raw OpenShell SSH exposes `openshell:resolve:env:*` placeholders
 - [ ] Add `arc402 endpoint init` to scaffold canonical endpoint naming, local ingress target, and tunnel config for `agentname.arc402.xyz`
 - [ ] Add `arc402 endpoint status` to prove: DNS target, tunnel health, local target, daemon health, and registered AgentRegistry endpoint all match
-- [ ] Add `arc402 endpoint claim <agentname>` to combine subdomain claim + endpoint metadata wiring + local config lock
+- [x] Add `arc402 endpoint claim <agentname>` to combine subdomain claim + local config lock (AgentRegistry endpoint wiring remains an explicit follow-up step for now)
 - [x] Add first usable OpenShell-facing peer allow/revoke helpers via `arc402 openshell policy peer add|remove|list` for explicit inter-agent HTTPS reachability policy entries
-- [ ] Add `arc402 endpoint doctor` to diagnose the exact broken layer: DNS, Cloudflare tunnel, local host ingress, sandboxed daemon, or AgentRegistry metadata mismatch
+- [x] Add `arc402 endpoint doctor` to diagnose the current broken layer: local config, Cloudflare tunnel process, local host ingress, sandboxed daemon/runtime, or missing claim state
 
 ## 6A. Workstreams
 
@@ -460,3 +462,5 @@ Whenever launch-readiness changes materially, update:
 - this file
 - `products/arc-402/ENGINEERING-STATE.md`
 - `memory/2026-03-19.md` or the current daily memory file
+ daily memory file
+le

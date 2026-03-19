@@ -56,6 +56,8 @@ ssh <openshell-proxy-host> 'node /home/sandbox/.arc402/runtime/arc402-cli/dist/d
 
 The daemon is the sandboxed process. The worker process it spawns inherits the same sandbox — same network policy, same filesystem constraints, same credential injections. There is no separate sandbox for the worker.
 
+> **Launch seam correction (2026-03-19):** raw OpenShell SSH sessions currently expose provider env placeholders such as `openshell:resolve:env:ARC402_MACHINE_KEY` instead of already-materialized values. ARC-402 now compensates at the daemon launch seam by resolving the machine-key / notification secrets from local ARC-402 operator state and exporting them into the remote daemon process at launch time. This keeps secrets out of `daemon.toml` and unblocks sandbox boot while preserving the OpenShell-owned runtime path.
+
 ### What This Changes
 
 The seam is no longer `exec_command` in `daemon.toml` — it is `arc402 daemon start`. The daemon has no OpenShell awareness. The CLI wraps it transparently. For launch, this seam is treated as OpenShell-owned runtime startup, not as a standalone daemon bootstrap path.
@@ -129,6 +131,8 @@ For launch, operators must reason about three separate surfaces:
    - registering a public endpoint does **not** imply outbound permission to peer agents.
 
 This distinction is the core safety truth. Do not blur it in docs or CLI wording.
+
+As of 2026-03-19, the CLI now carries a first endpoint scaffold under `arc402 endpoint init|status|claim|doctor`. That namespace persists the canonical public identity and host ingress target separately from OpenShell runtime state. It is intentionally not an OpenShell policy surface: public ingress config lives there, sandbox outbound allowlists still live under `arc402 openshell policy ...`.
 
 ---
 

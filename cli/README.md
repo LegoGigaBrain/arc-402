@@ -96,6 +96,10 @@ arc402 deliver 42 --output ./my-deliverable.json
 |---|---|
 | `arc402 config init` | Interactive setup wizard |
 | `arc402 config show` | Show current config (key masked) |
+| `arc402 endpoint init <agentname>` | Scaffold canonical `agentname.arc402.xyz` endpoint config and host ingress target |
+| `arc402 endpoint status` | Show endpoint scaffold health across runtime, ingress target, tunnel, and claim state |
+| `arc402 endpoint claim <agentname> --tunnel-target <https://...>` | Claim the canonical public hostname and lock local config to it |
+| `arc402 endpoint doctor` | Diagnose which layer is broken: config, tunnel, local target, runtime, or claim state |
 | `arc402 agent register` | Register your agent on-chain |
 | `arc402 agent update` | Update your agent registration |
 | `arc402 agent deactivate` | Deactivate your registration |

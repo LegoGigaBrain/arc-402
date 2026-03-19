@@ -8,7 +8,6 @@ import { ethers } from 'ethers'
 const WC_PROJECT_ID   = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? '455e9425343b9156fce1428250c9a54a'
 const CHAIN_ID        = 8453
 const BASE_RPC        = 'https://base-mainnet.g.alchemy.com/v2/YIA2uRCsFI-j5pqH-aRzflrACSlV1Qrs'
-const BUNDLER_URL     = process.env.NEXT_PUBLIC_BUNDLER_URL ?? 'https://api.pimlico.io/v2/base/rpc'
 const WALLET_FACTORY  = '0xcB52B5d746eEc05e141039E92e3dBefeAe496051' // v5 (optimized bytecode, passkey P256) — active factory
 const ALL_WALLET_FACTORIES = [
   '0xcB52B5d746eEc05e141039E92e3dBefeAe496051', // v5 active (optimized, redeployed 2026-03-19)
@@ -18,53 +17,6 @@ const ENTRY_POINT     = '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
 const ARC402_REGISTRY = '0xcc0D8731ccCf6CFfF4e66F6d68cA86330Ea8B622' // Protocol registry (v2)
 const AGENT_REGISTRY  = '0xD5c2851B00090c92Ba7F4723FB548bb30C9B6865' // AgentRegistry — where agents register
 const POLICY_ENGINE   = '0xAA5Ef3489C929bFB3BFf5D5FE15aa62d3763c847'
-const PAYMASTER_URL   = process.env.NEXT_PUBLIC_PAYMASTER_URL ?? ''
-
-// ─── PaymasterClient (browser) ─────────────────────────────────────────────
-
-class PaymasterClient {
-  constructor(private url: string) {}
-
-  async sponsorUserOperation(userOp: Record<string, unknown>, entryPoint: string): Promise<Record<string, unknown>> {
-    const res = await fetch(this.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'pm_sponsorUserOperation', params: [userOp, entryPoint, {}] }),
-    })
-    if (!res.ok) throw new Error(`Paymaster HTTP ${res.status}: ${res.statusText}`)
-    const json = await res.json() as { result?: Record<string, unknown>; error?: { code: number; message: string } }
-    if (json.error) throw new Error(`Paymaster error [${json.error.code}]: ${json.error.message}`)
-    return { ...userOp, ...json.result }
-  }
-}
-
-async function sendUserOpViaBundler(userOp: Record<string, unknown>): Promise<string> {
-  const res = await fetch(BUNDLER_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_sendUserOperation', params: [userOp, ENTRY_POINT] }),
-  })
-  const json = await res.json() as { result?: string; error?: { code: number; message: string } }
-  if (json.error) throw new Error(`Bundler error [${json.error.code}]: ${json.error.message}`)
-  return json.result as string
-}
-
-async function waitForUserOpReceipt(hash: string): Promise<void> {
-  for (let i = 0; i < 30; i++) {
-    await new Promise(r => setTimeout(r, 2000))
-    const res = await fetch(BUNDLER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getUserOperationReceipt', params: [hash] }),
-    })
-    const json = await res.json() as { result?: { success: boolean } }
-    if (json.result) {
-      if (!json.result.success) throw new Error('Sponsored UserOperation failed on-chain')
-      return
-    }
-  }
-  throw new Error('UserOperation not confirmed after 60s')
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -243,7 +195,7 @@ export default function OnboardContent() {
       projectId: WC_PROJECT_ID,
       metadata: {
         name: 'ARC-402 Onboarding',
-        description: 'ARC-402 wallet setup',
+        description: 'ARC-402 onboarding for governed agent hiring',
         url: 'https://app.arc402.xyz',
         icons: [],
       },
@@ -346,48 +298,6 @@ export default function OnboardContent() {
           setStep('passkey')
         }
         return
-      }
-
-      // Check ETH balance — attempt paymaster sponsorship if wallet has no ETH
-      if (PAYMASTER_URL) {
-        setStatusMsg('Checking balance...')
-        const provider = new ethers.JsonRpcProvider(BASE_RPC)
-        const balance = await provider.getBalance(wc.account)
-        if (balance < BigInt(500_000_000_000_000)) { // < 0.0005 ETH
-          setStatusMsg('Sponsoring deploy via Coinbase...')
-          try {
-            const pm = new PaymasterClient(PAYMASTER_URL)
-            const feeData = await provider.getFeeData()
-            const factoryIface2 = new ethers.Interface(['function createWallet(address _entryPoint) external returns (address)'])
-            const factoryData = factoryIface2.encodeFunctionData('createWallet', [ENTRY_POINT])
-            const sponsoredOp = await pm.sponsorUserOperation({
-              sender: wc.account, // placeholder — factory needs ERC-4337 owner param for production
-              nonce: '0x0',
-              callData: '0x',
-              factory: WALLET_FACTORY,
-              factoryData,
-              callGasLimit: ethers.toBeHex(300_000),
-              verificationGasLimit: ethers.toBeHex(400_000),
-              preVerificationGas: ethers.toBeHex(60_000),
-              maxFeePerGas: ethers.toBeHex(feeData.maxFeePerGas ?? BigInt(1_000_000_000)),
-              maxPriorityFeePerGas: ethers.toBeHex(feeData.maxPriorityFeePerGas ?? BigInt(100_000_000)),
-              signature: '0x',
-            }, ENTRY_POINT)
-            setStatusMsg('Submitting sponsored transaction...')
-            const uoHash = await sendUserOpViaBundler(sponsoredOp)
-            setStatusMsg('Waiting for confirmation...')
-            await waitForUserOpReceipt(uoHash)
-            // Wallet address from sponsoredOp.sender
-            const sponsoredWallet = sponsoredOp.sender as string
-            setArc402Wallet(sponsoredWallet)
-            await disconnectWC(wc)
-            setStep('passkey')
-            return
-          } catch (pmErr: unknown) {
-            // Paymaster failed — fall through to direct WalletConnect deploy
-            console.warn('Paymaster unavailable:', pmErr instanceof Error ? pmErr.message : String(pmErr))
-          }
-        }
       }
 
       setStatusMsg('Deploying ARC-402 wallet...')
@@ -628,7 +538,7 @@ export default function OnboardContent() {
             ARC-402 Setup
           </h1>
           <p style={{ color: '#555', fontSize: '0.82rem', margin: '0 0 16px', lineHeight: 1.5 }}>
-            Deploy your wallet, register Face ID, and go live in minutes.
+            Deploy your wallet, register Face ID, and prepare the machine-side governed workroom in minutes.
           </p>
 
           {/* Wallet address strip */}
@@ -718,14 +628,8 @@ export default function OnboardContent() {
           {/* ── STEP 1: DEPLOY ── */}
           {step === 'deploy' && !wcUri && !waiting && (
             <div>
-              {PAYMASTER_URL && (
-                <div style={{ background: '#001a0d', border: '1px solid #005c2a', borderRadius: 8, padding: '7px 12px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 14 }}>⛽</span>
-                  <span style={{ fontSize: '0.75rem', color: '#00c46a', fontWeight: 500 }}>Gas sponsored by Coinbase — free to start</span>
-                </div>
-              )}
               <p style={{ color: '#666', fontSize: '0.82rem', marginBottom: 6, lineHeight: 1.5 }}>
-                Deploy an ARC-402 wallet contract on Base Mainnet. Your connected address becomes the owner.
+                Deploy an ARC-402 wallet contract on Base Mainnet. Your connected address becomes the owner, and this launch flow assumes normal Base gas from that owner wallet.
               </p>
               <p style={{ color: '#444', fontSize: '0.75rem', marginBottom: 16, lineHeight: 1.5 }}>
                 If you already have one, it will be detected automatically.
@@ -823,7 +727,7 @@ export default function OnboardContent() {
           {step === 'policy' && !wcUri && !waiting && (
             <div>
               <p style={{ color: '#666', fontSize: '0.82rem', marginBottom: 16, lineHeight: 1.5 }}>
-                Set spending limits and an emergency guardian. These protect your wallet if an agent misbehaves.
+                Set spending limits and an emergency guardian. These protect your wallet if hired work in the governed workroom misbehaves.
               </p>
 
               {/* Velocity limit */}
@@ -901,15 +805,23 @@ export default function OnboardContent() {
           {/* ── STEP 4: AGENT ── */}
           {step === 'agent' && !wcUri && !waiting && (
             <div>
-              <p style={{ color: '#666', fontSize: '0.82rem', marginBottom: 16, lineHeight: 1.5 }}>
-                Register your wallet as an agent in the ARC-402 registry so other agents can hire you.
+              <p style={{ color: '#666', fontSize: '0.82rem', marginBottom: 12, lineHeight: 1.5 }}>
+                Register your wallet as an agent in the ARC-402 registry so other agents can hire you. This records your public endpoint identity; it does not by itself expand sandbox outbound permissions.
               </p>
+              <div style={{ background: '#0d0d12', border: '1px solid #1e1e2a', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
+                <div style={{ fontSize: '0.72rem', color: '#818cf8', marginBottom: 6 }}>Endpoint options at launch</div>
+                <div style={{ fontSize: '0.76rem', color: '#666', lineHeight: 1.7 }}>
+                  • <span style={{ color: '#d0d0d0' }}>Recommended canonical path:</span> <span style={{ fontFamily: 'monospace', color: '#818cf8' }}>https://&lt;agentname&gt;.arc402.xyz</span><br />
+                  • <span style={{ color: '#d0d0d0' }}>Custom HTTPS URL:</span> supported if you already run your own public ingress/domain<br />
+                  • ARC-402&apos;s first-class endpoint claim/scaffold tooling currently centers on the canonical <span style={{ fontFamily: 'monospace', color: '#818cf8' }}>arc402.xyz</span> subdomain path
+                </div>
+              </div>
 
               {[
                 { label: 'Agent name',            value: agentName,        setter: setAgentName,        placeholder: 'My Research Agent' },
                 { label: 'Capabilities (comma-separated)', value: agentCaps, setter: setAgentCaps,      placeholder: 'research, summarization' },
                 { label: 'Service type',          value: agentServiceType, setter: setAgentServiceType, placeholder: 'research' },
-                { label: 'Endpoint URL (HTTPS)',  value: agentEndpoint,    setter: setAgentEndpoint,    placeholder: 'https://...' },
+                { label: 'Endpoint URL (HTTPS)',  value: agentEndpoint,    setter: setAgentEndpoint,    placeholder: 'https://<agentname>.arc402.xyz or your custom HTTPS URL' },
               ].map(f => (
                 <div key={f.label} style={{ marginBottom: 12 }}>
                   <label style={{ fontSize: '0.72rem', color: '#555', display: 'block', marginBottom: 5 }}>
@@ -972,8 +884,9 @@ export default function OnboardContent() {
               <div style={{ background: '#0a0a1a', border: '1px solid #1a1a3a', borderRadius: 10, padding: '14px', marginTop: 16 }}>
                 <div style={{ fontSize: '0.72rem', color: '#444', marginBottom: 8 }}>Next steps</div>
                 <div style={{ fontSize: '0.78rem', color: '#666', lineHeight: 1.8 }}>
-                  {!PAYMASTER_URL && <>{`• Fund wallet with ETH for gas`}<br /></>}
-                  • Run daemon: <span style={{ fontFamily: 'monospace', color: '#818cf8', fontSize: '0.72rem' }}>arc402 daemon start</span><br />
+                  • Keep some Base ETH on the owner wallet for deploy, policy, and agent transactions<br />
+                  • Create the ARC-402 governed workroom on your machine: <span style={{ fontFamily: 'monospace', color: '#818cf8', fontSize: '0.72rem' }}>arc402 openshell init</span><br />
+                  • Start the OpenShell-owned ARC-402 runtime for hired work: <span style={{ fontFamily: 'monospace', color: '#818cf8', fontSize: '0.72rem' }}>arc402 daemon start</span><br />
                   • Sign governance ops:{' '}
                   {passkeyResult ? (
                     <a

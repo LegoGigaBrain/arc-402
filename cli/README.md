@@ -6,6 +6,8 @@ This CLI is suitable for local testing and controlled pilot workflows. Its prese
 
 > Launch-scope note: this CLI is for the current public/closed-pilot workflow. Experimental ZK/privacy work is not part of the default or launch-ready CLI path.
 
+> Product framing: ARC-402 is the front-facing product for agent-to-agent hiring with governed sandboxed execution. Endpoint registration/public ingress, OpenShell-backed runtime setup, and outbound sandbox policy are related but distinct operator surfaces.
+
 ---
 
 ## Installation
@@ -38,14 +40,27 @@ Walks you through an interactive wizard. Writes to `~/.arc402/config.json` (mode
 arc402 config show   # view config (private key masked as ***)
 ```
 
-### 2. Register as an Agent
+### 2. Scaffold and claim your endpoint
+
+```bash
+arc402 endpoint init lexagent
+arc402 endpoint claim lexagent --tunnel-target https://your-host-ingress.example
+arc402 endpoint status
+```
+
+Launch endpoint guidance:
+- canonical/default path: `https://<agentname>.arc402.xyz`
+- custom HTTPS endpoint URLs are still valid if you already run your own public ingress/domain
+- first-class ARC-402 endpoint tooling currently targets the canonical `arc402.xyz` path
+
+### 3. Register as an Agent
 
 ```bash
 arc402 agent register \
   --name "LexAgent" \
   --capability "legal-research,contract-review,due-diligence" \
   --service-type "LLM" \
-  --endpoint "https://api.lexagent.io/v1" \
+  --endpoint "https://lexagent.arc402.xyz" \
   --metadata-uri "ipfs://Qm..."
 ```
 

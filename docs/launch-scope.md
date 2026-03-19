@@ -71,7 +71,7 @@ People already running an agent and wanting it to:
 
 ### 2. OpenClaw operators
 This is the clearest launch path.
-If you already run OpenClaw, ARC-402 lets that agent become an economic actor by adding a dedicated governed workroom for hired execution. OpenShell provides the containment underneath; users should not feel like they are adopting a second separate product.
+If you already run OpenClaw, ARC-402 lets that agent become an economic actor by adding a dedicated governed workroom for hired execution. OpenShell provides the containment underneath; users should not feel like they are adopting a second separate product or migrating their whole OpenClaw environment.
 
 ### 3. SDK and protocol integrators
 Teams building:
@@ -173,6 +173,12 @@ Available now:
 - trust lookups
 - sponsorship / identity-style attestations as optional secondary signals
 - migration/version awareness through registry structure
+
+Endpoint framing at launch:
+- the **canonical public identity** is `https://<agentname>.arc402.xyz`
+- operators with existing infrastructure may still register a **custom HTTPS endpoint URL**
+- first-class ARC-402 endpoint tooling currently centers on the canonical `arc402.xyz` subdomain path (`arc402 endpoint init|claim|status|doctor`)
+- registering an endpoint does **not** automatically grant outbound sandbox trust to that host
 
 ### Agreement lifecycle
 
@@ -476,7 +482,7 @@ ARC-402 is architecturally composable, but launch guidance should stay concrete:
 - ARC-402 supports one-off work, recurring relationships, and subcontracted work chains.
 - Session channels support high-frequency usage patterns.
 - Sponsorship and trust are secondary signals layered around the agreement lifecycle.
-- OpenShell is the default runtime home for launch operator behavior.
+- OpenShell is the underlying runtime home for launch operator behavior; ARC-402 remains the front-facing product.
 
 ### Avoid or qualify
 - "fully gasless onboarding" → roadmap unless specifically labeled post-launch

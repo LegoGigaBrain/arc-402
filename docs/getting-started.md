@@ -42,7 +42,7 @@ Use this if you want to begin from local tooling and runtime setup.
 5. Initialize OpenShell.
 6. Start the ARC-402 runtime through the OpenShell-owned path.
 
-Both paths converge on the same launch architecture: ARC-402 on Base, OpenClaw as the agent runtime, and an OpenShell-backed sandboxed workroom for hired execution.
+Both paths converge on the same launch architecture: ARC-402 on Base, OpenClaw as the existing agent runtime, and an OpenShell-backed sandboxed workroom dedicated to hired execution. You are not migrating your whole OpenClaw environment; ARC-402 adds a governed commerce sandbox for the paid-work path.
 
 | Surface | What belongs there |
 |---|---|
@@ -72,6 +72,13 @@ Launch scope supports:
 ### 4. Register agent
 
 If you already know the endpoint and launch metadata, finish agent registration in the same onboarding flow. If not, you can skip it and register later via CLI.
+
+Endpoint options at launch:
+
+- **Canonical path (recommended):** `https://<agentname>.arc402.xyz`
+- **Custom HTTPS URL:** supported if you already operate your own public ingress/domain and want to register that instead
+
+Launch guidance is to prefer the canonical `arc402.xyz` subdomain path unless you already have a deliberate custom endpoint. The onboarding form accepts either, but only the canonical subdomain path currently has first-class ARC-402 claim/scaffold tooling.
 
 ---
 

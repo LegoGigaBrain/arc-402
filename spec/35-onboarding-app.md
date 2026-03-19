@@ -1,11 +1,13 @@
 # Spec 35 — ARC-402 Onboarding Web App
 *Status: Draft | Date: 2026-03-17*
 
+> **Launch-scope note (2026-03-19):** Phase 2 onboarding is explicitly out of scope for launch. Do **not** include Privy/email/social onboarding or gas sponsorship in the launch web flow. Launch scope remains wallet connect → wallet deploy → passkey → optional policy → optional agent registration.
+
 ---
 
 ## Summary
 
-A single-page guided flow at `app.arc402.xyz/onboard` that takes an operator from zero to a fully configured ARC-402 wallet in four browser-native steps. No CLI required. No seed phrase visible. Works on mobile.
+A single-page guided flow at `app.arc402.xyz/onboard` that takes an operator from zero to an ARC-402-ready setup in four browser-native steps. The web flow handles wallet, passkey, and optional registration on the phone; the operator machine later runs hired work inside ARC-402's governed workroom. This is not a whole-environment migration story for OpenClaw users; it is the phone-side setup for the dedicated commerce sandbox path. No CLI required for the phone flow. No seed phrase visible. Works on mobile.
 
 ---
 
@@ -35,9 +37,9 @@ The deployed wallet address is displayed throughout once known.
 
 | Contract        | Address |
 |----------------|---------|
-| WalletFactory  | `0x974d2ae81cC9B4955e325890f4247AC76c92148D` |
+| WalletFactory  | `0xcB52B5d746eEc05e141039E92e3dBefeAe496051` |
 | EntryPoint     | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
-| AgentRegistry  | `0xcc0D8731ccCf6CFfF4e66F6d68cA86330Ea8B622` |
+| AgentRegistry  | `0xD5c2851B00090c92Ba7F4723FB548bb30C9B6865` |
 | PolicyEngine   | `0xAA5Ef3489C929bFB3BFf5D5FE15aa62d3763c847` |
 
 ---
@@ -183,12 +185,17 @@ Passkeys registered in production (`arc402.xyz`) work for all governance signing
 | Agent name | Human-readable, e.g. "My Research Agent" |
 | Capabilities | Comma-separated, e.g. "research, summarization" |
 | Service type | e.g. "research", "coding", "data-analysis" |
-| Endpoint URL | HTTPS URL the hiring agent will call |
+| Endpoint URL | HTTPS URL the hiring agent will call. Launch default is `https://<agentname>.arc402.xyz`; a custom HTTPS URL is also acceptable if the operator already has their own public ingress/domain. |
 
 **Flow:**
 
 ```
 1. Show inputs
+
+   Endpoint helper copy should make the launch choice explicit:
+   - recommended: claim/register the canonical `https://<agentname>.arc402.xyz` endpoint
+   - supported advanced path: enter a custom HTTPS URL if the operator already runs their own public ingress/domain
+   - note that first-class ARC-402 endpoint claim/scaffold tooling is currently built around the canonical `arc402.xyz` subdomain path
 
 2. "Register Agent" button → WC session
    → Encode: AgentRegistry.register(name, capabilities[], serviceType, endpoint, "")
@@ -227,7 +234,8 @@ What's working:
 
 Next steps:
   • Fund your wallet with ETH for gas
-  • Run the arc402 daemon: arc402 daemon start
+  • Hand runtime startup to OpenShell: arc402 openshell init
+  • Use the OpenShell-owned runtime start path: arc402 daemon start
   • View governance operations: app.arc402.xyz/passkey-sign
 ```
 
@@ -236,6 +244,8 @@ Next steps:
 ## 8. Technical Design
 
 ### WalletConnect
+
+Launch uses WalletConnect-connected external wallets only. Embedded wallet auth (Privy/email/social) is Phase 2 and intentionally excluded from this flow.
 
 Each step that requires an on-chain transaction creates a fresh `SignClient` session:
 
@@ -313,3 +323,4 @@ Takes two `bytes32` hex arguments (the x and y P256 public key coordinates extra
 
 *Spec 35 — ARC-402 Onboarding Web App*
 *Written: 2026-03-17*
+n: 2026-03-17*

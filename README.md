@@ -119,9 +119,9 @@ Your personal AI — the one that already knows you, runs your workflows, manage
 | **Identity** | Local only | Trust score on-chain, permanent |
 | **Discoverability** | None | Discoverable by any agent on the network |
 
-The same OpenClaw that manages your calendar can now accept hires autonomously — while you sleep. It receives a hire request, evaluates it against your policy, does the work inside the OpenShell sandbox, delivers, and gets paid. All without your involvement.
+The same OpenClaw that manages your calendar can now accept hires autonomously — while you sleep. ARC-402 adds a dedicated governed workroom for hired execution on the same machine, so you are not migrating your whole OpenClaw environment; you are adding a commerce sandbox with bounded authority. It receives a hire request, evaluates it against your policy, does the work inside that governed workroom, delivers, and gets paid. All without your involvement.
 
-And because OpenClaw can spawn sub-agents, your personal AI doesn't work alone — it orchestrates. A hire comes in, it delegates sub-tasks to Claude Code, Codex, or a specialist agent, synthesizes the result, and delivers. The whole operation runs under one ARC-402 agreement, inside one sandbox.
+And because OpenClaw can spawn sub-agents, your personal AI doesn't work alone — it orchestrates. A hire comes in, it delegates sub-tasks to Claude Code, Codex, or a specialist agent, synthesizes the result, and delivers. The whole hired-work path runs under one ARC-402 agreement, inside one governed sandbox.
 
 **Your personal AI becomes a business.** Not metaphorically. Literally — a wallet, a trust score, a capability listing, a payment history, on Base mainnet.
 
@@ -156,6 +156,7 @@ New to ARC-402? Start with these three docs in order:
 - **[→ Launch Scope](./docs/launch-scope.md)** — what exists now, what does not, and how to explain ARC-402 accurately
 - **[→ Getting Started](./docs/getting-started.md)** — install, wallet deployment, OpenClaw/OpenShell operator setup, endpoint registration, and live verification
 - **[→ Launch Readiness PRD](./docs/launch-readiness-prd.md)** — tracked execution plan for launch readiness, runtime validation, docs truth, and GitHub polish
+- **[→ Launch Checklist](./docs/post-audit-launch-checklist.md)** — publish-order checklist: public surfaces first, MacBook clean-room proof after polish, then publish
 
 ### Choose your onboarding path
 
@@ -239,7 +240,7 @@ arc402 hire --agent 0xAgentAddress --task "Summarise this document" --budget 0.0
 
 ## OpenClaw - Agents Talking to Each Other
 
-ARC-402 was built alongside [OpenClaw](https://openclaw.ai) — an open runtime for persistent AI agents. If you're already running OpenClaw, ARC-402 adds a dedicated governed commerce workroom for hired agent work; you do not need to migrate your whole environment to participate.
+ARC-402 was built alongside [OpenClaw](https://openclaw.ai) — an open runtime for persistent AI agents. If you're already running OpenClaw, ARC-402 adds a dedicated governed commerce workroom for hired agent work. You do not need to migrate your whole environment or rebuild your personal setup to participate.
 
 ```bash
 openclaw install arc402-agent
@@ -296,6 +297,8 @@ Your node is discoverable by capability. Agents looking for work you offer will 
 
 **Enterprise deployments**
 
+Custom domain/public-ingress setups are supported for operators who already run their own infrastructure, but launch-default ARC-402 tooling is built around the canonical `https://<agentname>.arc402.xyz` path. If you want the first-class claim/scaffold flow, use the canonical path. If you already operate your own domain, you can still register that custom HTTPS endpoint and participate on the same protocol.
+
 Organisations running agent fleets under their own domain can bring their 
 own subdomain service. Fork the `subdomain-worker/` at the repo root, deploy 
 to your Cloudflare account, then point the CLI at it:
@@ -306,7 +309,7 @@ arc402 config set subdomainApi https://api.yourdomain.com
 
 All agents remain on the same ARC-402 protocol. Custom domain, shared network.
 
-ARC-402 is the SMTP of the agent economy. `lego@gigabrain.arc402.xyz` and `research@jpmorgan.com` use different domains, different infrastructure — but the same protocol. Agreements flow between them without friction. The domain is just addressing. The rails are shared.
+ARC-402 aims to provide a shared addressing and agreement layer for the agent economy. `gigabrain.arc402.xyz` and a custom enterprise domain can use different infrastructure while still participating in the same governed protocol. The domain is just addressing. The rails are shared.
 
 ---
 

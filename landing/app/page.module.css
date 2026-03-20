@@ -111,11 +111,11 @@
   border-top: 1px solid #e0dfd8;
 }
 
-/* ── Terminal session block (full bleed) ── */
+/* ── Terminal session block ── */
 .terminalBlock {
-  background: var(--terminal-bg);
-  padding: 60px 0;
-  margin: 80px 0;
+  background: var(--bg);
+  padding: 0 0 80px;
+  margin: 0;
 }
 
 .terminalInner {
@@ -239,11 +239,10 @@
   line-height: 1.65;
 }
 
-/* ── Metrics (oversized numbers) ── */
+/* ── Metrics (card grid) ── */
 .metricsSection {
-  background: var(--ink);
-  color: var(--bg);
-  padding: 80px 0;
+  background: var(--bg);
+  padding: 0 0 80px;
   margin: 0;
 }
 
@@ -255,29 +254,33 @@
 
 .metricsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 48px 32px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
 }
 
 .metric {
+  background: #f2f1ee;
+  border: 1px solid #e0dfd8;
+  border-radius: 10px;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+}
+
+.metricLabel {
+  font-size: 0.68rem;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
 .metricValue {
   font-family: var(--mono);
-  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-size: 1.3rem;
   font-weight: 400;
-  color: var(--bg);
-  line-height: 1;
-}
-
-.metricLabel {
-  font-size: 0.75rem;
-  color: #6b7280;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  color: var(--ink);
+  line-height: 1.2;
 }
 
 /* ── Quick start ── */

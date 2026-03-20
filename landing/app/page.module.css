@@ -303,7 +303,7 @@
 .quickLabel {
   font-family: var(--mono);
   font-size: 0.72rem;
-  color: #9ca3af;
+  color: var(--blue);
   letter-spacing: 0.08em;
   padding: 12px 16px 4px;
   background: #2a2a2a;

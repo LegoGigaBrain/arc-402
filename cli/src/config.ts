@@ -32,6 +32,7 @@ export interface Arc402Config {
   governedTokenWhitelistAddress?: string;
   vouchingRegistryAddress?: string;
   migrationRegistryAddress?: string;
+  handshakeAddress?: string;
   paymasterUrl?: string;    // CDP paymaster endpoint
   cdpKeyName?: string;      // CDP API key name (org/.../apiKeys/...)
   cdpPrivateKey?: string;   // CDP EC private key — base64 DER SEC1 (store in CDP_PRIVATE_KEY env var)
@@ -112,6 +113,7 @@ export const NETWORK_DEFAULTS: Record<string, Partial<Arc402Config> & { usdcAddr
     watchtowerRegistryAddress:     "0xbC811d1e3c5C5b67CA57df1DFb08847b1c8c458A",
     vouchingRegistryAddress:       "0x94519194Bf17865770faD59eF581feC512Ae99c9",
     migrationRegistryAddress:      "0xb60B62357b90F254f555f03B162a30E22890e3B5",
+    handshakeAddress:              "",  // TODO: fill after deployment
   },
   "base-sepolia": {
     rpcUrl: "https://sepolia.base.org",

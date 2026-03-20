@@ -297,7 +297,7 @@ notify_on_hire_rejected = true   # Notify when daemon rejects a hire
 notify_on_delivery = true        # Notify when work is delivered and fulfill() submitted
 notify_on_dispute = true         # Notify when a dispute is raised (by either party)
 notify_on_channel_challenge = true  # Notify when watchtower submits a channel challenge
-notify_on_low_balance = true     # Notify when wallet ETH drops below eth_float threshold
+notify_on_low_balance = false    # Disabled by default — enable if you want balance alerts
 low_balance_threshold_eth = "0.005"  # Balance alert threshold
 
 [work]

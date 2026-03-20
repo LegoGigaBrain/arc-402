@@ -113,7 +113,7 @@ export const NETWORK_DEFAULTS: Record<string, Partial<Arc402Config> & { usdcAddr
     watchtowerRegistryAddress:     "0xbC811d1e3c5C5b67CA57df1DFb08847b1c8c458A",
     vouchingRegistryAddress:       "0x94519194Bf17865770faD59eF581feC512Ae99c9",
     migrationRegistryAddress:      "0xb60B62357b90F254f555f03B162a30E22890e3B5",
-    handshakeAddress:              "",  // TODO: fill after deployment
+    handshakeAddress:              "0x4F5A38Bb746d7E5d49d8fd26CA6beD141Ec2DDb3",
   },
   "base-sepolia": {
     rpcUrl: "https://sepolia.base.org",

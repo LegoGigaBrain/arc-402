@@ -22,7 +22,24 @@ if [ ! -f "$POLICY_FILE" ]; then
   exit 1
 fi
 
-# ── 2. Set default DROP policy ──────────────────────────────────────────────
+# ── 2. Resolve all hosts FIRST (before DROP policy) ────────────────────────
+echo "[workroom] Resolving policy hosts..."
+RESOLVED_RULES=""
+while IFS=: read -r HOST PORT; do
+  [ -z "$HOST" ] && continue
+  PORT="${PORT:-443}"
+  IPS=$(getent ahosts "$HOST" 2>/dev/null | awk '{print $1}' | sort -u || true)
+  if [ -z "$IPS" ]; then
+    echo "[workroom] WARN: Could not resolve $HOST — skipping"
+    continue
+  fi
+  for IP in $IPS; do
+    RESOLVED_RULES="${RESOLVED_RULES}${IP}:${PORT}\n"
+  done
+  echo "[workroom] Resolved: $HOST → $(echo "$IPS" | wc -l | tr -d ' ') IPs"
+done < <(/policy-parser.sh "$POLICY_FILE")
+
+# ── 3. Now apply DROP + allow resolved IPs ─────────────────────────────────
 iptables -P OUTPUT DROP 2>/dev/null || true
 iptables -F OUTPUT 2>/dev/null || true
 
@@ -38,28 +55,16 @@ iptables -A OUTPUT -p tcp --dport 53 -d 127.0.0.11 -j ACCEPT
 
 echo "[workroom] Default policy: DROP all outbound (except loopback + DNS)"
 
-# ── 3. Parse policy and allow listed hosts ──────────────────────────────────
+# Apply pre-resolved rules
 ALLOWED_COUNT=0
-
-while IFS=: read -r HOST PORT; do
-  [ -z "$HOST" ] && continue
-  PORT="${PORT:-443}"
-
-  # Resolve hostname to IPs
-  IPS=$(getent ahosts "$HOST" 2>/dev/null | awk '{print $1}' | sort -u || true)
-
-  if [ -z "$IPS" ]; then
-    echo "[workroom] WARN: Could not resolve $HOST — skipping"
-    continue
-  fi
-
-  for IP in $IPS; do
-    iptables -A OUTPUT -p tcp -d "$IP" --dport "$PORT" -j ACCEPT
-    ALLOWED_COUNT=$((ALLOWED_COUNT + 1))
-  done
-
-  echo "[workroom] ALLOW: $HOST:$PORT ($(echo "$IPS" | wc -l | tr -d ' ') IPs)"
-done < <(/policy-parser.sh "$POLICY_FILE")
+RULES_FILE=$(mktemp)
+echo -e "$RESOLVED_RULES" > "$RULES_FILE"
+while IFS=: read -r IP PORT; do
+  [ -z "$IP" ] && continue
+  iptables -A OUTPUT -p tcp -d "$IP" --dport "$PORT" -j ACCEPT
+  ALLOWED_COUNT=$((ALLOWED_COUNT + 1))
+done < "$RULES_FILE"
+rm -f "$RULES_FILE"
 
 echo "[workroom] $ALLOWED_COUNT iptables rules applied from base policy"
 

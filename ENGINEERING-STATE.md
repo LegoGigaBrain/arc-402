@@ -130,6 +130,7 @@ Active v2 contracts (use these):
 | VouchingRegistry (new) | `0x94519194Bf17865770faD59eF581feC512Ae99c9` |
 | MigrationRegistry (new) | `0xb60B62357b90F254f555f03B162a30E22890e3B5` |
 | ReputationOracle | `0x359F76a54F9A345546E430e4d6665A7dC9DaECd4` |
+| Handshake (Arena v1) ← active | `0x4F5A38Bb746d7E5d49d8fd26CA6beD141Ec2DDb3` |
 | ARC402Governance | `0xE931DD2EEb9Af9353Dd5E2c1250492A0135E0EC4` |
 | ARC402Guardian | `0xED0A033B79626cdf9570B6c3baC7f699cD0032D8` |
 | ARC402Wallet (factory instance) | `0xfd5C8c0a08fDcdeD2fe03e0DC9FA55595667F313` |

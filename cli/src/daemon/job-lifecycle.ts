@@ -13,6 +13,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import * as crypto from "crypto";
+import { readUsageReport, type AggregatedTokenUsage } from "./token-metering";
 
 const ARC402_DIR = path.join(os.homedir(), ".arc402");
 const RECEIPTS_DIR = path.join(ARC402_DIR, "receipts");
@@ -36,6 +37,7 @@ export interface ExecutionReceipt {
     network_hosts_contacted: string[];
     policy_violations_attempted: number;
   };
+  token_usage: AggregatedTokenUsage | null;
   receipt_hash: string;
 }
 
@@ -66,6 +68,9 @@ export function generateReceipt(params: {
   const completed = new Date(params.completedAt).getTime();
   const wallClockSeconds = Math.max(0, Math.floor((completed - started) / 1000));
 
+  // Read token usage report (if the worker wrote one)
+  const tokenUsage = readUsageReport(params.agreementId);
+
   const receipt: ExecutionReceipt = {
     schema: "arc402.execution-receipt.v1",
     agreement_id: params.agreementId,
@@ -79,6 +84,7 @@ export function generateReceipt(params: {
       network_hosts_contacted: params.networkHosts ?? [],
       policy_violations_attempted: 0,
     },
+    token_usage: tokenUsage,
     receipt_hash: "", // filled below
   };
 

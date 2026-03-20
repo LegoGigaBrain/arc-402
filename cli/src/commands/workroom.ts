@@ -726,6 +726,61 @@ No learnings yet. Complete your first hired task to start accumulating expertise
       console.log("✓ Worker memory cleared. Starting fresh.");
     });
 
+  // ── token usage ──────────────────────────────────────────────────────────
+  workroom
+    .command("token-usage [agreementId]")
+    .description("Show token usage for a specific agreement or across all jobs.")
+    .action(async (agreementId) => {
+      const { readUsageReport, formatUsageReport } = require("../daemon/token-metering");
+
+      if (agreementId) {
+        const usage = readUsageReport(agreementId);
+        if (!usage) {
+          console.log(`No token usage data for agreement: ${agreementId}`);
+          return;
+        }
+        console.log(formatUsageReport(usage));
+      } else {
+        // Aggregate across all receipts
+        const receiptsDir = path.join(ARC402_DIR, "receipts");
+        if (!fs.existsSync(receiptsDir)) {
+          console.log("No receipts yet.");
+          return;
+        }
+        const files = fs.readdirSync(receiptsDir).filter((f: string) => f.endsWith(".json"));
+        let totalInput = 0;
+        let totalOutput = 0;
+        let totalCost = 0;
+        let jobsWithUsage = 0;
+
+        for (const f of files) {
+          try {
+            const receipt = JSON.parse(fs.readFileSync(path.join(receiptsDir, f), "utf-8"));
+            if (receipt.token_usage) {
+              totalInput += receipt.token_usage.total_input || 0;
+              totalOutput += receipt.token_usage.total_output || 0;
+              totalCost += receipt.token_usage.estimated_cost_usd || 0;
+              jobsWithUsage++;
+            }
+          } catch { /* skip */ }
+        }
+
+        if (jobsWithUsage === 0) {
+          console.log("No token usage data in any receipts yet.");
+          return;
+        }
+
+        console.log("Aggregate Token Usage");
+        console.log("─────────────────────");
+        console.log(`Jobs with data:  ${jobsWithUsage}`);
+        console.log(`Total tokens:    ${(totalInput + totalOutput).toLocaleString()} (${totalInput.toLocaleString()} in / ${totalOutput.toLocaleString()} out)`);
+        console.log(`Est. total cost: $${totalCost.toFixed(4)}`);
+        if (jobsWithUsage > 0) {
+          console.log(`Avg per job:     $${(totalCost / jobsWithUsage).toFixed(4)}`);
+        }
+      }
+    });
+
   // ── receipts + earnings ──────────────────────────────────────────────────
   workroom
     .command("receipts")

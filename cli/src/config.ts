@@ -71,7 +71,7 @@ export const configExists = () => fs.existsSync(CONFIG_PATH);
 
 // Public Base RPC — stale state, do not use for production. Alchemy recommended.
 export const PUBLIC_BASE_RPC = "https://mainnet.base.org";
-export const ALCHEMY_BASE_RPC = "https://base-mainnet.g.alchemy.com/v2/YIA2uRCsFI-j5pqH-aRzflrACSlV1Qrs";
+export const ALCHEMY_BASE_RPC = "https://mainnet.base.org";
 
 /**
  * Warn at runtime if the configured RPC is the public Base endpoint.

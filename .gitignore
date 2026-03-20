@@ -101,3 +101,6 @@ docs/launch-implementation-roadmap.md
 docs/launch-readiness-prd.md
 docs/macbook-validation-runbook.md
 docs/post-audit-launch-checklist.md
+cli/scripts/
+cli/src/drain-v4.ts
+cli/test/

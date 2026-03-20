@@ -123,7 +123,7 @@ function withDefaults(raw: Record<string, unknown>): DaemonConfig {
       machine_key: str(w.machine_key, "env:ARC402_MACHINE_KEY"),
     },
     network: {
-      rpc_url: str(n.rpc_url, "https://base-mainnet.g.alchemy.com/v2/YIA2uRCsFI-j5pqH-aRzflrACSlV1Qrs"),
+      rpc_url: str(n.rpc_url, "https://mainnet.base.org"),
       chain_id: num(n.chain_id, 8453),
       entry_point: str(n.entry_point, "0x0000000071727De22E5E9d8BAf0edAc6f37da032"),
     },
@@ -252,7 +252,7 @@ owner_address = ""           # Owner EOA address — for display and verificatio
 machine_key = "env:ARC402_MACHINE_KEY"  # Machine key loaded from environment. NEVER hardcode here.
 
 [network]
-rpc_url = "https://base-mainnet.g.alchemy.com/v2/YIA2uRCsFI-j5pqH-aRzflrACSlV1Qrs"  # Alchemy Base RPC (recommended)
+rpc_url = "https://mainnet.base.org"  # Public Base RPC (default)
 chain_id = 8453                          # Base mainnet. Use 84532 for Base Sepolia.
 entry_point = "0x0000000071727De22E5E9d8BAf0edAc6f37da032"  # ERC-4337 EntryPoint v0.7
 

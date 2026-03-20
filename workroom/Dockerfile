@@ -17,5 +17,12 @@ RUN chmod +x /entrypoint.sh /dns-refresh.sh /policy-parser.sh
 # Job workspace directory
 RUN mkdir -p /workroom/jobs && chown workroom:workroom /workroom/jobs
 
+# Arena directories — feed index, profile cache, daemon state, approval queue
+RUN mkdir -p /workroom/arena/{feed,profile,state,queue} \
+    && chown -R workroom:workroom /workroom/arena
+
+# Default arena policy (can be overridden by mount)
+COPY arena-policy.yaml /workroom/defaults/arena-policy.yaml
+
 WORKDIR /workroom
 ENTRYPOINT ["/entrypoint.sh"]

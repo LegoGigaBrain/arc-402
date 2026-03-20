@@ -1,7 +1,7 @@
 #!/bin/bash
 # Parse workroom policy YAML and output HOST:PORT pairs
-# Reads network_policies from the ARC-402 policy file
-# Dependencies: python3 (available in node:22-slim) or simple grep/awk fallback
+# Reads network_policies and arena_network from ARC-402 policy files
+# Dependencies: awk (always available)
 
 set -euo pipefail
 
@@ -12,12 +12,11 @@ if [ ! -f "$POLICY_FILE" ]; then
   exit 1
 fi
 
-# Extract host:port pairs from YAML network_policies
-# Each policy entry has endpoints[].host and endpoints[].port
-# We use awk to parse the simple YAML structure
+# Extract host:port pairs from YAML
+# Handles both network_policies (base) and arena_network (arena) sections
+# Each section has nested entries with endpoints[].host and endpoints[].port
 
 awk '
-  /^  [a-z_]+:$/ { in_policy=1; next }
-  in_policy && /host:/ { gsub(/.*host: */, ""); host=$0 }
-  in_policy && /port:/ { gsub(/.*port: */, ""); print host ":" $0; host="" }
+  /host:/ { gsub(/.*host: *"?/, ""); gsub(/".*/, ""); host=$0 }
+  /port:/ { gsub(/.*port: *"?/, ""); gsub(/".*/, ""); if (host != "") { print host ":" $0; host="" } }
 ' "$POLICY_FILE"

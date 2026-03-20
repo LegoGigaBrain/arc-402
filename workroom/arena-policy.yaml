@@ -1,0 +1,152 @@
+# ARC-402 Arena Policy — extends the base workroom policy
+# This file defines the network, spend, and behavior boundaries for Arena operations
+# running inside the Workroom container.
+#
+# Merged with openshell-policy.yaml at workroom startup.
+# Arena-specific policies are additive — they don't override base security.
+
+version: 1
+
+# ─── Arena Network Policy ──────────────────────────────────────────────────────
+# Which external hosts Arena processes can reach from inside the Workroom.
+# Everything else is DROP via iptables.
+
+arena_network:
+  # Base mainnet RPC — for contract reads and transaction submission
+  base_rpc:
+    endpoints:
+      - host: mainnet.base.org
+        port: 443
+      - host: base-mainnet.g.alchemy.com
+        port: 443
+      - host: base.llamarpc.com
+        port: 443
+
+  # ARC-402 infrastructure — relay, API, public pages
+  arc402_infra:
+    endpoints:
+      - host: api.arc402.xyz
+        port: 443
+      - host: arc402.xyz
+        port: 443
+      - host: relay.arc402.xyz
+        port: 443
+      - host: gigabrain.arc402.xyz
+        port: 443
+
+  # ERC-4337 bundler — for UserOp submission
+  bundler:
+    endpoints:
+      - host: public.pimlico.io
+        port: 443
+
+  # Notifications — Telegram alerts for arena events
+  notifications:
+    endpoints:
+      - host: api.telegram.org
+        port: 443
+
+  # Data feeds — for prediction round research (read-only intelligence)
+  # Add specific API hosts as needed. Each addition is a policy decision.
+  data_feeds:
+    endpoints:
+      - host: api.coingecko.com
+        port: 443
+      - host: pro-api.coinmarketcap.com
+        port: 443
+
+# ─── Arena Spend Policy ────────────────────────────────────────────────────────
+# Workroom-level spend limits. These are ADDITIONAL to PolicyEngine onchain limits.
+# The tighter of the two always wins.
+#
+# These are enforced by the Arena daemon before submitting transactions.
+# They protect against bugs, not just malice.
+
+arena_spend:
+  handshake:
+    max_per_handshake_eth: "0.01"       # max ETH tip per handshake
+    max_per_handshake_usdc: "10.00"     # max USDC tip per handshake
+    daily_count_cap: 50                  # mirrors contract cap
+    daily_spend_cap_eth: "0.5"           # total handshake spend per day
+    daily_spend_cap_usdc: "100.00"       # total handshake USDC spend per day
+
+  arena:
+    max_stake_per_round_eth: "0.1"       # max stake per prediction round
+    max_stake_per_round_usdc: "50.00"
+    daily_rounds_cap: 10                 # max rounds entered per day
+    daily_spend_cap_eth: "1.0"           # total arena spend per day
+    daily_spend_cap_usdc: "500.00"
+
+  subscriptions:
+    max_per_subscription_eth: "0.05"     # max per subscription payment
+    max_per_subscription_usdc: "25.00"
+    max_active_subscriptions: 20         # cap on simultaneous subscriptions
+
+# ─── Arena Behavior Policy ─────────────────────────────────────────────────────
+# Controls what the Arena daemon can do autonomously vs what requires approval.
+
+arena_behavior:
+  # Autonomous actions — daemon can do these without human approval
+  autonomous:
+    - send_handshake                     # respond to inbound handshakes
+    - post_status                        # publish status updates
+    - index_feed                         # consume and index feed events
+    - update_profile                     # refresh profile metadata
+
+  # Approval-required actions — daemon queues these for human review
+  approval_required:
+    - enter_arena_round                  # stake money on prediction
+    - back_agent                         # back another agent's forecast
+    - create_subscription                # open a paid subscription channel
+    - publish_newsletter                 # publish content to subscribers
+    - join_squad                         # join a research squad
+
+  # Forbidden actions — daemon cannot do these at all
+  forbidden:
+    - modify_wallet_policy               # never change its own spending rules
+    - transfer_ownership                 # never transfer wallet ownership
+    - upgrade_registry                   # never propose registry updates
+    - whitelist_contracts                # never add new contract whitelists
+
+# ─── Arena Daemon Config ───────────────────────────────────────────────────────
+# How the Arena daemon runs inside the Workroom.
+
+arena_daemon:
+  # Feed indexer — listens for HandshakeSent, NewConnection, arena events
+  indexer:
+    poll_interval_seconds: 30
+    start_block: "latest"                # or specific block number
+    contracts:
+      - name: handshake
+        address: ""                      # filled after deployment
+        events:
+          - HandshakeSent
+          - NewConnection
+      # Future: ArenaRound events added here
+
+  # Status publisher — posts agent status updates
+  status:
+    auto_publish: false                  # manual by default
+    max_per_day: 10
+
+  # Discovery — how the agent finds other agents
+  discovery:
+    refresh_interval_seconds: 300
+    trending_window_hours: 24
+
+# ─── Arena Filesystem Policy ───────────────────────────────────────────────────
+# What Arena processes can read and write inside the Workroom.
+
+arena_filesystem:
+  read_write:
+    - /workroom/arena/feed               # indexed feed data
+    - /workroom/arena/profile            # agent profile cache
+    - /workroom/arena/state              # daemon state (last block, etc.)
+    - /workroom/arena/queue              # approval queue for human review
+
+  read_only:
+    - /workroom/runtime                  # CLI and daemon code
+    - /workroom/.arc402                  # policy files
+
+  forbidden:
+    - /workroom/.arc402/keys             # private keys (injected as env vars only)

@@ -14,6 +14,8 @@ import { DAEMON_LOG, DAEMON_TOML } from "../daemon/config";
 const WORKROOM_IMAGE = "arc402-workroom";
 const WORKROOM_CONTAINER = "arc402-workroom";
 const POLICY_FILE = path.join(ARC402_DIR, "openshell-policy.yaml");
+const ARENA_POLICY_FILE = path.join(ARC402_DIR, "arena-policy.yaml");
+const ARENA_DATA_DIR = path.join(ARC402_DIR, "arena");
 const WORKROOM_DIR = path.join(__dirname, "..", "..", "..", "workroom"); // relative to cli/dist
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -99,6 +101,30 @@ export function registerWorkroomCommands(program: Command): void {
       }
       console.log("✓ daemon.toml found");
 
+      // Set up Arena directories and default policy
+      if (!fs.existsSync(ARENA_DATA_DIR)) {
+        fs.mkdirSync(ARENA_DATA_DIR, { recursive: true });
+        for (const sub of ["feed", "profile", "state", "queue"]) {
+          fs.mkdirSync(path.join(ARENA_DATA_DIR, sub), { recursive: true });
+        }
+        console.log("✓ Arena directories created");
+      } else {
+        console.log("✓ Arena directories exist");
+      }
+
+      // Copy default arena policy if not present
+      if (!fs.existsSync(ARENA_POLICY_FILE)) {
+        const defaultArenaPolicy = path.join(WORKROOM_DIR, "arena-policy.yaml");
+        if (fs.existsSync(defaultArenaPolicy)) {
+          fs.copyFileSync(defaultArenaPolicy, ARENA_POLICY_FILE);
+          console.log("✓ Arena policy: default installed");
+        } else {
+          console.log("⚠ Arena policy template not found — create manually at " + ARENA_POLICY_FILE);
+        }
+      } else {
+        console.log("✓ Arena policy exists");
+      }
+
       // Build image
       if (!imageExists()) {
         if (!buildImage()) {
@@ -176,6 +202,8 @@ export function registerWorkroomCommands(program: Command): void {
         "-v", `${cliRoot}:/workroom/runtime:ro`,
         // Mount jobs directory
         "-v", `${path.join(ARC402_DIR, "jobs")}:/workroom/jobs:rw`,
+        // Mount Arena data directory (feed index, profile cache, state, queue)
+        "-v", `${ARENA_DATA_DIR}:/workroom/arena:rw`,
         // Inject secrets as env vars
         "-e", `ARC402_MACHINE_KEY=${machineKey}`,
         "-e", `TELEGRAM_BOT_TOKEN=${telegramBot}`,
@@ -270,6 +298,25 @@ export function registerWorkroomCommands(program: Command): void {
       // Policy
       console.log(`Policy file:  ${fs.existsSync(POLICY_FILE) ? "✓ " + POLICY_FILE : "❌ missing"}`);
       console.log(`Policy hash:  ${getPolicyHash()}`);
+
+      // Arena
+      const arenaExists = fs.existsSync(ARENA_DATA_DIR);
+      const arenaPolicy = fs.existsSync(ARENA_POLICY_FILE);
+      console.log(`Arena data:   ${arenaExists ? "✓ " + ARENA_DATA_DIR : "❌ missing (run: arc402 workroom init)"}`);
+      console.log(`Arena policy: ${arenaPolicy ? "✓ loaded" : "❌ missing"}`);
+
+      // Arena queue (pending approvals)
+      if (arenaExists) {
+        const queueDir = path.join(ARENA_DATA_DIR, "queue");
+        if (fs.existsSync(queueDir)) {
+          const pending = fs.readdirSync(queueDir).filter(f => f.endsWith(".json")).length;
+          if (pending > 0) {
+            console.log(`Arena queue:  ⚠ ${pending} action(s) awaiting approval`);
+          } else {
+            console.log(`Arena queue:  ✓ empty`);
+          }
+        }
+      }
     });
 
   // ── logs ──────────────────────────────────────────────────────────────────
@@ -401,6 +448,312 @@ export function registerWorkroomCommands(program: Command): void {
         console.log(`✗ ${host} is NOT reachable from the workroom`);
         console.log("  This host may not be in the workroom policy.");
         console.log("  Add it with: arc402 openshell policy add <name> <host>");
+      }
+    });
+
+  // ── worker ─────────────────────────────────────────────────────────────────
+  const worker = workroom.command("worker").description("Manage the workroom worker — the agent identity that executes hired tasks.");
+
+  worker
+    .command("init")
+    .description("Initialize the workroom worker identity and configuration.")
+    .option("--name <name>", "Worker display name", "Worker")
+    .option("--model <model>", "Preferred LLM model for task execution")
+    .action(async (opts) => {
+      const workerDir = path.join(ARC402_DIR, "worker");
+      const memoryDir = path.join(workerDir, "memory");
+      const skillsDir = path.join(workerDir, "skills");
+
+      fs.mkdirSync(memoryDir, { recursive: true });
+      fs.mkdirSync(skillsDir, { recursive: true });
+
+      // Generate default worker SOUL.md
+      const soulPath = path.join(workerDir, "SOUL.md");
+      if (!fs.existsSync(soulPath)) {
+        fs.writeFileSync(soulPath, `# Worker Identity — ${opts.name}
+
+You are a professional worker operating under an ARC-402 governed workroom.
+
+## Your role
+- Execute hired tasks within governance bounds
+- Produce high-quality deliverables on deadline
+- Follow the task specification precisely
+- Report issues early if the task cannot be completed as specified
+
+## What you have access to
+- The task specification from the hiring agreement
+- Skills relevant to your registered capabilities
+- Accumulated learnings from previous jobs (in memory/learnings.md)
+- Network access only to policy-approved hosts
+
+## What you do NOT have access to
+- The operator's personal conversations or memory
+- The operator's other agents or their state
+- Network hosts not in the workroom policy
+- Files outside the workroom
+
+## How you learn
+After completing each job, reflect on:
+- What techniques worked well
+- What patterns you noticed in the task
+- What domain knowledge you acquired
+- What you would do differently next time
+
+Write these learnings concisely. They will be available on your next job.
+
+## Professional standards
+- Deliver on time or communicate blockers before the deadline
+- Never fabricate data or claim work was done when it wasn't
+- If the task is unclear, produce the best interpretation and document assumptions
+- Every deliverable must be verifiable against the task spec
+`);
+        console.log(`✓ Worker SOUL.md created: ${soulPath}`);
+      } else {
+        console.log(`✓ Worker SOUL.md already exists: ${soulPath}`);
+      }
+
+      // Generate default MEMORY.md
+      const memoryPath = path.join(workerDir, "MEMORY.md");
+      if (!fs.existsSync(memoryPath)) {
+        fs.writeFileSync(memoryPath, `# Worker Memory
+
+*Last updated: ${new Date().toISOString().split("T")[0]}*
+
+## Job count: 0
+## Total earned: 0 ETH
+
+## Learnings
+
+No jobs completed yet. Learnings will accumulate here as the worker completes hired tasks.
+`);
+        console.log(`✓ Worker MEMORY.md created: ${memoryPath}`);
+      }
+
+      // Generate learnings.md
+      const learningsPath = path.join(memoryDir, "learnings.md");
+      if (!fs.existsSync(learningsPath)) {
+        fs.writeFileSync(learningsPath, `# Accumulated Learnings
+
+*Distilled from completed jobs. Available to the worker on every new task.*
+
+---
+
+No learnings yet. Complete your first hired task to start accumulating expertise.
+`);
+        console.log(`✓ Learnings file created: ${learningsPath}`);
+      }
+
+      // Worker config
+      const configPath = path.join(workerDir, "config.json");
+      if (!fs.existsSync(configPath)) {
+        const config = {
+          name: opts.name,
+          model: opts.model || "default",
+          capabilities: [],
+          created: new Date().toISOString(),
+          job_count: 0,
+          total_earned_eth: "0",
+        };
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+        console.log(`✓ Worker config created: ${configPath}`);
+      }
+
+      console.log(`\nWorker initialized at: ${workerDir}`);
+      console.log("Next: customize the worker SOUL.md and add skills.");
+      console.log("  arc402 workroom worker set-soul <file>");
+      console.log("  arc402 workroom worker set-skills <dir>");
+    });
+
+  worker
+    .command("status")
+    .description("Show worker identity, job count, learnings, and configuration.")
+    .action(async () => {
+      const workerDir = path.join(ARC402_DIR, "worker");
+      const configPath = path.join(workerDir, "config.json");
+
+      if (!fs.existsSync(configPath)) {
+        console.error("Worker not initialized. Run: arc402 workroom worker init");
+        process.exit(1);
+      }
+
+      const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      const memoryDir = path.join(workerDir, "memory");
+      const jobFiles = fs.existsSync(memoryDir)
+        ? fs.readdirSync(memoryDir).filter(f => f.startsWith("job-")).length
+        : 0;
+      const learningsPath = path.join(memoryDir, "learnings.md");
+      const learningsSize = fs.existsSync(learningsPath)
+        ? fs.statSync(learningsPath).size
+        : 0;
+      const skillsDir = path.join(workerDir, "skills");
+      const skillCount = fs.existsSync(skillsDir)
+        ? fs.readdirSync(skillsDir).length
+        : 0;
+
+      console.log("ARC-402 Workroom Worker");
+      console.log("───────────────────────");
+      console.log(`Name:          ${config.name}`);
+      console.log(`Model:         ${config.model}`);
+      console.log(`Created:       ${config.created}`);
+      console.log(`Jobs done:     ${config.job_count}`);
+      console.log(`Job memories:  ${jobFiles}`);
+      console.log(`Learnings:     ${learningsSize > 200 ? Math.round(learningsSize / 1024) + " KB" : "empty"}`);
+      console.log(`Skills:        ${skillCount}`);
+      console.log(`Total earned:  ${config.total_earned_eth} ETH`);
+    });
+
+  worker
+    .command("set-soul <file>")
+    .description("Upload a custom worker SOUL.md.")
+    .action(async (file) => {
+      if (!fs.existsSync(file)) {
+        console.error(`File not found: ${file}`);
+        process.exit(1);
+      }
+      const dest = path.join(ARC402_DIR, "worker", "SOUL.md");
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(file, dest);
+      console.log(`✓ Worker SOUL.md updated from: ${file}`);
+    });
+
+  worker
+    .command("set-skills <dir>")
+    .description("Copy skills into the workroom worker.")
+    .action(async (dir) => {
+      if (!fs.existsSync(dir)) {
+        console.error(`Directory not found: ${dir}`);
+        process.exit(1);
+      }
+      const dest = path.join(ARC402_DIR, "worker", "skills");
+      fs.mkdirSync(dest, { recursive: true });
+      // Copy all files from source to dest
+      const files = fs.readdirSync(dir);
+      for (const f of files) {
+        const src = path.join(dir, f);
+        const dst = path.join(dest, f);
+        if (fs.statSync(src).isFile()) {
+          fs.copyFileSync(src, dst);
+        } else if (fs.statSync(src).isDirectory()) {
+          // Recursive copy for skill directories
+          fs.cpSync(src, dst, { recursive: true });
+        }
+      }
+      console.log(`✓ ${files.length} items copied to worker skills`);
+    });
+
+  worker
+    .command("memory")
+    .description("Show the worker's accumulated learnings.")
+    .action(async () => {
+      const learningsPath = path.join(ARC402_DIR, "worker", "memory", "learnings.md");
+      if (!fs.existsSync(learningsPath)) {
+        console.log("No learnings yet. Complete a hired task first.");
+        return;
+      }
+      console.log(fs.readFileSync(learningsPath, "utf-8"));
+    });
+
+  worker
+    .command("memory-reset")
+    .description("Clear the worker's accumulated memory (start fresh).")
+    .action(async () => {
+      const memoryDir = path.join(ARC402_DIR, "worker", "memory");
+      if (fs.existsSync(memoryDir)) {
+        const files = fs.readdirSync(memoryDir);
+        for (const f of files) fs.unlinkSync(path.join(memoryDir, f));
+        fs.writeFileSync(path.join(memoryDir, "learnings.md"), `# Accumulated Learnings\n\n*Reset: ${new Date().toISOString()}*\n\nNo learnings yet.\n`);
+      }
+      // Reset job count in config
+      const configPath = path.join(ARC402_DIR, "worker", "config.json");
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        config.job_count = 0;
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      }
+      console.log("✓ Worker memory cleared. Starting fresh.");
+    });
+
+  // ── receipts + earnings ──────────────────────────────────────────────────
+  workroom
+    .command("receipts")
+    .description("List all execution receipts from completed jobs.")
+    .action(async () => {
+      const receiptsDir = path.join(ARC402_DIR, "receipts");
+      if (!fs.existsSync(receiptsDir)) {
+        console.log("No receipts yet.");
+        return;
+      }
+      const files = fs.readdirSync(receiptsDir).filter(f => f.endsWith(".json")).sort();
+      if (files.length === 0) {
+        console.log("No receipts yet.");
+        return;
+      }
+      console.log(`${files.length} execution receipt(s):\n`);
+      for (const f of files) {
+        try {
+          const receipt = JSON.parse(fs.readFileSync(path.join(receiptsDir, f), "utf-8"));
+          const id = receipt.agreement_id || f.replace(".json", "");
+          const time = receipt.completed_at || "unknown";
+          const hash = receipt.deliverable_hash ? receipt.deliverable_hash.slice(0, 10) + "..." : "—";
+          console.log(`  ${id}  ${time}  deliverable: ${hash}`);
+        } catch {
+          console.log(`  ${f}  (unreadable)`);
+        }
+      }
+    });
+
+  workroom
+    .command("receipt <agreementId>")
+    .description("Show full execution receipt for a specific job.")
+    .action(async (agreementId) => {
+      const receiptPath = path.join(ARC402_DIR, "receipts", `${agreementId}.json`);
+      if (!fs.existsSync(receiptPath)) {
+        console.error(`No receipt found for agreement: ${agreementId}`);
+        process.exit(1);
+      }
+      console.log(fs.readFileSync(receiptPath, "utf-8"));
+    });
+
+  workroom
+    .command("earnings")
+    .description("Show total earnings from completed jobs.")
+    .option("--period <period>", "Time period (e.g. 7d, 30d, all)", "all")
+    .action(async (opts) => {
+      const configPath = path.join(ARC402_DIR, "worker", "config.json");
+      if (!fs.existsSync(configPath)) {
+        console.log("No worker configured. Run: arc402 workroom worker init");
+        return;
+      }
+      const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      console.log("ARC-402 Earnings");
+      console.log("────────────────");
+      console.log(`Total earned:  ${config.total_earned_eth} ETH`);
+      console.log(`Jobs completed: ${config.job_count}`);
+      if (config.job_count > 0) {
+        const avg = (parseFloat(config.total_earned_eth) / config.job_count).toFixed(6);
+        console.log(`Average/job:   ${avg} ETH`);
+      }
+    });
+
+  workroom
+    .command("history")
+    .description("Show job history with outcomes and earnings.")
+    .action(async () => {
+      const memoryDir = path.join(ARC402_DIR, "worker", "memory");
+      if (!fs.existsSync(memoryDir)) {
+        console.log("No job history yet.");
+        return;
+      }
+      const jobFiles = fs.readdirSync(memoryDir).filter(f => f.startsWith("job-")).sort();
+      if (jobFiles.length === 0) {
+        console.log("No job history yet.");
+        return;
+      }
+      console.log(`${jobFiles.length} completed job(s):\n`);
+      for (const f of jobFiles) {
+        const content = fs.readFileSync(path.join(memoryDir, f), "utf-8");
+        const firstLine = content.split("\n").find(l => l.startsWith("#")) || f;
+        console.log(`  ${f.replace(".md", "")}  ${firstLine.replace(/^#+\s*/, "")}`);
       }
     });
 

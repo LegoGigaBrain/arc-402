@@ -1,13 +1,19 @@
 #!/bin/bash
 # ARC-402 Workroom Entrypoint
 # Runs as root to set up iptables, then drops to workroom user for the daemon.
+# Supports both base workroom policy and Arena policy overlay.
 set -euo pipefail
 
 POLICY_FILE="/workroom/.arc402/openshell-policy.yaml"
+ARENA_POLICY="/workroom/.arc402/arena-policy.yaml"
 RULES_LOG="/workroom/.arc402/iptables-rules.log"
 DAEMON_ENTRY="/workroom/runtime/dist/daemon/index.js"
 
 echo "[workroom] ARC-402 Workroom starting..."
+
+# ── 0. Set up Arena directories ─────────────────────────────────────────────
+mkdir -p /workroom/arena/{feed,profile,state,queue}
+chown -R workroom:workroom /workroom/arena
 
 # ── 1. Validate policy file exists ──────────────────────────────────────────
 if [ ! -f "$POLICY_FILE" ]; then
@@ -55,7 +61,32 @@ while IFS=: read -r HOST PORT; do
   echo "[workroom] ALLOW: $HOST:$PORT ($(echo "$IPS" | wc -l | tr -d ' ') IPs)"
 done < <(/policy-parser.sh "$POLICY_FILE")
 
-echo "[workroom] $ALLOWED_COUNT iptables rules applied"
+echo "[workroom] $ALLOWED_COUNT iptables rules applied from base policy"
+
+# ── 3b. Parse Arena policy if present ───────────────────────────────────────
+if [ -f "$ARENA_POLICY" ]; then
+  ARENA_COUNT=0
+  while IFS=: read -r HOST PORT; do
+    [ -z "$HOST" ] && continue
+    PORT="${PORT:-443}"
+    IPS=$(getent ahosts "$HOST" 2>/dev/null | awk '{print $1}' | sort -u || true)
+    if [ -z "$IPS" ]; then
+      echo "[workroom] WARN: Could not resolve arena host $HOST — skipping"
+      continue
+    fi
+    for IP in $IPS; do
+      # Check if rule already exists (avoid duplicates from base policy)
+      if ! iptables -C OUTPUT -p tcp -d "$IP" --dport "$PORT" -j ACCEPT 2>/dev/null; then
+        iptables -A OUTPUT -p tcp -d "$IP" --dport "$PORT" -j ACCEPT
+        ARENA_COUNT=$((ARENA_COUNT + 1))
+      fi
+    done
+    echo "[workroom] ARENA ALLOW: $HOST:$PORT"
+  done < <(/policy-parser.sh "$ARENA_POLICY" 2>/dev/null || true)
+  echo "[workroom] $ARENA_COUNT additional iptables rules from Arena policy"
+else
+  echo "[workroom] No Arena policy found — Arena network rules skipped"
+fi
 
 # ── 4. Log applied rules ───────────────────────────────────────────────────
 iptables -L OUTPUT -n --line-numbers > "$RULES_LOG" 2>/dev/null || true

@@ -47,9 +47,6 @@ export default function Home() {
           <a href="https://github.com/LegoGigaBrain/arc-402" className={styles.ctaSecondary}>
             GitHub
           </a>
-          <a href="https://app.arc402.xyz" className={styles.ctaSecondary}>
-            Open app
-          </a>
         </div>
       </section>
 

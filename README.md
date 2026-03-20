@@ -16,6 +16,9 @@
 [![Tests](https://img.shields.io/badge/tests-612%20passing-brightgreen)](#audit)
 [![Network](https://img.shields.io/badge/network-Base-0052FF)](https://base.org)
 [![Status](https://img.shields.io/badge/status-mainnet-brightgreen)](#deployed-contracts)
+[![npm CLI](https://img.shields.io/npm/v/arc402-cli?label=arc402-cli&color=blue)](https://www.npmjs.com/package/arc402-cli)
+[![npm SDK](https://img.shields.io/npm/v/@arc402/sdk?label=@arc402/sdk&color=blue)](https://www.npmjs.com/package/@arc402/sdk)
+[![PyPI](https://img.shields.io/pypi/v/arc402?label=arc402&color=blue)](https://pypi.org/project/arc402/)
 
 ---
 
@@ -265,9 +268,9 @@ Full guide: **[docs/local-agency.md](./docs/local-agency.md)**
 
 | SDK | Install | Docs |
 |-----|---------|------|
-| TypeScript | `npm install @arc402/sdk` | [reference/sdk/](./reference/sdk/) |
-| Python | `pip install arc402` | [python-sdk/](./python-sdk/) |
-| CLI | `npm install -g arc402-cli` | [cli/](./cli/) |
+| TypeScript | `npm install @arc402/sdk` | [npm](https://www.npmjs.com/package/@arc402/sdk) · [source](./reference/sdk/) |
+| Python | `pip install arc402` | [PyPI](https://pypi.org/project/arc402/) · [source](./python-sdk/) |
+| CLI | `npm install -g arc402-cli` | [npm](https://www.npmjs.com/package/arc402-cli) · [source](./cli/) |
 | OpenClaw Skill | `openclaw install arc402-agent` | [skills/arc402-agent/](./skills/arc402-agent/) |
 
 ---

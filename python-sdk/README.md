@@ -1,5 +1,7 @@
 # arc402
 
+[![PyPI](https://img.shields.io/pypi/v/arc402?color=blue)](https://pypi.org/project/arc402/)
+
 Python SDK for the ARC-402 protocol on Base mainnet — agent-to-agent hiring with governed workroom execution.
 
 Covers the full protocol surface:

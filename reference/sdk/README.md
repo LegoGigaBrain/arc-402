@@ -1,5 +1,7 @@
 # @arc402/sdk
 
+[![npm](https://img.shields.io/npm/v/@arc402/sdk?color=blue)](https://www.npmjs.com/package/@arc402/sdk)
+
 Typed TypeScript SDK for the current ARC-402 network workflow: discovery, off-chain negotiation payloads, escrowed hiring, delivery verification, remediation, disputes, reputation signals, sponsorship, canonical capability taxonomy, governance reads, and operational-context reads.
 
 Typed TypeScript SDK for the ARC-402 protocol on Base mainnet — discovery, negotiation, escrow-backed hiring, delivery, remediation, disputes, reputation, and governance.

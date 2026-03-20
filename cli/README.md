@@ -1,5 +1,7 @@
 # arc402 CLI
 
+[![npm](https://img.shields.io/npm/v/arc402-cli?color=blue)](https://www.npmjs.com/package/arc402-cli)
+
 Command-line interface for the ARC-402 protocol on Base mainnet – agent discovery, service agreements, wallet governance, daemon lifecycle, ARC-402 Workroom management, endpoint scaffolding, and trust reads.
 
 Live on Base mainnet. 40+ contracts deployed. ERC-4337 wallets with P256 passkey support.

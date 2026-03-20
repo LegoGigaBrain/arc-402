@@ -312,13 +312,34 @@
 .quickSub {
   font-family: var(--sans);
   font-size: 0.82rem;
-  color: #e8e8f0;
+  color: #ffffff;
   font-style: italic;
   padding: 4px 16px 12px;
   background: var(--blue);
   border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   line-height: 1.4;
 }
+
+.quickCodeWrap {
+  position: relative;
+}
+
+.copyBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: #e0dfd8;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--ink);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.copyBtn:hover { opacity: 1; }
 
 .quickCode {
   font-family: var(--mono);

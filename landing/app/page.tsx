@@ -1,3 +1,5 @@
+'use client'
+
 import styles from './page.module.css'
 
 const CONTRACTS = [
@@ -194,7 +196,15 @@ export default function Home() {
             <div key={block.label} className={styles.quickBlock}>
               <div className={styles.quickLabel}>{block.label}</div>
               <div className={styles.quickSub}>{block.sub}</div>
-              <pre className={styles.quickCode}>{block.code}</pre>
+              <div className={styles.quickCodeWrap}>
+                <pre className={styles.quickCode}>{block.code}</pre>
+                <button
+                  className={styles.copyBtn}
+                  onClick={() => { navigator.clipboard.writeText(block.code.replace(/\\\n\s*/g, '')); }}
+                >
+                  copy
+                </button>
+              </div>
             </div>
           ))}
           <p className={styles.quickAlt}>

@@ -1,0 +1,300 @@
+/* ─── ARC-402 Landing Page ─────────────────────────────────────────────────── */
+/* Typography: VT323 (display/logo) + IBM Plex Sans (body) */
+
+.main {
+  min-height: 100vh;
+  font-family: var(--font-ibm-plex), system-ui, sans-serif;
+}
+
+/* ── Hero ── */
+.hero {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 100px 24px 80px;
+  text-align: center;
+}
+
+.logo {
+  font-family: var(--font-vt323), monospace;
+  font-size: clamp(3.5rem, 8vw, 6rem);
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  margin: 0 0 12px;
+  background: linear-gradient(135deg, #818cf8 0%, #6366f1 50%, #a78bfa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.tagline {
+  font-family: var(--font-vt323), monospace;
+  font-size: clamp(1.2rem, 3vw, 1.6rem);
+  color: #818cf8;
+  margin: 0 0 28px;
+  letter-spacing: 0.02em;
+}
+
+.subtitle {
+  font-size: 1.05rem;
+  color: #8a8a9a;
+  line-height: 1.7;
+  max-width: 600px;
+  margin: 0 auto 40px;
+}
+
+.ctas {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.ctaPrimary {
+  padding: 14px 32px;
+  background: #6366f1;
+  color: #fff;
+  border-radius: 12px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: background 0.2s;
+}
+.ctaPrimary:hover { background: #4f46e5; }
+
+.ctaSecondary {
+  padding: 14px 28px;
+  background: transparent;
+  color: #818cf8;
+  border: 1px solid #2a2a4a;
+  border-radius: 12px;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+}
+.ctaSecondary:hover { border-color: #6366f1; }
+
+/* ── Sections ── */
+.section {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+}
+
+.sectionTitle {
+  font-family: var(--font-vt323), monospace;
+  font-size: 2rem;
+  font-weight: 400;
+  margin: 0 0 32px;
+  color: #d0d0dc;
+  letter-spacing: 0.03em;
+}
+
+.sectionIntro {
+  font-size: 1rem;
+  color: #8a8a9a;
+  line-height: 1.7;
+  margin: 0 0 32px;
+}
+
+/* ── Protocol flow ── */
+.protocolFlow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.flowItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 20px 24px;
+  background: #0c0c10;
+  border: 1px solid #16161e;
+  transition: border-color 0.2s;
+}
+.flowItem:first-child { border-radius: 14px 14px 0 0; }
+.flowItem:last-child { border-radius: 0 0 14px 14px; }
+.flowItem:hover { border-color: #2a2a4a; }
+
+.flowStep {
+  font-family: var(--font-vt323), monospace;
+  font-size: 1.4rem;
+  color: #4338ca;
+  flex-shrink: 0;
+  width: 32px;
+  margin-top: 2px;
+}
+
+.flowLabel {
+  font-family: var(--font-vt323), monospace;
+  font-size: 1.1rem;
+  color: #c0c0cc;
+  margin-bottom: 6px;
+  letter-spacing: 0.04em;
+}
+
+.flowDesc {
+  font-size: 0.85rem;
+  color: #666678;
+  line-height: 1.6;
+}
+
+/* ── Grid cards ── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: #0c0c10;
+  border: 1px solid #16161e;
+  border-radius: 14px;
+  padding: 24px;
+  transition: border-color 0.2s;
+}
+.card:hover { border-color: #2a2a4a; }
+
+.cardIcon {
+  font-size: 1.5rem;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.cardTitle {
+  font-family: var(--font-vt323), monospace;
+  font-size: 1.1rem;
+  font-weight: 400;
+  color: #c0c0cc;
+  margin: 0 0 8px;
+  letter-spacing: 0.02em;
+}
+
+.cardDesc {
+  font-size: 0.82rem;
+  color: #666678;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ── Code blocks ── */
+.codeBlocks {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.codeBlock {
+  background: #0c0c10;
+  border: 1px solid #16161e;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.codeLabel {
+  font-family: var(--font-vt323), monospace;
+  font-size: 0.85rem;
+  color: #818cf8;
+  padding: 12px 20px 0;
+  letter-spacing: 0.03em;
+}
+
+.code {
+  font-family: var(--font-vt323), monospace;
+  font-size: 0.95rem;
+  color: #c0c0cc;
+  padding: 10px 20px 16px;
+  margin: 0;
+  overflow-x: auto;
+  line-height: 1.6;
+}
+
+/* ── Stats ── */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.stat {
+  background: #0c0c10;
+  border: 1px solid #16161e;
+  border-radius: 14px;
+  padding: 20px;
+  text-align: center;
+}
+
+.statValue {
+  font-family: var(--font-vt323), monospace;
+  font-size: 1.6rem;
+  color: #818cf8;
+  margin-bottom: 6px;
+}
+
+.statLabel {
+  font-size: 0.72rem;
+  color: #555566;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── Thesis ── */
+.thesis {
+  text-align: center;
+  padding: 60px 24px;
+  border-top: 1px solid #16161e;
+  border-bottom: 1px solid #16161e;
+}
+
+.thesisText {
+  font-family: var(--font-vt323), monospace;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  color: #d0d0dc;
+  margin: 0 0 16px;
+  letter-spacing: 0.02em;
+}
+
+.thesisSub {
+  font-size: 1rem;
+  color: #666678;
+  margin: 0;
+}
+
+/* ── Footer ── */
+.footer {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.footerLinks {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.footerLinks a {
+  color: #555566;
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: color 0.2s;
+}
+.footerLinks a:hover { color: #818cf8; }
+
+.footerNote {
+  font-size: 0.75rem;
+  color: #333344;
+  margin: 0;
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .hero { padding: 60px 20px 60px; }
+  .section { padding: 0 20px 60px; }
+  .flowItem { flex-direction: column; gap: 8px; }
+  .flowStep { width: auto; }
+}

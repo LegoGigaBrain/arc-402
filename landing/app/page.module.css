@@ -280,45 +280,52 @@
   letter-spacing: 0.1em;
 }
 
-/* ── Contract directory ── */
-.dirSection {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 80px 32px;
+/* ── Quick start ── */
+.quickBlocks {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.dirTable {
-  width: 100%;
-  border-collapse: collapse;
+.quickBlock {
+  border: 1px solid #e0dfd8;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.quickLabel {
   font-family: var(--mono);
-  font-size: 0.82rem;
-}
-
-.dirTable thead tr {
-  border-bottom: 1px solid #e0dfd8;
-}
-
-.dirTable th {
-  text-align: left;
-  color: var(--ink-faint);
-  font-weight: 400;
-  padding: 8px 0;
   font-size: 0.72rem;
+  color: var(--blue);
   letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 10px 16px 6px;
+  background: #f2f1ee;
+  border-bottom: 1px solid #e8e7e2;
 }
 
-.dirTable td {
-  padding: 10px 0;
-  border-bottom: 1px solid #f0efea;
-  vertical-align: middle;
+.quickCode {
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  color: var(--ink);
+  background: #f8f7f4;
+  padding: 14px 16px;
+  margin: 0;
+  overflow-x: auto;
+  line-height: 1.7;
 }
 
-.dirTable tr:hover td { background: #f2f1ee; }
+.quickAlt {
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+  padding: 4px 0;
+}
 
-.dirPerm { color: var(--ink-faint); padding-right: 20px; }
-.dirName { color: var(--ink); padding-right: 24px; }
-.dirAddr { color: var(--blue); text-decoration: none; }
-.dirAddr:hover { text-decoration: underline; }
+.quickAlt a {
+  color: var(--blue);
+  text-decoration: none;
+}
+.quickAlt a:hover { text-decoration: underline; }
 
 /* ── Thesis ── */
 .thesisSection {

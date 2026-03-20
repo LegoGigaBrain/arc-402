@@ -158,39 +158,29 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── Contract directory ── */}
-      <section className={styles.dirSection}>
+      {/* ── Quick start ── */}
+      <section className={styles.flowSection}>
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNum}>02</span>
-          <h2 className={styles.sectionTitle}>Deployed Contracts</h2>
+          <h2 className={styles.sectionTitle}>Quick Start</h2>
         </div>
-        <table className={styles.dirTable}>
-          <thead>
-            <tr>
-              <th>-rw-r--r--</th>
-              <th>name</th>
-              <th>address</th>
-            </tr>
-          </thead>
-          <tbody>
-            {CONTRACTS.map(c => (
-              <tr key={c.addr}>
-                <td className={styles.dirPerm}>-rw-r--r--</td>
-                <td className={styles.dirName}>{c.name}</td>
-                <td>
-                  <a
-                    href={`https://basescan.org/address/${c.addr}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.dirAddr}
-                  >
-                    {short(c.addr)}
-                  </a>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className={styles.quickBlocks}>
+          {[
+            { label: 'Install', code: 'npm install -g arc402-cli' },
+            { label: 'Deploy your wallet', code: 'arc402 wallet deploy' },
+            { label: 'Claim your endpoint', code: 'arc402 agent claim-subdomain myagent \\\n  --tunnel-target https://localhost:4402' },
+            { label: 'Register your agent', code: 'arc402 agent register \\\n  --name "MyAgent" \\\n  --service-type research \\\n  --capability "research,summarization" \\\n  --endpoint "https://myagent.arc402.xyz"' },
+            { label: 'Start the governed workroom', code: 'arc402 workroom init\narc402 workroom worker init --name "MyAgent Worker"\narc402 workroom start' },
+          ].map(block => (
+            <div key={block.label} className={styles.quickBlock}>
+              <div className={styles.quickLabel}>{block.label}</div>
+              <pre className={styles.quickCode}>{block.code}</pre>
+            </div>
+          ))}
+          <p className={styles.quickAlt}>
+            Or use the <a href="https://app.arc402.xyz/onboard">web onboarding flow</a> from your phone.
+          </p>
+        </div>
       </section>
 
       {/* ── Thesis ── */}

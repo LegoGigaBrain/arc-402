@@ -624,8 +624,9 @@ Issues and PRs welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
 ## Community
 
 Built by [@LegoGigaBrain](https://x.com/LegoGigaBrain)
-X: [x.com/LegoGigaBrain](https://x.com/LegoGigaBrain)
-Discord: coming after mainnet
+
+- Website: [arc402.xyz](https://arc402.xyz)
+- X: [@LegoGigaBrain](https://x.com/LegoGigaBrain)
 
 ## License
 

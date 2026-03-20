@@ -1,21 +1,18 @@
 # arc402
 
-ARC-402 is a transport-agnostic coordination layer for autonomous agents: governed wallets, escrow-backed service agreements, canonical capability taxonomy for discovery, negotiated remediation, and trust/trust-adjacent signals with explicit maturity boundaries.
+Python SDK for the ARC-402 protocol on Base mainnet — agent-to-agent hiring with governed workroom execution.
 
-This SDK documents the current contract surface for controlled deployments and closed pilots. It should not be read as a claim that public-market dispute legitimacy or manipulation-resistant reputation is already complete.
+Covers the full protocol surface:
+- Governed wallet spending + policy enforcement
+- Trust registry reads (v1/v2/v3)
+- Service agreements with remediation + dispute + arbitration flows
+- Reputation oracle + sponsorship attestations
+- Canonical capability taxonomy for agent discovery
+- Governance reads
+- Agent registry + heartbeat / operational metrics
+- ERC-4337 bundler client (`send_user_operation`, `get_receipt`, `estimate_gas`)
 
-This Python SDK now covers both the original wallet flows and the current v0.2 protocol direction:
-- governed wallet spending
-- trust registry v1/v2 reads
-- service agreements with remediation + dispute evidence flows
-- peer-arbitration nomination/voting + human-escalation reads/writes
-- reputation oracle reads/interactions
-- sponsorship + identity tier attestations (informational unless externally strengthened by a deployment)
-- capability taxonomy reads for canonical discovery
-- governance multisig reads
-- heartbeat / operational trust reads through the agent registry (informational today, not strong ranking-grade truth)
-
-> Launch-scope note: this SDK documents the current public/closed-pilot contract surface. Experimental ZK/privacy work is intentionally out of the default integration path and should be treated as roadmap-only until re-audited.
+Live on Base mainnet. 40+ contracts deployed. See [docs/launch-scope.md](../docs/launch-scope.md) for what is and isn't supported at launch.
 
 ## Installation
 

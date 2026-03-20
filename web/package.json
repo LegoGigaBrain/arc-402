@@ -4,9 +4,10 @@
   "description": "ARC-402 mobile signing page — arc402.xyz/sign",
   "private": true,
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "preview": "next start"
   },
   "dependencies": {
     "@coinbase/wallet-sdk": "^4.2.3",

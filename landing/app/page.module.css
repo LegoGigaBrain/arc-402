@@ -306,7 +306,7 @@
   color: #9ca3af;
   letter-spacing: 0.08em;
   padding: 12px 16px 4px;
-  background: var(--ink);
+  background: #2a2a2a;
 }
 
 .quickSub {
@@ -314,8 +314,8 @@
   font-size: 0.82rem;
   color: #d0d0d0;
   padding: 4px 16px 12px;
-  background: var(--ink);
-  border-bottom: 1px solid #1e1e1e;
+  background: #2a2a2a;
+  border-bottom: 1px solid #3a3a3a;
   line-height: 1.4;
 }
 

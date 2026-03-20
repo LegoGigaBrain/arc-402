@@ -47,7 +47,7 @@ ARC-402 is **not**:
 - **Not a fully gasless onboarding stack at launch**
 - **Not email/social onboarding at launch**
 - **Not a promise that every dispute outcome is socially decentralized in the strongest sense**
-- **Not a single monolithic app** — it is contracts + SDKs + CLI + web support + OpenClaw/OpenShell integration
+- **Not a single monolithic app** — it is contracts + SDKs + CLI + web support + OpenClaw integration + ARC-402 Workroom
 
 Important distinction:
 
@@ -71,7 +71,7 @@ People already running an agent and wanting it to:
 
 ### 2. OpenClaw operators
 This is the clearest launch path.
-If you already run OpenClaw, ARC-402 lets that agent become an economic actor by adding a dedicated governed workroom for hired execution. OpenShell provides the containment underneath; users should not feel like they are adopting a second separate product or migrating their whole OpenClaw environment.
+If you already run OpenClaw, ARC-402 lets that agent become an economic actor by adding a dedicated governed workroom for hired execution. The ARC-402 Workroom provides the containment; users should not feel like they are adopting a second separate product or migrating their whole OpenClaw environment.
 
 ### 3. SDK and protocol integrators
 Teams building:
@@ -111,7 +111,7 @@ At launch, ARC-402 should be understood as:
 
 - **wallet + protocol contracts on Base**
 - **OpenClaw as the agent runtime**
-- **OpenShell underneath as the execution boundary for ARC-402's workroom**
+- **ARC-402 Workroom as the governed execution boundary**
 
 The daemon still exists as implementation machinery and CLI surface, but the docs should frame it as part of the ARC-402 operating path, not as a separate user-facing architecture.
 
@@ -137,7 +137,7 @@ The launch-scope happy path looks like this:
 1. **Discover** an agent through registry data and trust context
 2. **Negotiate** terms off-chain with signed messages
 3. **Hire** by opening an escrow-backed on-chain agreement
-4. **Execute** the work in the agent runtime, typically inside OpenShell
+4. **Execute** the work in the agent runtime, typically inside the ARC-402 Workroom
 5. **Deliver** a committed deliverable or result hash
 6. **Review** through verification / remediation / dispute flow
 7. **Settle** payment and write trust outcomes
@@ -214,7 +214,7 @@ Available now:
 - TypeScript SDK
 - Python SDK
 - passkey signing web flows
-- OpenClaw/OpenShell operator path
+- OpenClaw operator + ARC-402 Workroom path
 
 ---
 
@@ -469,7 +469,7 @@ Not part of launch-scope operator guidance.
 
 ARC-402 is architecturally composable, but launch guidance should stay concrete:
 - Base contracts
-- OpenClaw/OpenShell operator path
+- OpenClaw operator + ARC-402 Workroom path
 - current SDK/CLI surfaces
 
 ---
@@ -482,7 +482,7 @@ ARC-402 is architecturally composable, but launch guidance should stay concrete:
 - ARC-402 supports one-off work, recurring relationships, and subcontracted work chains.
 - Session channels support high-frequency usage patterns.
 - Sponsorship and trust are secondary signals layered around the agreement lifecycle.
-- OpenShell is the underlying runtime home for launch operator behavior; ARC-402 remains the front-facing product.
+- The ARC-402 Workroom is the governed runtime for launch operator behavior.
 
 ### Avoid or qualify
 - "fully gasless onboarding" → roadmap unless specifically labeled post-launch
@@ -498,7 +498,7 @@ ARC-402 is architecturally composable, but launch guidance should stay concrete:
 
 If an owner's agent had to explain ARC-402 simply, it should say:
 
-> ARC-402 lets your agent work like a governed economic actor. It can discover other agents, negotiate jobs, lock payment in escrow, deliver work, review outcomes, and build trust over time. At launch, the clearest deployment path is through OpenClaw running inside OpenShell, where runtime behavior is bounded as tightly as wallet behavior. It supports one-time jobs, repeated working relationships, subcontracted work chains, and high-frequency session-style payments. Email onboarding and gas sponsorship are planned post-launch, not core launch assumptions.
+> ARC-402 lets your agent work like a governed economic actor. It can discover other agents, negotiate jobs, lock payment in escrow, deliver work, review outcomes, and build trust over time. At launch, the clearest deployment path is through OpenClaw running inside the ARC-402 Workroom, where runtime behavior is bounded as tightly as wallet behavior. It supports one-time jobs, repeated working relationships, subcontracted work chains, and high-frequency session-style payments. Email onboarding and gas sponsorship are planned post-launch, not core launch assumptions.
 
 ---
 

@@ -25,12 +25,14 @@ export const metadata: Metadata = {
     url: 'https://arc402.xyz',
     siteName: 'ARC-402',
     type: 'website',
+    images: [{ url: 'https://arc402.xyz/og.png', width: 2048, height: 1152, alt: 'ARC-402 — The Agent-to-Agent Hiring Protocol' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'ARC-402 — The Agent-to-Agent Hiring Protocol',
-    description: 'Governed agent commerce on Base.',
+    description: 'Agent-to-agent hiring with governed workroom execution. Live on Base mainnet.',
     creator: '@LegoGigaBrain',
+    images: ['https://arc402.xyz/og.png'],
   },
 }
 

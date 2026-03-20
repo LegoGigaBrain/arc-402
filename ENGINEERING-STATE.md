@@ -148,6 +148,52 @@ Active v2 contracts (use these):
 
 ---
 
+## What Was Built (2026-03-20 Session — Handshake Contract)
+
+### Handshake Contract — DEPLOYED ON BASE MAINNET ✅
+
+| Item | Details |
+|------|---------|
+| Contract | `0x4F5A38Bb746d7E5d49d8fd26CA6beD141Ec2DDb3` |
+| Basescan | https://basescan.org/address/0x4f5a38bb746d7e5d49d8fd26ca6bed141ec2ddb3 |
+| Deploy tx | `0x8ad06c24092d2a30ffbccd6555034f8d2f484cf975f20bd66d088014954ab7ee` |
+| USDC allowed tx | `0x7e4150f8af27a991e8e145f778b34c34ac21904d8ecfe1a6acd359ce951ecd45` |
+| Owner | `0x59A32A792d0f25B0E0a4A4aFbFDf514b94B102fB` (deployer) |
+| Source | `reference/contracts/Handshake.sol` |
+| Tests | `reference/test/Handshake.t.sol` — 33/33 passing |
+| Spec | `specs/SPEC-HANDSHAKE.md` |
+| Deploy script | `reference/script/DeployHandshake.s.sol` |
+| CLI command | `arc402 shake send/batch/stats/check` (`cli/src/commands/arena-handshake.ts`) |
+| Size | 12.2 KB (under EIP-170) |
+
+**What it does:** Typed social-economic trust signals between agent wallets. 8 handshake types (Respect, Curiosity, Endorsement, Thanks, Collaboration, Challenge, Referral, Hello). Optional ETH or USDC tips forwarded directly to recipient. Batch mode for onboarding ritual. Anti-spam: 50/day cap, 1h pair cooldown, 280-char notes.
+
+**Contract never holds funds.** ETH forwarded via call, USDC via safeTransferFrom.
+
+**USDC (Base mainnet):** `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` — allowed on contract.
+
+**Wallet whitelist required:** Not in ARC402RegistryV2, so wallets must whitelist via PolicyEngine:
+```
+arc402 wallet whitelist-contract 0x4F5A38Bb746d7E5d49d8fd26CA6beD141Ec2DDb3
+```
+CLI auto-whitelist also built into `arc402 shake send` (first-run check).
+
+**Future (not deployed):**
+- `ARC402RegistryV3.sol` — adds `handshake` slot to ProtocolContracts struct (ready in repo)
+- `ARC402Wallet.v6-draft.sol` — wallet with auto-whitelist for registry contracts incl. handshake (ready in repo)
+- These ship together when Arena Phase 2 contracts are ready, avoiding multiple version bumps.
+
+### ARC Arena Spec — COMPLETE (32 sections)
+
+| Item | Location |
+|------|----------|
+| Full spec | `products/arc402/ARC-ARENA-SPEC.md` |
+| Version | v0.2 (32 sections) |
+
+Covers: city model (5 districts), core primitives, contract architecture, onchain/offchain split, CLI flows, user personas, arena mechanics, economy design, research squads, launch narrative, implementation phases, tech stack, security, success metrics.
+
+---
+
 ## What Was Built (2026-03-17 Session — Launch Day)
 
 ### GigaBrain Agent — FULLY OPERATIONAL ✅
@@ -331,6 +377,8 @@ Active v2 contracts (use these):
 | 33 | Passkey authentication | ✅ 2026-03-16 |
 | 34 | OpenShell integration | ✅ 2026-03-19 — premium one-click pass landed; provider-placeholder launch blocker fixed by ARC-402 secret overlay at daemon start; remaining blocker is remote state bridge / proxy validation inside sandbox |
 | 35 | Website (arc402.xyz) | ✅ 2026-03-17 — ready to build |
+| 36 | Handshake (Arena social primitive) | ✅ 2026-03-20 — deployed on Base mainnet |
+| 37 | ARC Arena (City of Agents) | ✅ 2026-03-20 — spec complete (32 sections), Phase 2+ |
 | 12 | Privacy model | 🔲 Post-launch |
 | 13 | ZK extensions | 🔲 Post-launch (ceremony) |
 | 15 | Transport agnostic | 🔲 Post-launch |

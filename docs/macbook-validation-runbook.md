@@ -70,6 +70,29 @@ Pass condition:
 
 If blocked, capture the exact failing layer from `arc402 openshell doctor`.
 
+### 2b. Sandbox RPC connectivity proof
+
+Before starting the daemon, verify the sandbox can reach Base RPC endpoints:
+
+```bash
+# Verify the policy allowlist includes RPC endpoints
+arc402 openshell policy list
+
+# Expected: base_rpc, base_rpc_alchemy, base_rpc_llama should all appear
+# If missing, apply the core-launch preset:
+arc402 openshell preset core-launch
+
+# Test RPC connectivity from inside the sandbox (if openshell exec is available):
+openshell sandbox exec arc402-daemon -- curl -s -o /dev/null -w "%{http_code}" https://base-mainnet.g.alchemy.com/v2/
+```
+
+Pass condition:
+- policy list shows Alchemy and Llama RPC endpoints alongside the public Base RPC
+- sandbox can reach Base RPC without `ERR_PROXY_TUNNEL`
+- if proxy is mandatory, `NO_PROXY` or direct HTTPS is configured for RPC hosts
+
+If blocked: the previous known blocker was `ERR_PROXY_TUNNEL` to Base RPC via `10.200.0.1:3128`. The fix is ensuring the OpenShell sandbox network policy explicitly allows outbound HTTPS to `base-mainnet.g.alchemy.com`, `base.llamarpc.com`, and `mainnet.base.org`.
+
 ### 3. Runtime launch proof
 
 ```bash

@@ -29,9 +29,11 @@ const PYTHON_BINARIES = [
   { path: "/usr/bin/python3" },
   { path: "/usr/local/bin/python3" },
 ];
-const DEFAULT_POLICY_KEYS = ["base_rpc", "arc402_relay", "bundler", "telegram"] as const;
+const DEFAULT_POLICY_KEYS = ["base_rpc", "base_rpc_alchemy", "base_rpc_llama", "arc402_relay", "bundler", "telegram"] as const;
 const CORE_LAUNCH_HOSTS = [
-  ["mainnet.base.org", "Base RPC"],
+  ["mainnet.base.org", "Base RPC (public)"],
+  ["base-mainnet.g.alchemy.com", "Base RPC (Alchemy)"],
+  ["base.llamarpc.com", "Base RPC (Llama)"],
   ["relay.arc402.xyz", "ARC-402 relay"],
   ["public.pimlico.io", "Bundler"],
   ["api.telegram.org", "Telegram notifications"],
@@ -99,6 +101,8 @@ function buildDefaultPolicy(): PolicyFile {
     },
     network_policies: {
       base_rpc: buildPolicyEntry("base-mainnet-rpc", "mainnet.base.org"),
+      base_rpc_alchemy: buildPolicyEntry("base-mainnet-rpc-alchemy", "base-mainnet.g.alchemy.com"),
+      base_rpc_llama: buildPolicyEntry("base-mainnet-rpc-llama", "base.llamarpc.com"),
       arc402_relay: buildPolicyEntry("arc402-relay", "relay.arc402.xyz"),
       bundler: buildPolicyEntry("pimlico-bundler", "public.pimlico.io"),
       telegram: buildPolicyEntry("telegram-notifications", "api.telegram.org"),

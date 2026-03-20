@@ -74,7 +74,7 @@ async function authorize() {
     const authorized = await check.authorizedMachineKeys(MACHINE_KEY);
 
     if (authorized) {
-      s.innerHTML = `<div class="done">[OK] Machine key authorized on-chain!</div><div style="margin-top:8px;font-size:0.8rem;color:#888">Tx: <a href="https://basescan.org/tx/${tx.hash}" target="_blank" style="color:#22c55e">${tx.hash}</a></div><div style="margin-top:8px;font-size:0.8rem;color:#888">Daemon can now run autonomously. Run: <code>arc402 daemon start</code></div>`;
+      s.innerHTML = `<div class="done">[OK] Machine key authorized on-chain!</div><div style="margin-top:8px;font-size:0.8rem;color:#888">Tx: <a href="https://basescan.org/tx/${tx.hash}" target="_blank" style="color:#22c55e">${tx.hash}</a></div><div style="margin-top:8px;font-size:0.8rem;color:#888">OpenShell now owns runtime startup for launch. Initialize with <code>arc402 openshell init</code>, then start via <code>arc402 daemon start</code>.</div>`;
     } else {
       s.innerHTML = '<span class="err">[Warning] Tx confirmed but key not showing as authorized. Check Basescan.</span>';
     }

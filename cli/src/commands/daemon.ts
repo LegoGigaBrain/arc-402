@@ -18,6 +18,7 @@ import {
   TEMPLATE_DAEMON_TOML,
 } from "../daemon/config";
 import {
+  buildOpenShellSecretExports,
   buildOpenShellSshConfig,
   DEFAULT_RUNTIME_REMOTE_ROOT,
   provisionFileToSandbox,
@@ -295,10 +296,17 @@ async function startDaemonBackground(sandboxName?: string, runtimeRemoteRoot?: s
     const { configPath, host } = buildOpenShellSshConfig(sandboxName);
     const remoteRoot = runtimeRemoteRoot ?? DEFAULT_RUNTIME_REMOTE_ROOT;
     const remoteDaemonEntry = path.posix.join(remoteRoot, "dist/daemon/index.js");
+    const secretExports = buildOpenShellSecretExports(true);
+    const remoteCommand = [
+      `mkdir -p ${REMOTE_ARC402_DIR}`,
+      `rm -f ${REMOTE_DAEMON_PID}`,
+      secretExports,
+      `nohup env HOME=/sandbox ARC402_DAEMON_PROCESS=1 node ${remoteDaemonEntry} > /tmp/arc402-daemon-stdout.log 2> /tmp/arc402-daemon-stderr.log < /dev/null &`,
+    ].filter(Boolean).join(" && ");
     child = spawn("ssh", [
       "-F", configPath,
       host,
-      `mkdir -p ${REMOTE_ARC402_DIR} && rm -f ${REMOTE_DAEMON_PID} && nohup env HOME=/sandbox ARC402_DAEMON_PROCESS=1 node ${remoteDaemonEntry} > /tmp/arc402-daemon-stdout.log 2> /tmp/arc402-daemon-stderr.log < /dev/null &`,
+      remoteCommand,
     ], {
       detached: true,
       stdio: "ignore",
@@ -477,7 +485,7 @@ export function registerDaemonCommands(program: Command): void {
   // ── daemon start ────────────────────────────────────────────────────────────
   daemon
     .command("start")
-    .description("Start the ARC-402 runtime. If OpenShell is configured, this automatically runs inside the configured sandbox.")
+    .description("Start the ARC-402 runtime. For launch, this is the OpenShell-owned sandboxed runtime path; public ingress remains a separate host-managed concern.")
     .option("--foreground", "Run in foreground (blocking). Used by systemd/launchd service managers.")
     .action(async (opts) => {
       const foreground = opts.foreground as boolean | undefined;
@@ -515,10 +523,15 @@ export function registerDaemonCommands(program: Command): void {
           syncDaemonConfigToSandbox(sandboxName);
           const remoteDaemonEntry = path.posix.join(runtimeRemoteRoot, "dist/daemon/index.js");
           const { configPath, host } = buildOpenShellSshConfig(sandboxName);
+          const secretExports = buildOpenShellSecretExports(true);
           const result = spawnSync("ssh", [
             "-F", configPath,
             host,
-            `mkdir -p ${REMOTE_ARC402_DIR} && HOME=/sandbox ARC402_DAEMON_PROCESS=1 ARC402_DAEMON_FOREGROUND=1 node ${remoteDaemonEntry} --foreground`,
+            [
+              `mkdir -p ${REMOTE_ARC402_DIR}`,
+              secretExports,
+              `HOME=/sandbox ARC402_DAEMON_PROCESS=1 ARC402_DAEMON_FOREGROUND=1 node ${remoteDaemonEntry} --foreground`,
+            ].filter(Boolean).join(" && "),
           ], {
             stdio: "inherit",
             env: {

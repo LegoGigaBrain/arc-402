@@ -256,6 +256,13 @@ function handleIpcCommand(
       return { ok: true, data: { agreements: ctx.db.listActiveHireRequests() } };
     }
 
+    case "agreement": {
+      if (!cmd.id) return { ok: false, error: "id required" };
+      const agreement = ctx.db.getHireRequest(cmd.id);
+      if (!agreement) return { ok: false, error: "agreement not found" };
+      return { ok: true, data: { agreement } };
+    }
+
     case "approve": {
       if (!cmd.id) return { ok: false, error: "id required" };
       const hire = ctx.db.getHireRequest(cmd.id);

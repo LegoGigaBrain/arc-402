@@ -184,6 +184,8 @@ export default function OnboardContent() {
   const [agentCaps, setAgentCaps]               = useState('')
   const [agentServiceType, setAgentServiceType] = useState('')
   const [agentEndpoint, setAgentEndpoint]       = useState('')
+  const [endpointMode, setEndpointMode]         = useState<'subdomain' | 'custom'>('subdomain')
+  const [subdomainName, setSubdomainName]       = useState('')
 
   function resetWc() { setWcUri(''); setWaiting(false) }
 
@@ -808,20 +810,68 @@ export default function OnboardContent() {
               <p style={{ color: '#666', fontSize: '0.82rem', marginBottom: 12, lineHeight: 1.5 }}>
                 Register your wallet as an agent in the ARC-402 registry so other agents can hire you. This records your public endpoint identity; it does not by itself expand sandbox outbound permissions.
               </p>
-              <div style={{ background: '#0d0d12', border: '1px solid #1e1e2a', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
-                <div style={{ fontSize: '0.72rem', color: '#818cf8', marginBottom: 6 }}>Endpoint options at launch</div>
-                <div style={{ fontSize: '0.76rem', color: '#666', lineHeight: 1.7 }}>
-                  • <span style={{ color: '#d0d0d0' }}>Recommended canonical path:</span> <span style={{ fontFamily: 'monospace', color: '#818cf8' }}>https://&lt;agentname&gt;.arc402.xyz</span><br />
-                  • <span style={{ color: '#d0d0d0' }}>Custom HTTPS URL:</span> supported if you already run your own public ingress/domain<br />
-                  • ARC-402&apos;s first-class endpoint claim/scaffold tooling currently centers on the canonical <span style={{ fontFamily: 'monospace', color: '#818cf8' }}>arc402.xyz</span> subdomain path
+              {/* Endpoint choice: subdomain vs custom */}
+              <div style={{ background: '#0d0d12', border: '1px solid #1e1e2a', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+                <div style={{ fontSize: '0.72rem', color: '#818cf8', marginBottom: 10 }}>Choose your public endpoint</div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <button
+                    onClick={() => { setEndpointMode('subdomain'); setAgentEndpoint('') }}
+                    style={{ flex: 1, padding: '10px 8px', background: endpointMode === 'subdomain' ? '#1a1a3a' : '#0a0a0a', border: `1px solid ${endpointMode === 'subdomain' ? '#4338ca' : '#1e1e1e'}`, borderRadius: 10, color: endpointMode === 'subdomain' ? '#818cf8' : '#555', fontSize: '0.78rem', cursor: 'pointer', textAlign: 'center' }}
+                  >
+                    🌐 Claim <span style={{ fontFamily: 'monospace' }}>youragent.arc402.xyz</span>
+                  </button>
+                  <button
+                    onClick={() => { setEndpointMode('custom'); setSubdomainName('') }}
+                    style={{ flex: 1, padding: '10px 8px', background: endpointMode === 'custom' ? '#1a1a3a' : '#0a0a0a', border: `1px solid ${endpointMode === 'custom' ? '#4338ca' : '#1e1e1e'}`, borderRadius: 10, color: endpointMode === 'custom' ? '#818cf8' : '#555', fontSize: '0.78rem', cursor: 'pointer', textAlign: 'center' }}
+                  >
+                    🔗 Use your own URL
+                  </button>
                 </div>
+
+                {endpointMode === 'subdomain' && (
+                  <div>
+                    <label style={{ fontSize: '0.72rem', color: '#555', display: 'block', marginBottom: 5 }}>Subdomain name</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                      <input
+                        type="text"
+                        value={subdomainName}
+                        onChange={e => {
+                          const v = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                          setSubdomainName(v)
+                          setAgentEndpoint(v ? `https://${v}.arc402.xyz` : '')
+                        }}
+                        placeholder="myagent"
+                        style={{ flex: 1, padding: '10px 12px', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '10px 0 0 10px', color: '#d0d0d0', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                      />
+                      <span style={{ padding: '10px 12px', background: '#111', border: '1px solid #1e1e1e', borderLeft: 'none', borderRadius: '0 10px 10px 0', color: '#818cf8', fontSize: '0.82rem', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>.arc402.xyz</span>
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: '#444', marginTop: 6 }}>
+                      First-come-first-served. Your wallet must be registered in AgentRegistry to claim.
+                    </div>
+                  </div>
+                )}
+
+                {endpointMode === 'custom' && (
+                  <div>
+                    <label style={{ fontSize: '0.72rem', color: '#555', display: 'block', marginBottom: 5 }}>Your HTTPS endpoint URL</label>
+                    <input
+                      type="text"
+                      value={agentEndpoint}
+                      onChange={e => setAgentEndpoint(e.target.value)}
+                      placeholder="https://agent.yourdomain.com"
+                      style={{ width: '100%', padding: '10px 12px', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: 10, color: '#d0d0d0', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                    />
+                    <div style={{ fontSize: '0.68rem', color: '#444', marginTop: 6 }}>
+                      Bring your own domain and public ingress. ARC-402 will register this URL in AgentRegistry.
+                    </div>
+                  </div>
+                )}
               </div>
 
               {[
                 { label: 'Agent name',            value: agentName,        setter: setAgentName,        placeholder: 'My Research Agent' },
                 { label: 'Capabilities (comma-separated)', value: agentCaps, setter: setAgentCaps,      placeholder: 'research, summarization' },
                 { label: 'Service type',          value: agentServiceType, setter: setAgentServiceType, placeholder: 'research' },
-                { label: 'Endpoint URL (HTTPS)',  value: agentEndpoint,    setter: setAgentEndpoint,    placeholder: 'https://<agentname>.arc402.xyz or your custom HTTPS URL' },
               ].map(f => (
                 <div key={f.label} style={{ marginBottom: 12 }}>
                   <label style={{ fontSize: '0.72rem', color: '#555', display: 'block', marginBottom: 5 }}>

@@ -84,6 +84,26 @@ export function resolveOpenShellSecrets(): {
   return { machineKey, telegramBotToken, telegramChatId };
 }
 
+export function buildOpenShellSecretExports(requireMachineKey = false): string {
+  const secrets = resolveOpenShellSecrets();
+  const exports: string[] = [];
+
+  if (secrets.machineKey) {
+    exports.push(`export ARC402_MACHINE_KEY=${shellEscape(secrets.machineKey)}`);
+  } else if (requireMachineKey) {
+    throw new Error("ARC402 machine key not found in env or arc402 config");
+  }
+
+  if (secrets.telegramBotToken) {
+    exports.push(`export TELEGRAM_BOT_TOKEN=${shellEscape(secrets.telegramBotToken)}`);
+  }
+  if (secrets.telegramChatId) {
+    exports.push(`export TELEGRAM_CHAT_ID=${shellEscape(secrets.telegramChatId)}`);
+  }
+
+  return exports.join(" && ");
+}
+
 export function readOpenShellConfig(): OpenShellConfig | null {
   if (!fs.existsSync(OPENSHELL_TOML)) return null;
   try {
@@ -252,6 +272,6 @@ export function provisionRuntimeToSandbox(
   return { tarballPath, remoteRoot };
 }
 
-function shellEscape(value: string): string {
+export function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }

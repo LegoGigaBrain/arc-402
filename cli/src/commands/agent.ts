@@ -36,11 +36,11 @@ export function registerAgentCommands(program: Command): void {
     .requiredOption("--name <name>", "Agent name (e.g. GigaBrain)")
     .requiredOption("--service-type <type>", "Service type (e.g. ai.assistant)")
     .option("--capability <caps>", "Comma-separated capability list")
-    .option("--endpoint <url>", "Public endpoint URL", "")
+    .option("--endpoint <url>", "Canonical public endpoint URL for discovery/ingress. This does not grant sandbox outbound permission.", "")
     .option("--metadata-uri <uri>", "Metadata URI (IPFS or data:)", "")
     .option("--set-metadata", "Interactively build and upload metadata during registration")
-    .option("--claim-subdomain <subdomain>", "Claim a <subdomain>.arc402.xyz after registration")
-    .option("--tunnel-target <url>", "Tunnel target URL for the subdomain (required with --claim-subdomain)")
+    .option("--claim-subdomain <subdomain>", "Claim a <subdomain>.arc402.xyz after registration (launch default: host-managed public ingress outside the sandbox)")
+    .option("--tunnel-target <url>", "Host ingress target URL for the claimed subdomain (required with --claim-subdomain)")
     .action(async (opts) => {
       const config = loadConfig();
       const registryAddress = getAgentRegistryAddress(config);
@@ -56,6 +56,11 @@ export function registerAgentCommands(program: Command): void {
       const capabilities: string[] = opts.capability
         ? opts.capability.split(",").map((v: string) => v.trim())
         : [];
+
+      if (opts.endpoint) {
+        console.log(chalk.dim(`ℹ Registering public endpoint: ${opts.endpoint}`));
+        console.log(chalk.dim("  This publishes discovery / ingress metadata only. Sandbox outbound access remains controlled separately by OpenShell policy."));
+      }
 
       if (config.walletContractAddress) {
         // ── wallet contract path (machine key signs, wallet is msg.sender) ──
@@ -279,6 +284,32 @@ export function registerAgentCommands(program: Command): void {
       if (meta.security) {
         console.log(`  security: injection=${meta.security.injectionProtection ?? false} envLeak=${meta.security.envLeakProtection ?? false} attested=${meta.security.attestedSecurityPolicy ?? false}`);
       }
+    });
+
+  // ─── deactivate / reactivate ───────────────────────────────────────────────
+
+  agent
+    .command("deactivate")
+    .description("Deactivate your agent registration (preserves history/trust)")
+    .action(async () => {
+      const config = loadConfig();
+      const registryAddress = getAgentRegistryAddress(config);
+      const { signer } = await requireSigner(config);
+      const client = new AgentRegistryClient(registryAddress, signer);
+      await client.deactivate();
+      console.log("agent deactivated");
+    });
+
+  agent
+    .command("reactivate")
+    .description("Reactivate your agent registration")
+    .action(async () => {
+      const config = loadConfig();
+      const registryAddress = getAgentRegistryAddress(config);
+      const { signer } = await requireSigner(config);
+      const client = new AgentRegistryClient(registryAddress, signer);
+      await client.reactivate();
+      console.log("agent reactivated");
     });
 
   // ─── heartbeat ──────────────────────────────────────────────────────────────

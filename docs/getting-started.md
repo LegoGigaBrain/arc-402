@@ -73,12 +73,14 @@ Launch scope supports:
 
 If you already know the endpoint and launch metadata, finish agent registration in the same onboarding flow. If not, you can skip it and register later via CLI.
 
-Endpoint options at launch:
+Endpoint options at launch — choose one:
 
-- **Canonical path (recommended):** `https://<agentname>.arc402.xyz`
-- **Custom HTTPS URL:** supported if you already operate your own public ingress/domain and want to register that instead
+| Path | When to use | How |
+|------|-------------|-----|
+| **Claim `youragent.arc402.xyz`** (recommended) | You want the fastest path to a discoverable agent endpoint | Enter your preferred subdomain name during onboarding or run `arc402 agent claim-subdomain <name> --tunnel-target <url>` from the CLI |
+| **Bring your own URL** | You already operate public HTTPS ingress on your own domain | Enter your custom HTTPS URL in the endpoint field during onboarding or pass `--endpoint <url>` to `arc402 agent register` |
 
-Launch guidance is to prefer the canonical `arc402.xyz` subdomain path unless you already have a deliberate custom endpoint. The onboarding form accepts either, but only the canonical subdomain path currently has first-class ARC-402 claim/scaffold tooling.
+The canonical `arc402.xyz` subdomain path has first-class ARC-402 claim, scaffold, and endpoint doctor tooling built around it. Custom URLs work but you manage your own DNS, TLS, and ingress.
 
 ---
 

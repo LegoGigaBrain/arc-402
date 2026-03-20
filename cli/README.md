@@ -1,6 +1,6 @@
 # arc402 CLI
 
-Command-line interface for the ARC-402 protocol on Base mainnet — agent discovery, service agreements, wallet governance, daemon lifecycle, ARC-402 Workroom management, endpoint scaffolding, and trust reads.
+Command-line interface for the ARC-402 protocol on Base mainnet – agent discovery, service agreements, wallet governance, daemon lifecycle, ARC-402 Workroom management, endpoint scaffolding, and trust reads.
 
 Live on Base mainnet. 40+ contracts deployed. ERC-4337 wallets with P256 passkey support.
 
@@ -99,7 +99,7 @@ arc402 deliver 42 --output ./my-deliverable.json
 
 > `deliver` commits the deliverable and starts the review/remediation/dispute path. Normal quality disputes should enter remediation first; `dispute open` without flags follows that path, while `dispute --direct` is reserved for hard non-delivery, hard deadline breach, clearly invalid/fraudulent deliverables, or safety-critical violations.
 >
-> The current contract now includes an explicit on-chain arbitration path plus human escalation backstop. Final authority semantics are still deployment-defined for launch claims, so do not overstate this as fully decentralized public dispute legitimacy yet.
+> The current contract now includes an explicit onchain arbitration path plus human escalation backstop. Final authority semantics are still deployment-defined for launch claims, so do not overstate this as fully decentralized public dispute legitimacy yet.
 
 ---
 
@@ -113,7 +113,7 @@ arc402 deliver 42 --output ./my-deliverable.json
 | `arc402 endpoint status` | Show endpoint scaffold health across runtime, ingress target, tunnel, and claim state |
 | `arc402 endpoint claim <agentname> --tunnel-target <https://...>` | Claim the canonical public hostname and lock local config to it |
 | `arc402 endpoint doctor` | Diagnose which layer is broken: config, tunnel, local target, runtime, or claim state |
-| `arc402 agent register` | Register your agent on-chain |
+| `arc402 agent register` | Register your agent onchain |
 | `arc402 agent update` | Update your agent registration |
 | `arc402 agent deactivate` | Deactivate your registration |
 | `arc402 agent reactivate` | Reactivate your registration |
@@ -131,9 +131,9 @@ arc402 deliver 42 --output ./my-deliverable.json
 | `arc402 accept <id>` | Accept a proposed agreement |
 | `arc402 deliver <id> --output <file>` | Commit deliverables and enter the review/remediation/dispute lifecycle |
 | `arc402 dispute open <id> --reason <text>` | Raise a dispute after remediation when justified; use `--direct` only for narrow hard-fail exceptions |
-| `arc402 dispute evidence <id> ...` | Anchor dispute evidence on-chain |
+| `arc402 dispute evidence <id> ...` | Anchor dispute evidence onchain |
 | `arc402 dispute status <id>` | Inspect dispute case, arbitration case, and evidence |
-| `arc402 dispute nominate <id> --arbitrator <address>` | Nominate an arbitrator on-chain |
+| `arc402 dispute nominate <id> --arbitrator <address>` | Nominate an arbitrator onchain |
 | `arc402 dispute vote <id> --vote <provider\|refund\|split\|human-review>` | Cast an arbitration vote |
 | `arc402 dispute human <id> --reason <text>` | Request human escalation when arbitration stalls or requires backstop |
 | `arc402 cancel <id>` | Cancel a proposed agreement (refunds escrow) |
@@ -218,7 +218,7 @@ arc402 wallet status --json
 
 ```
 src/
-  index.ts          # Entry — registers all commands
+  index.ts          # Entry – registers all commands
   config.ts         # Load/save ~/.arc402/config.json
   client.ts         # ethers provider + signer from config
   abis.ts           # Contract ABIs (AgentRegistry, ServiceAgreement, TrustRegistry)

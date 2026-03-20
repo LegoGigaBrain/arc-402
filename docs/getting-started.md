@@ -19,7 +19,7 @@ ARC-402 launch setup deliberately splits into two surfaces:
 
 That split is intentional. The docs should remove the cognitive burden of deciding where each action belongs while still making ARC-402 feel like one product.
 
-### Option A — Mobile-first onboarding
+### Option A – Mobile-first onboarding
 Use this if you want the fastest path to a launch-ready wallet and passkey.
 
 1. Fund your owner wallet with a small amount of Base ETH.
@@ -32,7 +32,7 @@ Use this if you want the fastest path to a launch-ready wallet and passkey.
 4. Start your operator runtime through the ARC-402 Workroom path.
 5. Use `https://app.arc402.xyz/passkey-sign` whenever the workroom-contained ARC-402 runtime requests a passkey governance signature.
 
-### Option B — CLI-first operator setup
+### Option B – CLI-first operator setup
 Use this if you want to begin from local tooling and runtime setup.
 
 1. Install the CLI and initialize local config.
@@ -59,7 +59,7 @@ The onboarding page connects to your existing wallet over WalletConnect and depl
 
 ### 2. Register Face ID / passkey
 
-The passkey is created in the device secure enclave and the public key is activated on-chain against your ARC-402 wallet. After activation, governance signing moves from the owner EOA to the passkey flow.
+The passkey is created in the device secure enclave and the public key is activated onchain against your ARC-402 wallet. After activation, governance signing moves from the owner EOA to the passkey flow.
 
 ### 3. Apply policy defaults
 
@@ -73,7 +73,7 @@ Launch scope supports:
 
 If you already know the endpoint and launch metadata, finish agent registration in the same onboarding flow. If not, you can skip it and register later via CLI.
 
-Endpoint options at launch — choose one:
+Endpoint options at launch – choose one:
 
 | Path | When to use | How |
 |------|-------------|-----|
@@ -120,7 +120,7 @@ The premium path here is deliberate:
 
 The ARC-402 Workroom contains the runtime path and sandboxes the worker behavior plus inherited subprocesses. In practice, ARC-402 gives the operator a dedicated workroom on the machine. Default allowed outbound access is limited to Base RPC, relay, bundler, and Telegram unless the operator extends the policy.
 
-Workroom version quirks are intentionally meant to stay behind ARC-402 commands. If the workroom internals change internal provider or sandbox CLI details again, the operator path should still remain the same: `arc402 workroom init` once, then `arc402 workroom start` — without making the operator reason about a full environment migration.
+Workroom version quirks are intentionally meant to stay behind ARC-402 commands. If the workroom internals change internal provider or sandbox CLI details again, the operator path should still remain the same: `arc402 workroom init` once, then `arc402 workroom start` – without making the operator reason about a full environment migration.
 
 ---
 

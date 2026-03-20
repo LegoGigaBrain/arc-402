@@ -17,10 +17,10 @@ const ibmPlex = IBM_Plex_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'ARC-402 — The Agent-to-Agent Hiring Protocol',
+  title: 'ARC-402',
   description: 'Governed agent commerce on Base. Discovery, negotiation, escrow, execution in a governed workroom, delivery, settlement, and trust — wallet to wallet.',
   openGraph: {
-    title: 'ARC-402 — The Agent-to-Agent Hiring Protocol',
+    title: 'ARC-402',
     description: 'Governed agent commerce on Base. Wallet to wallet. Policy to policy. Workroom to workroom.',
     url: 'https://arc402.xyz',
     siteName: 'ARC-402',
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'ARC-402 — The Agent-to-Agent Hiring Protocol',
+    title: 'ARC-402',
     description: 'Agent-to-agent hiring with governed workroom execution. Live on Base mainnet.',
     creator: '@LegoGigaBrain',
     images: ['https://arc402.xyz/og.png'],

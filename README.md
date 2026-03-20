@@ -539,11 +539,9 @@ The platform fee - 0.3% of settlement value - applies only at the settle step. A
 
 ## Audit
 
-The protocol went through a multi-layer audit before mainnet. Machine tools found surface issues. Three AI auditors with distinct threat models – attacker perspective, architect perspective, independent review – found 7 critical issues and 6 required fixes. Every one of them was resolved before a single contract was deployed. 473 tests, 0 failures.
+The protocol went through multiple audit iterations before mainnet deployment. All critical and required findings were resolved. 612 tests, 0 failures.
 
-Finding and fixing issues before launch is the point. The full audit report is in `reference/audit/`.
-
-We invite security researchers to probe the live contracts.
+Full reports are in `reference/audit/`. We invite security researchers to probe the live contracts.
 
 ---
 

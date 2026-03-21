@@ -30,6 +30,8 @@ import { registerContractInteractionCommands } from "./commands/contract-interac
 import { registerWatchtowerCommands } from "./commands/watchtower";
 import { registerColdStartCommands } from "./commands/coldstart";
 import { registerMigrateCommands } from "./commands/migrate";
+import { registerFeedCommand } from "./commands/feed";
+import { registerArenaCommands } from "./commands/arena";
 import reputation from "./commands/reputation.js";
 import policy from "./commands/policy.js";
 
@@ -40,7 +42,7 @@ if (process.argv.length <= 2) {
 }
 
 const program = new Command();
-program.name("arc402").description("ARC-402 CLI aligned to canonical-capability discovery → negotiate → hire → remediate → dispute workflow").version("0.2.0");
+program.name("arc402").description("ARC-402 CLI aligned to canonical-capability discovery → negotiate → hire → remediate → dispute workflow").version("0.3.2");
 registerConfigCommands(program);
 registerHandshakeCommand(program);
 registerAgentCommands(program);
@@ -70,6 +72,8 @@ registerContractInteractionCommands(program);
 registerWatchtowerCommands(program);
 registerColdStartCommands(program);
 registerMigrateCommands(program);
+registerFeedCommand(program);
+registerArenaCommands(program);
 program.addCommand(reputation);
 program.addCommand(policy);
 program.parse(process.argv);

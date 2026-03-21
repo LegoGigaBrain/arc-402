@@ -413,6 +413,193 @@ export function registerAgentCommands(program: Command): void {
       if (!address) throw new Error("No wallet configured");
       await program.parseAsync([process.argv[0], process.argv[1], "agent", "info", address], { from: "user" });
     });
+
+  // ─── profile (subgraph view) ─────────────────────────────────────────────
+
+  agent
+    .command("profile <address>")
+    .description("Show detailed agent profile from the Arena subgraph")
+    .option("--json", "Output as JSON")
+    .action(async (address: string, opts: { json?: boolean }) => {
+      const normalizedAddr = address.toLowerCase();
+      try {
+        const data = await agentSubgraphQuery(`{
+          agent(id: "${normalizedAddr}") {
+            id name serviceType endpoint active
+            trustScore { globalScore }
+            capabilities(where: { active: true }) { capability active }
+            handshakesSent(first: 100, orderBy: timestamp, orderDirection: desc) {
+              id to { id name } hsType note timestamp
+            }
+            handshakesReceived(first: 100, orderBy: timestamp, orderDirection: desc) {
+              id from { id name } hsType note timestamp
+            }
+          }
+          clientAgreements: agreements(where: { client: "${normalizedAddr}", state: 1 }, first: 10) {
+            id serviceType price state
+          }
+          providerAgreements: agreements(where: { provider: "${normalizedAddr}", state: 1 }, first: 10) {
+            id serviceType price state
+          }
+          vouchedFor: vouches(where: { voucher: "${normalizedAddr}", active: true }, first: 100) {
+            id newAgent { id name } stakeAmount
+          }
+          vouchedBy: vouches(where: { newAgent: "${normalizedAddr}", active: true }, first: 100) {
+            id voucher { id name } stakeAmount
+          }
+        }`);
+
+        const agentData = data["agent"] as Record<string, unknown> | null;
+
+        if (!agentData) {
+          if (opts.json) {
+            console.log(JSON.stringify({ error: "Agent not registered", address }));
+          } else {
+            console.log(chalk.red(`Agent not registered: ${address}`));
+          }
+          process.exit(1);
+        }
+
+        if (opts.json) {
+          console.log(JSON.stringify(data, null, 2));
+          return;
+        }
+
+        const sent = (agentData["handshakesSent"] as Record<string, unknown>[]) ?? [];
+        const received = (agentData["handshakesReceived"] as Record<string, unknown>[]) ?? [];
+        const sentToIds = new Set(sent.map((h) => (h["to"] as Record<string, string>)["id"]));
+        const receivedFromIds = new Set(received.map((h) => (h["from"] as Record<string, string>)["id"]));
+        const mutual = [...sentToIds].filter((id) => receivedFromIds.has(id)).length;
+
+        const trustScore =
+          ((agentData["trustScore"] as Record<string, unknown> | null)?.["globalScore"] as number | undefined) ?? 0;
+        const caps = (agentData["capabilities"] as Record<string, unknown>[]) ?? [];
+
+        const allAgreements = [
+          ...((data["clientAgreements"] as unknown[]) ?? []),
+          ...((data["providerAgreements"] as unknown[]) ?? []),
+        ] as Record<string, unknown>[];
+
+        const hsTypeLabels: Record<number, string> = {
+          0: "Respected",
+          1: "Curious",
+          2: "Endorsed",
+          3: "Thanked",
+          4: "Collaborated",
+          5: "Challenged",
+          6: "Referred",
+          7: "Hello",
+        };
+
+        const recentActivity = [
+          ...sent.slice(0, 3).map((h) => {
+            const to = h["to"] as Record<string, string>;
+            const label = hsTypeLabels[Number(h["hsType"])] ?? `Type${h["hsType"]}`;
+            const note = h["note"] ? ` — "${h["note"]}"` : "";
+            return {
+              ts: Number(h["timestamp"]),
+              line: `    [${profileDate(Number(h["timestamp"]))}] ${label} ${to["name"] || shortAddress(to["id"])}${note}`,
+            };
+          }),
+          ...received.slice(0, 3).map((h) => {
+            const from = h["from"] as Record<string, string>;
+            const label = hsTypeLabels[Number(h["hsType"])] ?? `Type${h["hsType"]}`;
+            const note = h["note"] ? ` — "${h["note"]}"` : "";
+            return {
+              ts: Number(h["timestamp"]),
+              line: `    [${profileDate(Number(h["timestamp"]))}] Received ${label} from ${from["name"] || shortAddress(from["id"])}${note}`,
+            };
+          }),
+        ]
+          .sort((a, b) => b.ts - a.ts)
+          .slice(0, 5);
+
+        const vouchedFor = (data["vouchedFor"] as unknown[]) ?? [];
+        const vouchedBy = (data["vouchedBy"] as unknown[]) ?? [];
+
+        const line = "═".repeat(43);
+        console.log(chalk.bold(line));
+        console.log(`  ${chalk.bold((agentData["name"] as string) || "(unnamed)")}`);
+        console.log(`  ${agentData["id"]}`);
+        console.log(chalk.bold(line));
+        console.log();
+        console.log(`  Service Type:  ${agentData["serviceType"]}`);
+        console.log(`  Endpoint:      ${agentData["endpoint"] || chalk.dim("(none)")}`);
+        console.log(
+          `  Status:        ${agentData["active"] ? chalk.green("✅ Active") : chalk.red("❌ Inactive")}`,
+        );
+        console.log(`  Trust Score:   ${trustScore}`);
+        console.log();
+
+        if (caps.length > 0) {
+          console.log("  Capabilities:");
+          for (const cap of caps) {
+            console.log(`    ✓ ${(cap as Record<string, unknown>)["capability"]}`);
+          }
+          console.log();
+        }
+
+        console.log(
+          `  Handshakes:    ${sent.length} sent  •  ${received.length} received  •  ${mutual} mutual connections`,
+        );
+        console.log();
+
+        if (recentActivity.length > 0) {
+          console.log("  Recent Activity:");
+          for (const a of recentActivity) {
+            console.log(a.line);
+          }
+          console.log();
+        }
+
+        console.log("  Active Agreements:");
+        if (allAgreements.length === 0) {
+          console.log("    None");
+        } else {
+          for (const a of allAgreements.slice(0, 5)) {
+            console.log(`    #${(a["id"] as string).slice(0, 8)}  ${a["serviceType"]}`);
+          }
+        }
+        console.log();
+
+        console.log("  Vouches:");
+        console.log(`    Vouched for: ${vouchedFor.length} agents`);
+        console.log(`    Vouched by:  ${vouchedBy.length} agents`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (opts.json) {
+          console.log(JSON.stringify({ error: "Subgraph unavailable", details: msg }));
+        } else {
+          console.error(chalk.red(`Subgraph unavailable: ${msg}`));
+        }
+        process.exit(1);
+      }
+    });
+}
+
+// ─── subgraph helpers (used by agent profile) ────────────────────────────────
+
+const AGENT_SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744310/arc-402/v0.2.0";
+
+async function agentSubgraphQuery(query: string): Promise<Record<string, unknown>> {
+  const res = await fetch(AGENT_SUBGRAPH_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) throw new Error(`Subgraph HTTP ${res.status}`);
+  const json = (await res.json()) as { data?: Record<string, unknown>; errors?: unknown[] };
+  if (json.errors?.length) throw new Error(`Subgraph error: ${JSON.stringify(json.errors[0])}`);
+  return json.data ?? {};
+}
+
+function shortAddress(addr: string): string {
+  return addr.length > 12 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr;
+}
+
+function profileDate(ts: number): string {
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 // ─── subdomain claim ──────────────────────────────────────────────────────────

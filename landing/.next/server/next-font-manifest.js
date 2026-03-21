@@ -1,1 +1,0 @@
-self.__NEXT_FONT_MANIFEST='{"pages":{},"app":{"/home/lego/.openclaw/workspace-engineering/products/arc-402/landing/app/layout":["static/media/1e41be92c43b3255-s.p.woff2"]},"appUsingSizeAdjust":true,"pagesUsingSizeAdjust":false}';

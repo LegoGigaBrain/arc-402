@@ -104,3 +104,5 @@ cli/src/drain-v4.ts
 cli/test/
 DEPLOY-HANDSHAKE.md
 TODO.md
+landing/.next/
+landing/out/

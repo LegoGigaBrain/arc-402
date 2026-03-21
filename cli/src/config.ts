@@ -57,16 +57,22 @@ export function loadConfig(): Arc402Config {
   if (!fs.existsSync(CONFIG_PATH)) {
     // Auto-create with Base Mainnet defaults — zero friction
     const defaults = NETWORK_DEFAULTS["base-mainnet"] ?? {};
+    const d = defaults as unknown as Record<string,string>;
     const autoConfig: Arc402Config = {
       network: "base-mainnet",
       rpcUrl: defaults.rpcUrl ?? "https://mainnet.base.org",
-      trustRegistryAddress: defaults.trustRegistryAddress ?? "",
       walletConnectProjectId: "455e9425343b9156fce1428250c9a54a",
-      agentRegistryAddress: (defaults as unknown as Record<string,string>).agentRegistryV2Address ?? defaults.agentRegistryAddress,
+      policyEngineAddress: defaults.policyEngineAddress,
+      trustRegistryAddress: defaults.trustRegistryAddress ?? "",
+      agentRegistryAddress: d.agentRegistryV2Address ?? defaults.agentRegistryAddress,
       serviceAgreementAddress: defaults.serviceAgreementAddress,
       reputationOracleAddress: defaults.reputationOracleAddress,
+      sponsorshipAttestationAddress: defaults.sponsorshipAttestationAddress,
       capabilityRegistryAddress: defaults.capabilityRegistryAddress,
       governanceAddress: defaults.governanceAddress,
+      walletFactoryAddress: defaults.walletFactoryAddress,
+      sessionChannelsAddress: defaults.sessionChannelsAddress,
+      disputeModuleAddress: defaults.disputeModuleAddress,
     };
     saveConfig(autoConfig);
     console.log(`◈ Config auto-created at ${CONFIG_PATH} (Base Mainnet)`);

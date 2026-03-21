@@ -4,7 +4,7 @@ All notable changes to the ARC-402 protocol, CLI, SDKs, and infrastructure.
 
 ---
 
-## [1.0.0-rc.1] — 2026-03-21 (next tag)
+## [0.6.0] — 2026-03-21 (next tag)
 
 ### Added
 - **Interactive REPL shell** — `arc402` with no args drops into persistent branded terminal (like Claude Code)

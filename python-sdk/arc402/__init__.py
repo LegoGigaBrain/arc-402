@@ -61,6 +61,11 @@ from .endpoint import (
     notify_endpoint,
     notify_hire,
     notify_handshake,
+    notify_hire_accepted,
+    notify_delivery,
+    notify_delivery_accepted,
+    notify_dispute,
+    notify_message,
     DEFAULT_REGISTRY_ADDRESS,
 )
 
@@ -129,6 +134,11 @@ __all__ = [
     "notify_endpoint",
     "notify_hire",
     "notify_handshake",
+    "notify_hire_accepted",
+    "notify_delivery",
+    "notify_delivery_accepted",
+    "notify_dispute",
+    "notify_message",
     "DEFAULT_REGISTRY_ADDRESS",
 ]
 

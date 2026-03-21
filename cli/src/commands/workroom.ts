@@ -2,12 +2,52 @@ import { Command } from "commander";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import * as http from "http";
 import { spawnSync, execSync } from "child_process";
 import {
   ARC402_DIR,
   runCmd,
 } from "../openshell-runtime";
 import { DAEMON_LOG, DAEMON_TOML } from "../daemon/config";
+
+// ─── Daemon lifecycle notify ──────────────────────────────────────────────────
+
+function notifyDaemonWorkroomStatus(
+  event: "entered" | "exited" | "job_started" | "job_completed",
+  agentAddress?: string,
+  jobId?: string,
+  port = 4402
+): void {
+  try {
+    // Try to read port from daemon config
+    let daemonPort = port;
+    if (fs.existsSync(DAEMON_TOML)) {
+      try {
+        const { loadDaemonConfig } = require("../daemon/config") as typeof import("../daemon/config");
+        const cfg = loadDaemonConfig();
+        daemonPort = cfg.relay?.listen_port ?? port;
+      } catch { /* use default */ }
+    }
+
+    const payload = JSON.stringify({
+      event,
+      agentAddress: agentAddress ?? "",
+      jobId,
+      timestamp: Date.now(),
+    });
+
+    const req = http.request({
+      hostname: "127.0.0.1",
+      port: daemonPort,
+      path: "/workroom/status",
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+    });
+    req.on("error", () => { /* non-fatal */ });
+    req.write(payload);
+    req.end();
+  } catch { /* non-fatal */ }
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -232,6 +272,8 @@ export function registerWorkroomCommands(program: Command): void {
         console.log(`  Policy hash: ${getPolicyHash()}`);
         console.log(`  Relay port: 4402`);
         console.log(`  Logs: arc402 workroom logs`);
+        // Notify local daemon of workroom entry
+        notifyDaemonWorkroomStatus("entered");
       } else {
         console.error("Workroom started but exited immediately. Check logs:");
         console.error("  docker logs arc402-workroom");
@@ -249,6 +291,8 @@ export function registerWorkroomCommands(program: Command): void {
         return;
       }
       console.log("Stopping ARC-402 Workroom...");
+      // Notify daemon before stopping (daemon may be inside container)
+      notifyDaemonWorkroomStatus("exited");
       runCmd("docker", ["stop", WORKROOM_CONTAINER]);
       console.log("✓ Workroom stopped");
     });

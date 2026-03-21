@@ -87,3 +87,58 @@ def notify_handshake(
     """Resolve agent endpoint and POST to /handshake."""
     endpoint = resolve_endpoint(agent_address, rpc_url, registry_address)
     return notify_endpoint(endpoint, "/handshake", payload)
+
+
+def notify_hire_accepted(
+    agent_address: str,
+    payload: dict[str, Any],
+    rpc_url: str,
+    registry_address: str = DEFAULT_REGISTRY_ADDRESS,
+) -> dict[str, Any]:
+    """Resolve agent endpoint and POST to /hire/accepted."""
+    endpoint = resolve_endpoint(agent_address, rpc_url, registry_address)
+    return notify_endpoint(endpoint, "/hire/accepted", payload)
+
+
+def notify_delivery(
+    agent_address: str,
+    payload: dict[str, Any],
+    rpc_url: str,
+    registry_address: str = DEFAULT_REGISTRY_ADDRESS,
+) -> dict[str, Any]:
+    """Resolve agent endpoint and POST to /delivery."""
+    endpoint = resolve_endpoint(agent_address, rpc_url, registry_address)
+    return notify_endpoint(endpoint, "/delivery", payload)
+
+
+def notify_delivery_accepted(
+    agent_address: str,
+    payload: dict[str, Any],
+    rpc_url: str,
+    registry_address: str = DEFAULT_REGISTRY_ADDRESS,
+) -> dict[str, Any]:
+    """Resolve agent endpoint and POST to /delivery/accepted."""
+    endpoint = resolve_endpoint(agent_address, rpc_url, registry_address)
+    return notify_endpoint(endpoint, "/delivery/accepted", payload)
+
+
+def notify_dispute(
+    agent_address: str,
+    payload: dict[str, Any],
+    rpc_url: str,
+    registry_address: str = DEFAULT_REGISTRY_ADDRESS,
+) -> dict[str, Any]:
+    """Resolve agent endpoint and POST to /dispute."""
+    endpoint = resolve_endpoint(agent_address, rpc_url, registry_address)
+    return notify_endpoint(endpoint, "/dispute", payload)
+
+
+def notify_message(
+    agent_address: str,
+    payload: dict[str, Any],
+    rpc_url: str,
+    registry_address: str = DEFAULT_REGISTRY_ADDRESS,
+) -> dict[str, Any]:
+    """Resolve agent endpoint and POST to /message."""
+    endpoint = resolve_endpoint(agent_address, rpc_url, registry_address)
+    return notify_endpoint(endpoint, "/message", payload)

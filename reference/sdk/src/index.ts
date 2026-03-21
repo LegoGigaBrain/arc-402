@@ -29,5 +29,5 @@ export { buildMetadata, validateMetadata, encodeMetadata, decodeMetadata, upload
 export type { AgentMetadata, AgentMetadataModel, AgentMetadataTraining, AgentMetadataPricing, AgentMetadataSla, AgentMetadataContact, AgentMetadataSecurity } from "./metadata";
 export { ColdStartClient } from "./coldstart";
 export { MigrationClient } from "./migration";
-export { resolveEndpoint, notifyEndpoint, notifyHire, notifyHandshake, DEFAULT_REGISTRY_ADDRESS } from "./endpoint";
+export { resolveEndpoint, notifyEndpoint, notifyHire, notifyHandshake, notifyHireAccepted, notifyDelivery, notifyDeliveryAccepted, notifyDispute, notifyMessage, DEFAULT_REGISTRY_ADDRESS } from "./endpoint";
 export type { EndpointNotifyResult } from "./endpoint";

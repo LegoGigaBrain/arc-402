@@ -8,6 +8,7 @@ import { printSenderInfo, executeContractWriteViaWallet } from "../wallet-router
 import { SERVICE_AGREEMENT_ABI } from "../abis";
 import { readFile } from "fs/promises";
 import prompts from "prompts";
+import { resolveAgentEndpoint, notifyAgent, DEFAULT_REGISTRY_ADDRESS } from "../endpoint-notify";
 
 export function registerDeliverCommand(program: Command): void {
   program
@@ -24,6 +25,7 @@ export function registerDeliverCommand(program: Command): void {
       printSenderInfo(config);
 
       // Pre-flight: check deadline and legacyFulfillEnabled (J3-01, J3-02)
+      let clientAddress = "";
       {
         const { provider: prefProvider } = await getClient(config);
         const saAbi = [
@@ -42,6 +44,7 @@ export function registerDeliverCommand(program: Command): void {
             console.error(`Contact the client to open a new agreement.`);
             process.exit(1);
           }
+          clientAddress = String(ag.client ?? "");
         } catch (e) {
           // If it's a contract read failure, skip the check (let the tx reveal the error)
           if (e instanceof Error && !e.message.includes("CALL_EXCEPTION") && !e.message.includes("could not decode")) throw e;
@@ -112,5 +115,21 @@ export function registerDeliverCommand(program: Command): void {
         if (opts.fulfill) await client.fulfill(BigInt(id), hash); else await client.commitDeliverable(BigInt(id), hash);
       }
       console.log(`${opts.fulfill ? 'fulfilled' : 'committed'} ${id} hash=${hash}`);
+
+      // Notify client's HTTP endpoint (non-blocking)
+      if (clientAddress) {
+        try {
+          const notifyProvider = new ethers.JsonRpcProvider(config.rpcUrl);
+          const registryAddress = config.agentRegistryV2Address ?? config.agentRegistryAddress ?? DEFAULT_REGISTRY_ADDRESS;
+          const endpoint = await resolveAgentEndpoint(clientAddress, notifyProvider, registryAddress);
+          await notifyAgent(endpoint, "/delivery", {
+            agreementId: id,
+            deliverableHash: hash,
+            from: signerAddress,
+          });
+        } catch (err) {
+          console.warn(`Warning: could not notify client endpoint: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
     });
 }

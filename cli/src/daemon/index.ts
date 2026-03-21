@@ -691,6 +691,200 @@ export async function runDaemon(foreground = false): Promise<void> {
       return;
     }
 
+    // POST /hire/accepted — provider accepted, client notified
+    if (pathname === "/hire/accepted" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+      req.on("end", async () => {
+        try {
+          const msg = JSON.parse(body) as Record<string, unknown>;
+          const agreementId = String(msg.agreementId ?? msg.agreement_id ?? "");
+          const from = String(msg.from ?? "");
+          log({ event: "hire_accepted_inbound", agreementId, from });
+          if (config.notifications.notify_on_hire_accepted) {
+            await notifier.notifyHireAccepted(agreementId, agreementId);
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ received: true, agent: config.wallet.contract_address }));
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "invalid_request" }));
+        }
+      });
+      return;
+    }
+
+    // POST /message — off-chain negotiation message
+    if (pathname === "/message" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+      req.on("end", () => {
+        try {
+          const msg = JSON.parse(body) as Record<string, unknown>;
+          const from = String(msg.from ?? "");
+          const to = String(msg.to ?? "");
+          const content = String(msg.content ?? "");
+          const timestamp = Number(msg.timestamp ?? Date.now());
+          log({ event: "message_received", from, to, timestamp, content_len: content.length });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ received: true, agent: config.wallet.contract_address }));
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "invalid_request" }));
+        }
+      });
+      return;
+    }
+
+    // POST /delivery — provider committed a deliverable
+    if (pathname === "/delivery" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+      req.on("end", async () => {
+        try {
+          const msg = JSON.parse(body) as Record<string, unknown>;
+          const agreementId = String(msg.agreementId ?? msg.agreement_id ?? "");
+          const deliverableHash = String(msg.deliverableHash ?? msg.deliverable_hash ?? "");
+          const from = String(msg.from ?? "");
+          log({ event: "delivery_received", agreementId, deliverableHash, from });
+          // Update DB: mark delivered
+          const active = db.listActiveHireRequests();
+          const found = active.find(r => r.agreement_id === agreementId);
+          if (found) db.updateHireRequestStatus(found.id, "delivered");
+          if (config.notifications.notify_on_delivery) {
+            await notifier.notifyDelivery(agreementId, deliverableHash, "");
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ received: true, agent: config.wallet.contract_address }));
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "invalid_request" }));
+        }
+      });
+      return;
+    }
+
+    // POST /delivery/accepted — client accepted delivery, payment releasing
+    if (pathname === "/delivery/accepted" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+      req.on("end", () => {
+        try {
+          const msg = JSON.parse(body) as Record<string, unknown>;
+          const agreementId = String(msg.agreementId ?? msg.agreement_id ?? "");
+          const from = String(msg.from ?? "");
+          log({ event: "delivery_accepted_inbound", agreementId, from });
+          // Update DB: mark complete
+          const all = db.listActiveHireRequests();
+          const found = all.find(r => r.agreement_id === agreementId);
+          if (found) db.updateHireRequestStatus(found.id, "complete");
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ received: true, agent: config.wallet.contract_address }));
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "invalid_request" }));
+        }
+      });
+      return;
+    }
+
+    // POST /dispute — dispute raised against this agent
+    if (pathname === "/dispute" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+      req.on("end", async () => {
+        try {
+          const msg = JSON.parse(body) as Record<string, unknown>;
+          const agreementId = String(msg.agreementId ?? msg.agreement_id ?? "");
+          const reason = String(msg.reason ?? "");
+          const from = String(msg.from ?? "");
+          log({ event: "dispute_received", agreementId, reason, from });
+          if (config.notifications.notify_on_dispute) {
+            await notifier.notifyDispute(agreementId, from);
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ received: true, agent: config.wallet.contract_address }));
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "invalid_request" }));
+        }
+      });
+      return;
+    }
+
+    // POST /dispute/resolved — dispute resolved by arbitrator
+    if (pathname === "/dispute/resolved" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+      req.on("end", () => {
+        try {
+          const msg = JSON.parse(body) as Record<string, unknown>;
+          const agreementId = String(msg.agreementId ?? msg.agreement_id ?? "");
+          const outcome = String(msg.outcome ?? "");
+          const from = String(msg.from ?? "");
+          log({ event: "dispute_resolved_inbound", agreementId, outcome, from });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ received: true, agent: config.wallet.contract_address }));
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "invalid_request" }));
+        }
+      });
+      return;
+    }
+
+    // POST /workroom/status — workroom lifecycle events
+    if (pathname === "/workroom/status" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+      req.on("end", () => {
+        try {
+          const msg = JSON.parse(body) as Record<string, unknown>;
+          const event = String(msg.event ?? "");
+          const agentAddress = String(msg.agentAddress ?? config.wallet.contract_address);
+          const jobId = msg.jobId ? String(msg.jobId) : undefined;
+          const timestamp = Number(msg.timestamp ?? Date.now());
+          log({ event: "workroom_lifecycle", workroom_event: event, agentAddress, jobId, timestamp });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ received: true, agent: config.wallet.contract_address }));
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "invalid_request" }));
+        }
+      });
+      return;
+    }
+
+    // GET /capabilities — agent capabilities from config
+    if (pathname === "/capabilities" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        capabilities: config.policy.allowed_capabilities,
+        max_price_eth: config.policy.max_price_eth,
+        auto_accept: config.policy.auto_accept,
+        max_concurrent_agreements: config.relay.max_concurrent_agreements,
+      }));
+      return;
+    }
+
+    // GET /status — health with active agreement count
+    if (pathname === "/status" && req.method === "GET") {
+      const activeList = db.listActiveHireRequests();
+      const pendingList = db.listPendingHireRequests();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        protocol: "arc-402",
+        version: "0.3.0",
+        agent: config.wallet.contract_address,
+        status: "online",
+        uptime: Math.floor((Date.now() - ipcCtx.startTime) / 1000),
+        active_agreements: activeList.length,
+        pending_approval: pendingList.length,
+        capabilities: config.policy.allowed_capabilities,
+      }));
+      return;
+    }
+
     // 404
     res.writeHead(404, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "not_found" }));

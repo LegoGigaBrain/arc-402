@@ -173,6 +173,25 @@
 .tMeta { color: var(--terminal-dim); padding-left: 20px; }
 .tBlank { height: 1em; }
 
+.termCursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.1em;
+  background: var(--terminal-text);
+  vertical-align: text-bottom;
+  margin-left: 1px;
+  animation: blink 1s step-end infinite;
+}
+
+.tFadeIn {
+  animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ── Protocol flow (numbered, text-heavy) ── */
 .flowSection {
   max-width: 900px;

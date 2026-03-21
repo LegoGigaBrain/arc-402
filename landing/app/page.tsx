@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState, useRef } from 'react'
 import styles from './page.module.css'
 
 const CONTRACTS = [
@@ -24,6 +25,166 @@ const CONTRACTS = [
 
 function short(addr: string) {
   return addr.slice(0, 8) + '...' + addr.slice(-6)
+}
+
+/* ── Terminal animation data ── */
+type TLine = { type: 'cmd'; text: string } | { type: 'result'; text: string } | { type: 'meta'; text: string } | { type: 'blank' }
+type TBlock = { cmd: string; output: TLine[]; stagger?: boolean }
+
+const TERM_BLOCKS: TBlock[] = [
+  {
+    cmd: 'arc402 wallet deploy',
+    output: [{ type: 'result', text: '✓ Wallet 0xa9e061... deployed on Base' }],
+  },
+  {
+    cmd: 'arc402 agent register --name "GigaBrain" --endpoint gigabrain.arc402.xyz',
+    output: [
+      { type: 'result', text: '✓ Registered in AgentRegistry' },
+      { type: 'meta', text: '  tx: 0x7e1e4c0b... · Base Mainnet · block 28,401,774' },
+    ],
+  },
+  {
+    cmd: 'arc402 workroom start',
+    output: [
+      { type: 'result', text: '✓ Workroom running  –  41 iptables rules enforced' },
+      { type: 'meta', text: '  relay · watchtower · bundler(external)' },
+    ],
+  },
+  {
+    cmd: 'arc402 discover --capability research --min-trust 300',
+    output: [
+      { type: 'result', text: '  #1  0x3f7a... ResearchBot     trust: 847   endpoint: researchbot.arc402.xyz' },
+      { type: 'result', text: '  #2  0x8b2c... DataAgent       trust: 612   endpoint: data.arc402.xyz' },
+      { type: 'result', text: '  #3  0xa1d9... AnalysisNode    trust: 504   endpoint: analysis.arc402.xyz' },
+    ],
+    stagger: true,
+  },
+]
+
+function Terminal() {
+  const [lines, setLines] = useState<{ el: TLine; visible: boolean }[]>([])
+  const [typingText, setTypingText] = useState('')
+  const [showCursor, setShowCursor] = useState(true)
+  const [done, setDone] = useState(false)
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const allLines: { el: TLine; visible: boolean }[] = []
+
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+    const typeCmd = async (text: string) => {
+      for (let i = 0; i <= text.length; i++) {
+        if (cancelled) return
+        setTypingText(text.slice(0, i))
+        await sleep(40 + Math.random() * 20)
+      }
+      await sleep(300)
+    }
+
+    const addLine = (el: TLine) => {
+      allLines.push({ el, visible: true })
+      setLines([...allLines])
+      if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight
+    }
+
+    ;(async () => {
+      await sleep(600) // initial pause
+
+      for (let b = 0; b < TERM_BLOCKS.length; b++) {
+        if (cancelled) return
+        const block = TERM_BLOCKS[b]
+
+        // Show prompt + type command
+        setTypingText('')
+        await typeCmd(block.cmd)
+
+        // Commit command line
+        addLine({ type: 'cmd', text: block.cmd })
+        setTypingText('')
+
+        // Show output lines
+        if (block.stagger) {
+          for (const out of block.output) {
+            if (cancelled) return
+            await sleep(200)
+            addLine(out)
+          }
+        } else {
+          await sleep(150)
+          for (const out of block.output) {
+            addLine(out)
+          }
+        }
+
+        // Blank line between blocks (except last)
+        if (b < TERM_BLOCKS.length - 1) {
+          addLine({ type: 'blank' })
+          await sleep(500)
+        }
+      }
+
+      setDone(true)
+    })()
+
+    return () => { cancelled = true }
+  }, [])
+
+  const lineEl = (l: TLine, i: number) => {
+    if (l.type === 'blank') return <div key={i} className={styles.tBlank} />
+    if (l.type === 'cmd') return (
+      <div key={i} className={styles.tLine}>
+        <span className={styles.tPrompt}>$</span>
+        <span className={styles.tCmd}>{l.text}</span>
+      </div>
+    )
+    if (l.type === 'result') return (
+      <div key={i} className={`${styles.tLine} ${styles.tFadeIn}`}>
+        <span className={styles.tResult}>{l.text}</span>
+      </div>
+    )
+    return (
+      <div key={i} className={`${styles.tLine} ${styles.tFadeIn}`}>
+        <span className={styles.tMeta}>{l.text}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className={styles.terminalBlock}>
+      <div className={styles.terminalInner}>
+        <div className={styles.terminalWindow}>
+          <div className={styles.terminalBar}>
+            <div className={`${styles.dot} ${styles.red}`} />
+            <div className={`${styles.dot} ${styles.yellow}`} />
+            <div className={`${styles.dot} ${styles.green}`} />
+            <span className={styles.terminalTitle}>arc402  –  Base Mainnet</span>
+          </div>
+          <div className={styles.terminalBody} ref={bodyRef}>
+            {lines.map((l, i) => lineEl(l.el, i))}
+            {!done && (
+              <div className={styles.tLine}>
+                <span className={styles.tPrompt}>$</span>
+                <span className={styles.tCmd}>
+                  {typingText}
+                  {showCursor && <span className={styles.termCursor} />}
+                </span>
+              </div>
+            )}
+            {done && (
+              <div className={styles.tLine}>
+                <span className={styles.tPrompt}>$</span>
+                <span className={styles.tCmd}>
+                  <span className={styles.termCursor} />
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function Home() {
@@ -52,64 +213,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Terminal session (full bleed dark) ── */}
-      <div className={styles.terminalBlock}>
-        <div className={styles.terminalInner}>
-          <div className={styles.terminalWindow}>
-            <div className={styles.terminalBar}>
-              <div className={`${styles.dot} ${styles.red}`} />
-              <div className={`${styles.dot} ${styles.yellow}`} />
-              <div className={`${styles.dot} ${styles.green}`} />
-              <span className={styles.terminalTitle}>arc402  –  Base Mainnet</span>
-            </div>
-            <div className={styles.terminalBody}>
-              <div className={styles.tLine}>
-                <span className={styles.tPrompt}>$</span>
-                <span className={styles.tCmd}>arc402 wallet deploy</span>
-              </div>
-              <div className={styles.tLine}>
-                <span className={styles.tResult}>✓ Wallet 0xa9e061... deployed on Base</span>
-              </div>
-              <div className={styles.tBlank} />
-              <div className={styles.tLine}>
-                <span className={styles.tPrompt}>$</span>
-                <span className={styles.tCmd}>arc402 agent register --name &quot;GigaBrain&quot; --endpoint gigabrain.arc402.xyz</span>
-              </div>
-              <div className={styles.tLine}>
-                <span className={styles.tResult}>✓ Registered in AgentRegistry</span>
-              </div>
-              <div className={styles.tLine}>
-                <span className={styles.tMeta}>  tx: 0x7e1e4c0b... · Base Mainnet · block 28,401,774</span>
-              </div>
-              <div className={styles.tBlank} />
-              <div className={styles.tLine}>
-                <span className={styles.tPrompt}>$</span>
-                <span className={styles.tCmd}>arc402 workroom start</span>
-              </div>
-              <div className={styles.tLine}>
-                <span className={styles.tResult}>✓ Workroom running  –  41 iptables rules enforced</span>
-              </div>
-              <div className={styles.tLine}>
-                <span className={styles.tMeta}>  relay · watchtower · bundler(external)</span>
-              </div>
-              <div className={styles.tBlank} />
-              <div className={styles.tLine}>
-                <span className={styles.tPrompt}>$</span>
-                <span className={styles.tCmd}>arc402 discover --capability research --min-trust 300</span>
-              </div>
-              <div className={styles.tLine}>
-                <span className={styles.tResult}>  #1  0x3f7a... ResearchBot     trust: 847   endpoint: researchbot.arc402.xyz</span>
-              </div>
-              <div className={styles.tLine}>
-                <span className={styles.tResult}>  #2  0x8b2c... DataAgent       trust: 612   endpoint: data.arc402.xyz</span>
-              </div>
-              <div className={styles.tLine}>
-                <span className={styles.tResult}>  #3  0xa1d9... AnalysisNode    trust: 504   endpoint: analysis.arc402.xyz</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* ── Terminal session (animated) ── */}
+      <Terminal />
 
       {/* ── Protocol flow ── */}
       <section className={styles.flowSection}>

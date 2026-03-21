@@ -8,6 +8,9 @@ import { ethers } from "ethers";
 import prompts from "prompts";
 import { loadConfig } from "../config";
 import { requireSigner } from "../client";
+import { startSpinner } from "../ui/spinner";
+import { renderTree } from "../ui/tree";
+import { c } from "../ui/colors";
 import { SERVICE_AGREEMENT_ABI } from "../abis";
 import {
   DAEMON_DIR,
@@ -344,15 +347,21 @@ async function startDaemonBackground(sandboxName?: string, runtimeRemoteRoot?: s
     if (sandboxName) {
       const remotePid = await readRemotePid(sandboxName);
       if (remotePid) {
-        console.log(`ARC-402 daemon started inside OpenShell. PID: ${remotePid}`);
-        console.log(`Remote log: ${REMOTE_DAEMON_LOG}`);
+        console.log(` ${c.success} ARC-402 daemon started (OpenShell)`);
+        renderTree([
+          { label: "PID", value: String(remotePid) },
+          { label: "Log", value: REMOTE_DAEMON_LOG, last: true },
+        ]);
         return;
       }
     } else {
       const pid = readPid();
       if (pid && isProcessAlive(pid)) {
-        console.log(`ARC-402 daemon started. PID: ${pid}`);
-        console.log(`Log: ${DAEMON_LOG}`);
+        console.log(` ${c.success} ARC-402 daemon started`);
+        renderTree([
+          { label: "PID", value: String(pid) },
+          { label: "Log", value: DAEMON_LOG, last: true },
+        ]);
         return;
       }
     }
@@ -408,34 +417,31 @@ async function stopDaemon(opts: { wait?: boolean } = {}): Promise<boolean> {
 // ─── Output formatters ────────────────────────────────────────────────────────
 
 function formatStatus(data: Record<string, unknown>): void {
-  const line = (label: string, value: string) =>
-    console.log(`${label.padEnd(20)}${value}`);
-
-  console.log("ARC-402 Daemon Status");
-  console.log("─────────────────────");
-  line("State:", String(data.state ?? "unknown"));
-  line("PID:", String(data.pid ?? "unknown"));
-  line("Uptime:", String(data.uptime ?? "unknown"));
-  line("Wallet:", String(data.wallet ?? "unknown"));
-  line("Machine Key:", String(data.machine_key_address ?? "unknown"));
-  console.log();
-  console.log("Subsystems:");
   const relayStatus = data.relay_enabled
     ? `active — polling ${data.relay_url || "relay"} every ${data.relay_poll_seconds}s`
     : "disabled";
   const watchtowerStatus = data.watchtower_enabled ? "active" : "disabled";
   const bundlerStatus = `${data.bundler_mode} — ${data.bundler_endpoint || "default"}`;
-  console.log(`  Relay:      ${relayStatus}`);
-  console.log(`  Watchtower: ${watchtowerStatus}`);
-  console.log(`  Bundler:    ${bundlerStatus}`);
-  console.log();
   const pending = Number(data.pending_approval ?? 0);
-  console.log(`Active Agreements:  ${data.active_agreements ?? 0}`);
-  if (pending > 0) {
-    console.log(`Pending Approval:   ${pending}  ← (review with: arc402 daemon pending)`);
-  } else {
-    console.log(`Pending Approval:   0`);
-  }
+
+  console.log(`${c.mark}  ARC-402  Daemon Status`);
+  console.log();
+  renderTree([
+    { label: "State", value: String(data.state ?? "unknown") },
+    { label: "PID", value: String(data.pid ?? "unknown") },
+    { label: "Uptime", value: String(data.uptime ?? "unknown") },
+    { label: "Wallet", value: String(data.wallet ?? "unknown") },
+    { label: "Key", value: String(data.machine_key_address ?? "unknown") },
+    { label: "Relay", value: relayStatus },
+    { label: "Watchtower", value: watchtowerStatus },
+    { label: "Bundler", value: bundlerStatus },
+    { label: "Agreements", value: String(data.active_agreements ?? 0) },
+    {
+      label: "Pending",
+      value: pending > 0 ? `${pending}  ← arc402 daemon pending` : "0",
+      last: true,
+    },
+  ]);
 }
 
 interface HireRow {
@@ -585,9 +591,9 @@ export function registerDaemonCommands(program: Command): void {
           process.exit(0);
         }
         const { configPath, host } = buildOpenShellSshConfig(openShellCfg.sandbox.name);
-        console.log(`Stopping daemon (OpenShell PID ${remotePid})...`);
+        const stopSpinnerRemote = startSpinner(`Stopping daemon (OpenShell PID ${remotePid})...`);
         runCmd("ssh", ["-F", configPath, host, `kill ${remotePid}`], { timeout: 20000 });
-        console.log("Stop signal sent.");
+        stopSpinnerRemote.succeed("Stop signal sent");
         return;
       }
 
@@ -597,11 +603,12 @@ export function registerDaemonCommands(program: Command): void {
         process.exit(0);
       }
 
-      console.log(`Stopping daemon (PID ${pid})...`);
+      const stopSpinner = startSpinner(`Stopping daemon (PID ${pid})...`);
       const stopped = await stopDaemon({ wait: true });
       if (stopped) {
-        console.log("Daemon stopped.");
+        stopSpinner.succeed("Daemon stopped");
       } else {
+        stopSpinner.fail("Failed to stop daemon cleanly");
         console.error("Failed to stop daemon cleanly.");
         process.exit(1);
       }
@@ -656,15 +663,15 @@ export function registerDaemonCommands(program: Command): void {
           console.log("Launch path: arc402 openshell init, then arc402 daemon start");
           process.exit(1);
         }
-        console.log("ARC-402 Daemon Status");
-        console.log("─────────────────────");
-        console.log(`State:               running (OpenShell sandbox)`);
-        console.log(`PID:                 ${remotePid}`);
-        console.log(`Sandbox:             ${openShellCfg.sandbox.name}`);
-        console.log(`Runtime root:        ${openShellCfg.runtime?.remote_root ?? DEFAULT_RUNTIME_REMOTE_ROOT}`);
-        console.log(`Log path:            ${REMOTE_DAEMON_LOG}`);
+        console.log(`${c.mark}  ARC-402  Daemon Status`);
         console.log();
-        console.log("Note: remote daemon control plane is active; deep status still flows through the in-sandbox IPC socket.");
+        renderTree([
+          { label: "State", value: "running (OpenShell sandbox)" },
+          { label: "PID", value: String(remotePid) },
+          { label: "Sandbox", value: openShellCfg.sandbox.name },
+          { label: "Runtime", value: openShellCfg.runtime?.remote_root ?? DEFAULT_RUNTIME_REMOTE_ROOT },
+          { label: "Log", value: REMOTE_DAEMON_LOG, last: true },
+        ]);
         return;
       }
 

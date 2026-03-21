@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import fs from "fs";
+import path from "path";
+import os from "os";
 import { registerAcceptCommand } from "./commands/accept";
 import { registerAgentCommands } from "./commands/agent";
 import { registerAgreementsCommands } from "./commands/agreements";
@@ -32,14 +35,48 @@ import { registerColdStartCommands } from "./commands/coldstart";
 import { registerMigrateCommands } from "./commands/migrate";
 import { registerFeedCommand } from "./commands/feed";
 import { registerArenaCommands } from "./commands/arena";
+import { registerWatchCommand } from "./commands/watch";
 import reputation from "./commands/reputation.js";
 import policy from "./commands/policy.js";
+import { BannerConfig } from "./ui/banner";
 
 // Show banner when invoked with no arguments
 if (process.argv.length <= 2) {
-  renderBanner();
-  process.exit(0);
-}
+  void (async () => {
+    const CONFIG_PATH = path.join(os.homedir(), ".arc402", "config.json");
+    let bannerCfg: BannerConfig | undefined;
+
+    if (fs.existsSync(CONFIG_PATH)) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) as {
+          network?: string;
+          walletContractAddress?: string;
+          rpcUrl?: string;
+        };
+        bannerCfg = { network: raw.network };
+        if (raw.walletContractAddress) {
+          const w = raw.walletContractAddress;
+          bannerCfg.wallet = `${w.slice(0, 6)}...${w.slice(-4)}`;
+        }
+        if (raw.rpcUrl && raw.walletContractAddress) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const ethersLib = require("ethers") as typeof import("ethers");
+            const provider = new ethersLib.ethers.JsonRpcProvider(raw.rpcUrl);
+            const bal = await Promise.race([
+              provider.getBalance(raw.walletContractAddress),
+              new Promise<never>((_, r) => setTimeout(() => r(new Error("timeout")), 2000)),
+            ]);
+            bannerCfg.balance = `${parseFloat(ethersLib.ethers.formatEther(bal)).toFixed(4)} ETH`;
+          } catch { /* skip balance on error/timeout */ }
+        }
+      } catch { /* skip config info on parse error */ }
+    }
+
+    renderBanner(bannerCfg);
+    process.exit(0);
+  })();
+} else {
 
 const program = new Command();
 program.name("arc402").description("ARC-402 CLI aligned to canonical-capability discovery → negotiate → hire → remediate → dispute workflow").version(require("../package.json").version);
@@ -74,6 +111,9 @@ registerColdStartCommands(program);
 registerMigrateCommands(program);
 registerFeedCommand(program);
 registerArenaCommands(program);
+registerWatchCommand(program);
 program.addCommand(reputation);
 program.addCommand(policy);
 program.parse(process.argv);
+
+} // end else (has arguments)

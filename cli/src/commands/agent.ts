@@ -10,6 +10,9 @@ import { executeContractWriteViaWallet } from "../wallet-router";
 import { getClient } from "../client";
 import prompts from "prompts";
 import chalk from "chalk";
+import { startSpinner } from "../ui/spinner";
+import { renderTree } from "../ui/tree";
+import { c } from "../ui/colors";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -92,6 +95,7 @@ export function registerAgentCommands(program: Command): void {
             console.warn(chalk.yellow(`⚠️  Low wallet balance: ${ethers.formatEther(walletBalance)} ETH. Registration may fail due to insufficient gas. Fund your wallet with at least 0.0001 ETH first.`));
           }
         }
+        const regSpinner = startSpinner("Registering agent...");
         const tx = await executeContractWriteViaWallet(
           config.walletContractAddress,
           signer,
@@ -101,10 +105,12 @@ export function registerAgentCommands(program: Command): void {
           [opts.name, capabilities, opts.serviceType, opts.endpoint ?? "", metadataUri],
         );
         const receipt = await tx.wait();
-        console.log(chalk.green(`✓ Registered in AgentRegistry`));
-        console.log(`  Wallet:  ${config.walletContractAddress}`);
-        console.log(`  Tx:      ${receipt?.hash}`);
-        if (metadataUri) console.log(`  Metadata URI: ${metadataUri}`);
+        regSpinner.succeed("Registered in AgentRegistry");
+        renderTree([
+          { label: "Wallet", value: config.walletContractAddress },
+          { label: "Tx", value: receipt?.hash ?? "", last: !metadataUri },
+          ...(metadataUri ? [{ label: "Metadata", value: metadataUri, last: true }] : []),
+        ]);
       } else {
         // ── EOA fallback ──
         console.warn(chalk.yellow("⚠ No walletContractAddress in config — registering from EOA key (msg.sender = hot key)."));
@@ -116,9 +122,12 @@ export function registerAgentCommands(program: Command): void {
           }
         }
         const client = new AgentRegistryClient(registryAddress, signer);
+        const eoaSpinner = startSpinner("Registering agent...");
         await client.register({ name: opts.name, serviceType: opts.serviceType, capabilities, endpoint: opts.endpoint ?? "", metadataURI: metadataUri });
-        console.log(chalk.green("✓ Registered in AgentRegistry"));
-        if (metadataUri) console.log(`  metadata URI: ${metadataUri}`);
+        eoaSpinner.succeed("Registered in AgentRegistry");
+        if (metadataUri) {
+          renderTree([{ label: "Metadata", value: metadataUri, last: true }]);
+        }
       }
 
       // ── optional subdomain claim ──────────────────────────────────────────

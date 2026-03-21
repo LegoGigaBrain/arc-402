@@ -3,6 +3,9 @@ import { ethers } from "ethers";
 import { loadConfig, getUsdcAddress } from "../config";
 import { requireSigner } from "../client";
 import { AGENT_REGISTRY_ABI } from "../abis";
+import { startSpinner } from "../ui/spinner";
+import { renderTree } from "../ui/tree";
+import { c } from "../ui/colors";
 
 const DEFAULT_REGISTRY_ADDRESS = "0xD5c2851B00090c92Ba7F4723FB548bb30C9B6865";
 
@@ -122,6 +125,7 @@ export function registerArenaHandshakeCommands(program: Command): void {
 
       const handshake = new ethers.Contract(config.handshakeAddress, HANDSHAKE_ABI, signer);
 
+      const hsSpinner = startSpinner(`Sending ${opts.type} handshake...`);
       let tx;
       if (opts.usdc) {
         // USDC handshake
@@ -133,6 +137,7 @@ export function registerArenaHandshakeCommands(program: Command): void {
         const value = opts.tip ? ethers.parseEther(opts.tip) : 0n;
         tx = await handshake.sendHandshake(agentAddress, hsType, opts.note, { value });
       }
+      hsSpinner.succeed("Handshake sent");
 
       // Notify recipient's HTTP endpoint (non-blocking)
       const registryAddress = config.agentRegistryV2Address ?? config.agentRegistryAddress ?? DEFAULT_REGISTRY_ADDRESS;
@@ -150,14 +155,16 @@ export function registerArenaHandshakeCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify({ tx: tx.hash, from: myAddress, to: agentAddress, type: opts.type, note: opts.note }));
       } else {
-        console.log(`✓ Handshake sent`);
-        console.log(`  From: ${myAddress}`);
-        console.log(`  To:   ${agentAddress}`);
-        console.log(`  Type: ${opts.type}`);
-        if (opts.note) console.log(`  Note: ${opts.note}`);
-        if (opts.tip) console.log(`  Tip:  ${opts.tip} ETH`);
-        if (opts.usdc) console.log(`  Tip:  ${opts.usdc} USDC`);
-        console.log(`  tx:   ${tx.hash}`);
+        const treeItems = [
+          { label: "From", value: myAddress },
+          { label: "To", value: agentAddress },
+          { label: "Type", value: opts.type },
+          ...(opts.note ? [{ label: "Note", value: opts.note as string }] : []),
+          ...(opts.tip ? [{ label: "Tip", value: `${opts.tip as string} ETH` }] : []),
+          ...(opts.usdc ? [{ label: "Tip", value: `${opts.usdc as string} USDC` }] : []),
+          { label: "Tx", value: tx.hash as string, last: true },
+        ];
+        renderTree(treeItems);
       }
     });
 

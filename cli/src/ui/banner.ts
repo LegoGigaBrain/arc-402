@@ -1,5 +1,8 @@
 import chalk from "chalk";
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const _pkg = require("../../package.json") as { version: string };
+
 const ART = `
  ██████╗ ██████╗  ██████╗      ██╗  ██╗ ██████╗ ██████╗
  ██╔══██╗██╔══██╗██╔════╝      ██║  ██║██╔═══██╗╚════██╗
@@ -19,7 +22,7 @@ export interface BannerConfig {
 export function renderBanner(config?: BannerConfig): void {
   console.log(chalk.cyan(ART));
   console.log();
-  console.log(" " + chalk.dim("agent-to-agent arcing · v0.1.0"));
+  console.log(" " + chalk.dim(`agent-to-agent arcing · v${_pkg.version}`));
   console.log(" " + SEPARATOR);
 
   if (config) {
@@ -36,6 +39,6 @@ export function renderBanner(config?: BannerConfig): void {
   }
 
   console.log();
-  console.log(` ${chalk.dim("Type 'arc help' to get started")}`);
+  console.log(` ${chalk.dim("Type 'arc402 help' to get started")}`);
   console.log();
 }

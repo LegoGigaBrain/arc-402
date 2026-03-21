@@ -17,6 +17,9 @@ import { clearWCSession } from "../walletconnect-session";
 import { handleWalletError } from "../wallet-router";
 import { requestCoinbaseSmartWalletSignature } from "../coinbase-smart-wallet";
 import { sendTelegramMessage } from "../telegram-notify";
+import { renderTree } from "../ui/tree";
+import { startSpinner } from "../ui/spinner";
+import { c } from "../ui/colors";
 
 const POLICY_ENGINE_DEFAULT = "0x44102e70c2A366632d98Fe40d892a2501fC7fFF2";
 
@@ -319,7 +322,10 @@ export function registerWalletCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify({ address, balance: formatted, balanceWei: ethBalance.toString() }));
       } else {
-        console.log(`Balance: ${formatted} ETH`);
+        renderTree([
+          { label: "Address", value: address },
+          { label: "Balance", value: `${formatted} ETH`, last: true },
+        ]);
       }
     });
 
@@ -665,7 +671,7 @@ export function registerWalletCommands(program: Command): void {
         console.warn("  Run `arc402 config set walletConnectProjectId <id>` to enable phone wallet signing.");
         const { signer, address } = await requireSigner(config);
         const factory = new ethers.Contract(factoryAddress, WALLET_FACTORY_ABI, signer);
-        console.log(`Deploying ARC402Wallet via factory at ${factoryAddress}...`);
+        const deploySpinner = startSpinner(`Deploying ARC402Wallet via factory at ${factoryAddress}...`);
         const tx = await factory.createWallet("0x0000000071727De22E5E9d8BAf0edAc6f37da032");
         const receipt = await tx.wait();
         let walletAddress: string | null = null;
@@ -679,9 +685,10 @@ export function registerWalletCommands(program: Command): void {
           } catch { /* skip unparseable logs */ }
         }
         if (!walletAddress) {
-          console.error("Could not find WalletCreated event in receipt. Check the transaction on-chain.");
+          deploySpinner.fail("Could not find WalletCreated event in receipt. Check the transaction on-chain.");
           process.exit(1);
         }
+        deploySpinner.succeed("Wallet deployed");
 
         // Generate guardian key (separate from hot key) and call setGuardian
         const guardianWallet = ethers.Wallet.createRandom();
@@ -712,8 +719,11 @@ export function registerWalletCommands(program: Command): void {
           },
         );
 
-        console.log(`ARC402Wallet deployed at: ${walletAddress}`);
-        console.log(`Guardian key generated: ${guardianWallet.address}`);
+        console.log(` ${c.success} ARC402Wallet deployed`);
+        renderTree([
+          { label: "Wallet", value: walletAddress },
+          { label: "Guardian", value: guardianWallet.address, last: true },
+        ]);
         console.log(`Guardian private key saved to config (keep it safe — used for emergency freeze only)`);
         console.log(`Your wallet contract is ready for policy enforcement`);
         printOpenShellHint();

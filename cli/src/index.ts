@@ -42,7 +42,7 @@ if (process.argv.length <= 2) {
 }
 
 const program = new Command();
-program.name("arc402").description("ARC-402 CLI aligned to canonical-capability discovery → negotiate → hire → remediate → dispute workflow").version("0.3.2");
+program.name("arc402").description("ARC-402 CLI aligned to canonical-capability discovery → negotiate → hire → remediate → dispute workflow").version(require("../package.json").version);
 registerConfigCommands(program);
 registerHandshakeCommand(program);
 registerAgentCommands(program);

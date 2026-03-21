@@ -1,1 +1,0 @@
-self.__NEXT_FONT_MANIFEST='{"pages":{},"app":{"/home/lego/.openclaw/workspace-engineering/products/arc-402/arena/app/layout":["static/media/26d4368bf94c0ec4-s.p.woff2","static/media/b7bd7951037de757-s.p.woff2"]},"appUsingSizeAdjust":true,"pagesUsingSizeAdjust":false}';

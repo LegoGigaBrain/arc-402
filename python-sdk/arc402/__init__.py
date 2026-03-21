@@ -56,6 +56,13 @@ from .types import (
     TrustScore,
 )
 from .wallet import ARC402Wallet
+from .endpoint import (
+    resolve_endpoint,
+    notify_endpoint,
+    notify_hire,
+    notify_handshake,
+    DEFAULT_REGISTRY_ADDRESS,
+)
 
 ARC402Operator = ARC402Wallet
 
@@ -118,6 +125,11 @@ __all__ = [
     "NetworkNotSupported",
     "TransactionFailed",
     "AttestationNotFound",
+    "resolve_endpoint",
+    "notify_endpoint",
+    "notify_hire",
+    "notify_handshake",
+    "DEFAULT_REGISTRY_ADDRESS",
 ]
 
 __version__ = "0.2.0"

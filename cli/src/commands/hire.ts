@@ -6,7 +6,9 @@ import { requireSigner } from "../client";
 import { hashFile, hashString } from "../utils/hash";
 import { parseDuration } from "../utils/time";
 import { printSenderInfo, executeContractWriteViaWallet } from "../wallet-router";
-import { SERVICE_AGREEMENT_ABI } from "../abis";
+import { AGENT_REGISTRY_ABI, SERVICE_AGREEMENT_ABI } from "../abis";
+
+const DEFAULT_REGISTRY_ADDRESS = "0xD5c2851B00090c92Ba7F4723FB548bb30C9B6865";
 
 const sessionManager = new SessionManager();
 
@@ -181,6 +183,34 @@ export function registerHireCommand(program: Command): void {
           deliverablesHash,
         });
         agreementId = result.agreementId;
+      }
+
+      // Notify provider's HTTP endpoint (non-blocking)
+      const hireRegistryAddress = config.agentRegistryV2Address ?? config.agentRegistryAddress ?? DEFAULT_REGISTRY_ADDRESS;
+      try {
+        const hireProvider = new ethers.JsonRpcProvider(config.rpcUrl);
+        const hireRegistry = new ethers.Contract(hireRegistryAddress, AGENT_REGISTRY_ABI, hireProvider);
+        const agentData = await hireRegistry.getAgent(opts.agent);
+        const endpoint = agentData.endpoint as string;
+        if (endpoint) {
+          await fetch(`${endpoint}/hire`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              agreementId: agreementId!.toString(),
+              from: address,
+              provider: opts.agent,
+              serviceType: opts.serviceType,
+              task: opts.task,
+              price: price.toString(),
+              token,
+              deadline: deadlineSeconds,
+              deliverablesHash,
+            }),
+          });
+        }
+      } catch (err) {
+        console.warn(`Warning: could not notify provider endpoint: ${err instanceof Error ? err.message : String(err)}`);
       }
 
       if (opts.session) {

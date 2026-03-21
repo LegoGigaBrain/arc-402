@@ -2,6 +2,26 @@ import { Command } from "commander";
 import { ethers } from "ethers";
 import { loadConfig, getUsdcAddress } from "../config";
 import { requireSigner } from "../client";
+import { AGENT_REGISTRY_ABI } from "../abis";
+
+const DEFAULT_REGISTRY_ADDRESS = "0xD5c2851B00090c92Ba7F4723FB548bb30C9B6865";
+
+async function pingHandshakeEndpoint(
+  agentAddress: string,
+  payload: Record<string, unknown>,
+  registryAddress: string,
+  provider: ethers.Provider
+): Promise<void> {
+  const registry = new ethers.Contract(registryAddress, AGENT_REGISTRY_ABI, provider);
+  const agentData = await registry.getAgent(agentAddress);
+  const endpoint = agentData.endpoint as string;
+  if (!endpoint) return;
+  await fetch(`${endpoint}/handshake`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
 
 // ─── Handshake Contract ABI (from Handshake.sol) ─────────────────────────────
 
@@ -112,6 +132,19 @@ export function registerArenaHandshakeCommands(program: Command): void {
         // ETH handshake (with optional tip)
         const value = opts.tip ? ethers.parseEther(opts.tip) : 0n;
         tx = await handshake.sendHandshake(agentAddress, hsType, opts.note, { value });
+      }
+
+      // Notify recipient's HTTP endpoint (non-blocking)
+      const registryAddress = config.agentRegistryV2Address ?? config.agentRegistryAddress ?? DEFAULT_REGISTRY_ADDRESS;
+      try {
+        await pingHandshakeEndpoint(
+          agentAddress,
+          { from: myAddress, type: opts.type, note: opts.note, txHash: tx.hash },
+          registryAddress,
+          provider
+        );
+      } catch (err) {
+        console.warn(`Warning: could not notify recipient endpoint: ${err instanceof Error ? err.message : String(err)}`);
       }
 
       if (opts.json) {

@@ -145,6 +145,10 @@ async function runCompleteOnboardingCeremony(
   const agentRegistryAddress =
     config.agentRegistryV2Address ??
     NETWORK_DEFAULTS[config.network]?.agentRegistryV2Address;
+  const handshakeAddress =
+    config.handshakeAddress ??
+    NETWORK_DEFAULTS[config.network]?.handshakeAddress ??
+    "0x4F5A38Bb746d7E5d49d8fd26CA6beD141Ec2DDb3";
 
   // ── Step 2: Machine Key ────────────────────────────────────────────────────
   console.log("\n" + c.dim("── Step 2: Machine Key ────────────────────────────────────────"));
@@ -192,25 +196,105 @@ async function runCompleteOnboardingCeremony(
   if (passkeyActive) {
     console.log(" " + c.success + c.dim(" Passkey already active"));
   } else {
-    const answer = await prompts({
-      type: "confirm",
-      name: "setup",
-      message: "Set up Face ID / passkey for governance signing?",
-      initial: true,
+    const passkeyUrl = `https://app.arc402.xyz/passkey-setup?wallet=${walletAddress}`;
+    console.log("\n " + c.white("Open this URL in your browser to set up Face ID:"));
+    console.log("   " + c.cyan(passkeyUrl));
+    console.log(" " + c.dim("Complete Face ID registration, then press Enter. Type 'n' + Enter to skip.\n"));
+    const passkeyAns = await prompts({
+      type: "text",
+      name: "done",
+      message: "Press Enter when done (or type 'n' to skip)",
+      initial: "",
     });
-    if (answer.setup) {
-      console.log("\n " + c.white("Passkey setup requires a browser. Open this URL:"));
-      console.log(`   https://app.arc402.xyz/passkey-setup?wallet=${walletAddress}`);
-      console.log(" " + c.dim("(setPasskey tx will go through MetaMask from the browser)"));
-    } else {
+    if ((passkeyAns.done as string | undefined)?.toLowerCase() === "n") {
       console.log(" " + c.warning + " Passkey skipped");
+    } else {
+      passkeyActive = true;
+      console.log(" " + c.success + " Passkey set (via browser)");
     }
   }
 
   // ── Step 4: Policy ────────────────────────────────────────────────────────
   console.log("\n" + c.dim("── Step 4: Policy ─────────────────────────────────────────────"));
-  console.log(" " + c.success + " Protocol bypass active");
 
+  // 4a) setVelocityLimit
+  let velocityLimitEth = "0.05";
+  let velocityAlreadySet = false;
+  try {
+    const ownerC = new ethers.Contract(walletAddress, ARC402_WALLET_OWNER_ABI, provider);
+    const existing = await ownerC.velocityLimit() as bigint;
+    if (existing > 0n) {
+      velocityAlreadySet = true;
+      velocityLimitEth = ethers.formatEther(existing);
+      console.log(" " + c.success + c.dim(` Velocity limit already set: ${velocityLimitEth} ETH`));
+    }
+  } catch { /* ignore */ }
+
+  if (!velocityAlreadySet) {
+    const velAns = await prompts({
+      type: "text",
+      name: "limit",
+      message: "Velocity limit (ETH / rolling window)?",
+      initial: "0.05",
+    });
+    velocityLimitEth = (velAns.limit as string | undefined) || "0.05";
+    const velIface = new ethers.Interface(["function setVelocityLimit(uint256 limit) external"]);
+    await sendTx(
+      { to: walletAddress, data: velIface.encodeFunctionData("setVelocityLimit", [ethers.parseEther(velocityLimitEth)]), value: "0x0" },
+      `setVelocityLimit: ${velocityLimitEth} ETH`,
+    );
+    saveConfig(config);
+  }
+
+  // 4b) setGuardian (optional — address, 'g' to generate, or skip)
+  let guardianAddress: string | null = null;
+  try {
+    const guardianC = new ethers.Contract(walletAddress, ARC402_WALLET_GUARDIAN_ABI, provider);
+    const existing = await guardianC.guardian() as string;
+    if (existing && existing !== ethers.ZeroAddress) {
+      guardianAddress = existing;
+      console.log(" " + c.success + c.dim(` Guardian already set: ${existing}`));
+    }
+  } catch { /* ignore */ }
+
+  if (!guardianAddress) {
+    const guardianAns = await prompts({
+      type: "text",
+      name: "guardian",
+      message: "Guardian address? (address, 'g' to generate, Enter to skip)",
+      initial: "",
+    });
+    const guardianInput = (guardianAns.guardian as string | undefined)?.trim() ?? "";
+    if (guardianInput.toLowerCase() === "g") {
+      const generatedGuardian = ethers.Wallet.createRandom();
+      config.guardianPrivateKey = generatedGuardian.privateKey;
+      config.guardianAddress = generatedGuardian.address;
+      saveConfig(config);
+      guardianAddress = generatedGuardian.address;
+      console.log("\n " + c.warning + " IMPORTANT: Save this guardian private key (emergency freeze key):");
+      console.log("   " + c.dim(generatedGuardian.privateKey));
+      console.log("   " + c.dim("Address: ") + c.white(generatedGuardian.address) + "\n");
+      const guardianIface = new ethers.Interface(["function setGuardian(address _guardian) external"]);
+      await sendTx(
+        { to: walletAddress, data: guardianIface.encodeFunctionData("setGuardian", [guardianAddress]), value: "0x0" },
+        "setGuardian",
+      );
+      saveConfig(config);
+    } else if (guardianInput && ethers.isAddress(guardianInput)) {
+      guardianAddress = guardianInput;
+      config.guardianAddress = guardianInput;
+      const guardianIface = new ethers.Interface(["function setGuardian(address _guardian) external"]);
+      await sendTx(
+        { to: walletAddress, data: guardianIface.encodeFunctionData("setGuardian", [guardianAddress]), value: "0x0" },
+        "setGuardian",
+      );
+      saveConfig(config);
+    } else if (guardianInput) {
+      console.log(" " + c.warning + " Invalid address — guardian skipped");
+    }
+  }
+
+  // 4c) setCategoryLimitFor('hire')
   let hireLimit = "0.1";
   let hireLimitAlreadySet = false;
   try {
@@ -227,7 +311,7 @@ async function runCompleteOnboardingCeremony(
     const limitAns = await prompts({
       type: "text",
       name: "limit",
-      message: "Set hire spending limit? (default: 0.1 ETH)",
+      message: "Max price per hire (ETH)?",
       initial: "0.1",
     });
     hireLimit = (limitAns.limit as string | undefined) || "0.1";
@@ -239,27 +323,18 @@ async function runCompleteOnboardingCeremony(
       { to: policyAddress, data: policyIface.encodeFunctionData("setCategoryLimitFor", [walletAddress, "hire", hireLimitWei]), value: "0x0" },
       `setCategoryLimitFor: hire → ${hireLimit} ETH`,
     );
+    saveConfig(config);
   }
 
-  // Optional guardian
-  const guardianAns = await prompts({
-    type: "text",
-    name: "guardian",
-    message: "Set guardian address? (optional, press enter to skip)",
-    initial: "",
-  });
-  const guardianInput = (guardianAns.guardian as string | undefined)?.trim() ?? "";
-  if (guardianInput && ethers.isAddress(guardianInput)) {
-    const guardianIface = new ethers.Interface(["function setGuardian(address _guardian) external"]);
-    await sendTx(
-      { to: walletAddress, data: guardianIface.encodeFunctionData("setGuardian", [guardianInput]), value: "0x0" },
-      "setGuardian",
-    );
-    config.guardianAddress = guardianInput;
-    saveConfig(config);
-  } else if (guardianInput) {
-    console.log(" " + c.warning + " Invalid address — guardian skipped");
-  }
+  // 4d) enableContractInteraction(wallet, Handshake)
+  const contractInteractionIface = new ethers.Interface([
+    "function enableContractInteraction(address wallet, address target) external",
+  ]);
+  await sendTx(
+    { to: policyAddress, data: contractInteractionIface.encodeFunctionData("enableContractInteraction", [walletAddress, handshakeAddress]), value: "0x0" },
+    "enableContractInteraction: Handshake",
+  );
+  saveConfig(config);
 
   console.log(" " + c.success + " Policy configured");
 
@@ -300,7 +375,7 @@ async function runCompleteOnboardingCeremony(
       const capabilities: string[] = ((answers.caps as string | undefined) || "research")
         .split(",").map((s) => s.trim()).filter(Boolean);
 
-      // Enable DeFi access + whitelist AgentRegistry on PolicyEngine (idempotent)
+      // 5a) enableDefiAccess (check first)
       const peExtIface = new ethers.Interface([
         "function enableDefiAccess(address wallet) external",
         "function whitelistContract(address wallet, address target) external",
@@ -313,19 +388,26 @@ async function runCompleteOnboardingCeremony(
       if (!defiEnabled) {
         await sendTx(
           { to: policyAddress, data: peExtIface.encodeFunctionData("enableDefiAccess", [walletAddress]), value: "0x0" },
-          "enableDefiAccess",
+          "enableDefiAccess on PolicyEngine",
         );
+        saveConfig(config);
+      } else {
+        console.log(" " + c.success + c.dim(" enableDefiAccess — already done"));
       }
 
+      // 5b) whitelistContract for AgentRegistry (check first)
       const whitelisted = await peContract.isContractWhitelisted(walletAddress, agentRegistryAddress).catch(() => false) as boolean;
       if (!whitelisted) {
         await sendTx(
           { to: policyAddress, data: peExtIface.encodeFunctionData("whitelistContract", [walletAddress, agentRegistryAddress]), value: "0x0" },
-          "whitelistContract: AgentRegistry",
+          "whitelistContract: AgentRegistry on PolicyEngine",
         );
+        saveConfig(config);
+      } else {
+        console.log(" " + c.success + c.dim(" whitelistContract(AgentRegistry) — already done"));
       }
 
-      // executeContractCall → register
+      // 5c+d) executeContractCall → register
       const regIface  = new ethers.Interface(AGENT_REGISTRY_ABI);
       const execIface = new ethers.Interface(ARC402_WALLET_EXECUTE_ABI);
       const regData   = regIface.encodeFunctionData("register", [agentName, capabilities, agentServiceType, agentEndpoint, ""]);
@@ -355,15 +437,17 @@ async function runCompleteOnboardingCeremony(
 
   console.log("\n " + c.success + c.white(" Onboarding complete"));
   renderTree([
-    { label: "Wallet",   value: c.white(walletAddress) },
-    { label: "Owner",    value: c.white(ownerAddress) },
-    { label: "Machine",  value: c.white(machineKeyAddress) + c.dim(" (authorized)") },
-    { label: "Passkey",  value: passkeyActive ? c.green("✓ Active") : c.yellow("⚠ Not set") },
-    { label: "Policy",   value: c.white(`hire limit: ${hireLimit} ETH`) },
-    { label: "Agent",    value: agentName ? c.white(agentName) : c.dim("not registered") },
-    { label: "Service",  value: agentServiceType ? c.white(agentServiceType) : c.dim("—") },
-    { label: "Endpoint", value: agentEndpoint ? c.white(agentEndpoint) : c.dim("—") },
-    { label: "Trust",    value: c.white(`${trustScore} (Restricted)`), last: true },
+    { label: "Wallet",     value: c.white(walletAddress) },
+    { label: "Owner",      value: c.white(ownerAddress) },
+    { label: "Machine",    value: c.white(machineKeyAddress) + c.dim(" (authorized)") },
+    { label: "Passkey",    value: passkeyActive ? c.green("✓ set") : c.yellow("⚠ skipped") },
+    { label: "Velocity",   value: c.white(velocityLimitEth + " ETH") },
+    { label: "Guardian",   value: guardianAddress ? c.white(guardianAddress) : c.dim("none") },
+    { label: "Hire limit", value: c.white(hireLimit + " ETH") },
+    { label: "Agent",      value: agentName ? c.white(agentName) : c.dim("not registered") },
+    { label: "Service",    value: agentServiceType ? c.white(agentServiceType) : c.dim("—") },
+    { label: "Endpoint",   value: agentEndpoint ? c.white(agentEndpoint) : c.dim("—") },
+    { label: "Trust",      value: c.white(`${trustScore}`), last: true },
   ]);
   console.log("\n " + c.dim("Next: fund your wallet with 0.002 ETH on Base"));
   console.log(" " + c.dim("      arc402 daemon start"));

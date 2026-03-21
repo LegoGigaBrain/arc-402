@@ -123,6 +123,252 @@ async function runWalletOnboardingCeremony(
   console.log(" " + c.dim("arc402 wallet policy set-daily-limit --category general --amount <eth>   — daily per-category cap"));
 }
 
+/**
+ * Complete ARC-402 onboarding ceremony — matches web flow at app.arc402.xyz/onboard.
+ * Runs in a single WalletConnect session (or any sendTx provider). Idempotent.
+ *
+ * Steps:
+ *   2. Machine key — generate + authorizeMachineKey
+ *   3. Passkey    — CLI shows browser URL (WebAuthn requires browser)
+ *   4. Policy     — v5 protocol bypass; set hire limit + optional guardian
+ *   5. Agent      — register on AgentRegistry via executeContractCall
+ *   6. Summary    — branded tree
+ */
+async function runCompleteOnboardingCeremony(
+  walletAddress: string,
+  ownerAddress: string,
+  config: Arc402Config,
+  provider: ethers.JsonRpcProvider,
+  sendTx: (call: { to: string; data: string; value: string }, description: string) => Promise<string>,
+): Promise<void> {
+  const policyAddress = config.policyEngineAddress ?? POLICY_ENGINE_DEFAULT;
+  const agentRegistryAddress =
+    config.agentRegistryV2Address ??
+    NETWORK_DEFAULTS[config.network]?.agentRegistryV2Address;
+
+  // ── Step 2: Machine Key ────────────────────────────────────────────────────
+  console.log("\n" + c.dim("── Step 2: Machine Key ────────────────────────────────────────"));
+
+  let machineKeyAddress: string;
+  if (config.privateKey) {
+    machineKeyAddress = new ethers.Wallet(config.privateKey).address;
+  } else {
+    const mk = ethers.Wallet.createRandom();
+    machineKeyAddress = mk.address;
+    config.privateKey = mk.privateKey;
+    saveConfig(config);
+    console.log(" " + c.dim("Machine key generated: ") + c.white(machineKeyAddress));
+    console.log(" " + c.dim("Private key saved to ~/.arc402/config.json (chmod 600)"));
+  }
+
+  let mkAlreadyAuthorized = false;
+  try {
+    const mkContract = new ethers.Contract(walletAddress, ARC402_WALLET_MACHINE_KEY_ABI, provider);
+    mkAlreadyAuthorized = await mkContract.authorizedMachineKeys(machineKeyAddress) as boolean;
+  } catch { /* older wallet — will try to authorize */ }
+
+  if (mkAlreadyAuthorized) {
+    console.log(" " + c.success + c.dim(" Machine key already authorized: ") + c.white(machineKeyAddress));
+  } else {
+    console.log(" " + c.dim("Authorizing machine key: ") + c.white(machineKeyAddress));
+    const mkIface = new ethers.Interface(ARC402_WALLET_MACHINE_KEY_ABI);
+    await sendTx(
+      { to: walletAddress, data: mkIface.encodeFunctionData("authorizeMachineKey", [machineKeyAddress]), value: "0x0" },
+      "authorizeMachineKey",
+    );
+    console.log(" " + c.success + " Machine key authorized");
+  }
+
+  // ── Step 3: Passkey ───────────────────────────────────────────────────────
+  console.log("\n" + c.dim("── Step 3: Passkey (Face ID / WebAuthn) ──────────────────────"));
+
+  let passkeyActive = false;
+  try {
+    const walletC = new ethers.Contract(walletAddress, ARC402_WALLET_PASSKEY_ABI, provider);
+    const auth = await walletC.ownerAuth() as [bigint, string, string];
+    passkeyActive = Number(auth[0]) === 1;
+  } catch { /* ignore */ }
+
+  if (passkeyActive) {
+    console.log(" " + c.success + c.dim(" Passkey already active"));
+  } else {
+    const answer = await prompts({
+      type: "confirm",
+      name: "setup",
+      message: "Set up Face ID / passkey for governance signing?",
+      initial: true,
+    });
+    if (answer.setup) {
+      console.log("\n " + c.white("Passkey setup requires a browser. Open this URL:"));
+      console.log(`   https://app.arc402.xyz/passkey-setup?wallet=${walletAddress}`);
+      console.log(" " + c.dim("(setPasskey tx will go through MetaMask from the browser)"));
+    } else {
+      console.log(" " + c.warning + " Passkey skipped");
+    }
+  }
+
+  // ── Step 4: Policy ────────────────────────────────────────────────────────
+  console.log("\n" + c.dim("── Step 4: Policy ─────────────────────────────────────────────"));
+  console.log(" " + c.success + " Protocol bypass active");
+
+  let hireLimit = "0.1";
+  let hireLimitAlreadySet = false;
+  try {
+    const limitsContract = new ethers.Contract(policyAddress, POLICY_ENGINE_LIMITS_ABI, provider);
+    const existing = await limitsContract.categoryLimits(walletAddress, "hire") as bigint;
+    if (existing > 0n) {
+      hireLimitAlreadySet = true;
+      hireLimit = ethers.formatEther(existing);
+      console.log(" " + c.success + c.dim(` Hire limit already set: ${hireLimit} ETH`));
+    }
+  } catch { /* ignore */ }
+
+  if (!hireLimitAlreadySet) {
+    const limitAns = await prompts({
+      type: "text",
+      name: "limit",
+      message: "Set hire spending limit? (default: 0.1 ETH)",
+      initial: "0.1",
+    });
+    hireLimit = (limitAns.limit as string | undefined) || "0.1";
+    const hireLimitWei = ethers.parseEther(hireLimit);
+    const policyIface = new ethers.Interface([
+      "function setCategoryLimitFor(address wallet, string category, uint256 limitPerTx) external",
+    ]);
+    await sendTx(
+      { to: policyAddress, data: policyIface.encodeFunctionData("setCategoryLimitFor", [walletAddress, "hire", hireLimitWei]), value: "0x0" },
+      `setCategoryLimitFor: hire → ${hireLimit} ETH`,
+    );
+  }
+
+  // Optional guardian
+  const guardianAns = await prompts({
+    type: "text",
+    name: "guardian",
+    message: "Set guardian address? (optional, press enter to skip)",
+    initial: "",
+  });
+  const guardianInput = (guardianAns.guardian as string | undefined)?.trim() ?? "";
+  if (guardianInput && ethers.isAddress(guardianInput)) {
+    const guardianIface = new ethers.Interface(["function setGuardian(address _guardian) external"]);
+    await sendTx(
+      { to: walletAddress, data: guardianIface.encodeFunctionData("setGuardian", [guardianInput]), value: "0x0" },
+      "setGuardian",
+    );
+    config.guardianAddress = guardianInput;
+    saveConfig(config);
+  } else if (guardianInput) {
+    console.log(" " + c.warning + " Invalid address — guardian skipped");
+  }
+
+  console.log(" " + c.success + " Policy configured");
+
+  // ── Step 5: Agent Registration ─────────────────────────────────────────────
+  console.log("\n" + c.dim("── Step 5: Agent Registration ─────────────────────────────────"));
+
+  let agentAlreadyRegistered = false;
+  let agentName = "";
+  let agentServiceType = "";
+  let agentEndpoint = "";
+
+  if (agentRegistryAddress) {
+    try {
+      const regContract = new ethers.Contract(agentRegistryAddress, AGENT_REGISTRY_ABI, provider);
+      agentAlreadyRegistered = await regContract.isRegistered(walletAddress) as boolean;
+      if (agentAlreadyRegistered) {
+        const info = await regContract.getAgent(walletAddress) as { name: string; serviceType: string; endpoint: string };
+        agentName = info.name;
+        agentServiceType = info.serviceType;
+        agentEndpoint = info.endpoint;
+        console.log(" " + c.success + c.dim(` Agent already registered: ${agentName}`));
+      }
+    } catch { /* ignore */ }
+
+    if (!agentAlreadyRegistered) {
+      const rawHostname = os.hostname();
+      const cleanHostname = rawHostname.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+      const answers = await prompts([
+        { type: "text", name: "name",        message: "Agent name?",                          initial: cleanHostname },
+        { type: "text", name: "serviceType", message: "Service type?",                        initial: "intelligence" },
+        { type: "text", name: "caps",        message: "Capabilities? (comma-separated)",       initial: "research" },
+        { type: "text", name: "endpoint",    message: "Endpoint?",                            initial: `https://${cleanHostname}.arc402.xyz` },
+      ]);
+
+      agentName        = (answers.name        as string | undefined) || cleanHostname;
+      agentServiceType = (answers.serviceType as string | undefined) || "intelligence";
+      agentEndpoint    = (answers.endpoint    as string | undefined) || `https://${cleanHostname}.arc402.xyz`;
+      const capabilities: string[] = ((answers.caps as string | undefined) || "research")
+        .split(",").map((s) => s.trim()).filter(Boolean);
+
+      // Enable DeFi access + whitelist AgentRegistry on PolicyEngine (idempotent)
+      const peExtIface = new ethers.Interface([
+        "function enableDefiAccess(address wallet) external",
+        "function whitelistContract(address wallet, address target) external",
+        "function defiAccessEnabled(address) external view returns (bool)",
+        "function isContractWhitelisted(address wallet, address target) external view returns (bool)",
+      ]);
+      const peContract = new ethers.Contract(policyAddress, peExtIface, provider);
+
+      const defiEnabled = await peContract.defiAccessEnabled(walletAddress).catch(() => false) as boolean;
+      if (!defiEnabled) {
+        await sendTx(
+          { to: policyAddress, data: peExtIface.encodeFunctionData("enableDefiAccess", [walletAddress]), value: "0x0" },
+          "enableDefiAccess",
+        );
+      }
+
+      const whitelisted = await peContract.isContractWhitelisted(walletAddress, agentRegistryAddress).catch(() => false) as boolean;
+      if (!whitelisted) {
+        await sendTx(
+          { to: policyAddress, data: peExtIface.encodeFunctionData("whitelistContract", [walletAddress, agentRegistryAddress]), value: "0x0" },
+          "whitelistContract: AgentRegistry",
+        );
+      }
+
+      // executeContractCall → register
+      const regIface  = new ethers.Interface(AGENT_REGISTRY_ABI);
+      const execIface = new ethers.Interface(ARC402_WALLET_EXECUTE_ABI);
+      const regData   = regIface.encodeFunctionData("register", [agentName, capabilities, agentServiceType, agentEndpoint, ""]);
+      const execData  = execIface.encodeFunctionData("executeContractCall", [{
+        target: agentRegistryAddress,
+        data: regData,
+        value: 0n,
+        minReturnValue: 0n,
+        maxApprovalAmount: 0n,
+        approvalToken: ethers.ZeroAddress,
+      }]);
+      await sendTx({ to: walletAddress, data: execData, value: "0x0" }, `register agent: ${agentName}`);
+      console.log(" " + c.success + " Agent registered: " + agentName);
+    }
+  } else {
+    console.log(" " + c.warning + " AgentRegistry address not configured — skipping");
+  }
+
+  // ── Step 6: Summary ───────────────────────────────────────────────────────
+  const trustScore = await (async () => {
+    try {
+      const trust = new ethers.Contract(config.trustRegistryAddress, TRUST_REGISTRY_ABI, provider);
+      const s = await trust.getScore(walletAddress) as bigint;
+      return s.toString();
+    } catch { return "100"; }
+  })();
+
+  console.log("\n " + c.success + c.white(" Onboarding complete"));
+  renderTree([
+    { label: "Wallet",   value: c.white(walletAddress) },
+    { label: "Owner",    value: c.white(ownerAddress) },
+    { label: "Machine",  value: c.white(machineKeyAddress) + c.dim(" (authorized)") },
+    { label: "Passkey",  value: passkeyActive ? c.green("✓ Active") : c.yellow("⚠ Not set") },
+    { label: "Policy",   value: c.white(`hire limit: ${hireLimit} ETH`) },
+    { label: "Agent",    value: agentName ? c.white(agentName) : c.dim("not registered") },
+    { label: "Service",  value: agentServiceType ? c.white(agentServiceType) : c.dim("—") },
+    { label: "Endpoint", value: agentEndpoint ? c.white(agentEndpoint) : c.dim("—") },
+    { label: "Trust",    value: c.white(`${trustScore} (Restricted)`), last: true },
+  ]);
+  console.log("\n " + c.dim("Next: fund your wallet with 0.002 ETH on Base"));
+  console.log(" " + c.dim("      arc402 daemon start"));
+}
+
 function printOpenShellHint(): void {
   const r = spawnSync("which", ["openshell"], { encoding: "utf-8" });
   if (r.status === 0 && r.stdout.trim()) {
@@ -655,113 +901,30 @@ export function registerWalletCommands(program: Command): void {
           console.error("Could not find WalletCreated event in receipt. Check the transaction on-chain.");
           process.exit(1);
         }
-        // ── Step 1 complete: save wallet + owner ──────────────────────────────
+        // ── Step 1 complete: save wallet + owner immediately ─────────────────
         config.walletContractAddress = walletAddress;
         config.ownerAddress = account;
         saveConfig(config);
         try { fs.chmodSync(getConfigPath(), 0o600); } catch { /* best-effort */ }
-        console.log("\n " + c.success + c.white(" Step 1 — wallet deployed"));
+        console.log("\n " + c.success + c.white(" Wallet deployed"));
         renderTree([
           { label: "Wallet", value: walletAddress },
-          { label: "Owner", value: account },
+          { label: "Owner", value: account, last: true },
         ]);
 
-        // ── Step 2: Generate machine key ──────────────────────────────────────
-        console.log("\n" + c.dim("── Step 2: Machine key ─────────────────────────────────────────"));
-        const machineWallet = ethers.Wallet.createRandom();
-        config.privateKey = machineWallet.privateKey;
-        saveConfig(config);
-        console.log(" " + c.success + c.white(" Machine key generated"));
-        console.log("   " + c.dim("Address: ") + c.white(machineWallet.address));
-
-        // ── Step 3: Authorize machine key (one MetaMask tap) ──────────────────
-        console.log("\n" + c.dim("── Step 3: Authorize machine key ───────────────────────────────"));
-        const mkIface = new ethers.Interface(ARC402_WALLET_MACHINE_KEY_ABI);
-        let authHash: string | null = null;
-        try {
-          const authSpinner = startSpinner("Sending authorizeMachineKey — approve in MetaMask...");
-          authHash = await sendTransactionWithSession(client, session, account, chainId, {
-            to: walletAddress,
-            data: mkIface.encodeFunctionData("authorizeMachineKey", [machineWallet.address]),
-            value: "0x0",
-          });
-          await provider.waitForTransaction(authHash, 1);
-          authSpinner.succeed("Machine key authorized");
-        } catch {
-          console.error(" " + c.failure + c.red(" authorizeMachineKey failed — run manually:"));
-          console.error("   arc402 wallet authorize-machine-key " + machineWallet.address);
-        }
-
-        // ── Step 4: Protocol bypass — no PolicyEngine registration needed ─────
-        console.log("\n " + c.success + c.dim(" Protocol bypass active — no PolicyEngine registration needed"));
-
-        // ── Step 5: Prompt for agent details ──────────────────────────────────
-        console.log("\n" + c.dim("── Step 5: Agent details ───────────────────────────────────────"));
-        const defaultAgentName = os.hostname() || "MyAgent";
-        const agentAnswers = await prompts([
-          { type: "text", name: "agentName", message: "Agent name?", initial: defaultAgentName },
-          { type: "text", name: "serviceType", message: "Service type?", initial: "intelligence" },
-          { type: "text", name: "caps", message: "Capabilities? (comma-separated)", initial: "research" },
-          { type: "text", name: "endpoint", message: "Endpoint?", initial: `https://${defaultAgentName.toLowerCase().replace(/[^a-z0-9-]/g, "-")}.arc402.xyz` },
-        ]);
-        const agentName = (agentAnswers.agentName as string | undefined) || defaultAgentName;
-        const serviceType = (agentAnswers.serviceType as string | undefined) || "intelligence";
-        const capabilities = ((agentAnswers.caps as string | undefined) || "research")
-          .split(",").map((s: string) => s.trim()).filter(Boolean);
-        const agentEndpoint = (agentAnswers.endpoint as string | undefined) || "";
-
-        // ── Step 6: Register agent (one MetaMask tap) ─────────────────────────
-        console.log("\n" + c.dim("── Step 6: Register agent ──────────────────────────────────────"));
-        const agentRegistryAddress2 =
-          config.agentRegistryV2Address ??
-          NETWORK_DEFAULTS[config.network]?.agentRegistryV2Address;
-        let agentRegistered = false;
-        if (agentRegistryAddress2) {
-          const registryIface = new ethers.Interface(AGENT_REGISTRY_ABI);
-          const execIface2 = new ethers.Interface(ARC402_WALLET_EXECUTE_ABI);
-          const regData = registryIface.encodeFunctionData("register", [agentName, capabilities, serviceType, agentEndpoint, ""]);
-          const execData = execIface2.encodeFunctionData("executeContractCall", [{
-            target: agentRegistryAddress2,
-            data: regData,
-            value: 0n,
-            minReturnValue: 0n,
-            maxApprovalAmount: 0n,
-            approvalToken: ethers.ZeroAddress,
-          }]);
-          try {
-            const regSpinner = startSpinner("Registering agent — approve in MetaMask...");
-            const regHash = await sendTransactionWithSession(client, session, account, chainId, {
-              to: walletAddress,
-              data: execData,
-              value: "0x0",
-            });
-            await provider.waitForTransaction(regHash, 1);
-            regSpinner.succeed("Agent registered in AgentRegistry");
-            agentRegistered = true;
-          } catch {
-            console.error(" " + c.failure + c.red(" Agent registration failed — run manually:"));
-            console.error(`   arc402 agent register --name "${agentName}" --service-type "${serviceType}" --capability "${capabilities.join(",")}" --endpoint "${agentEndpoint}"`);
-          }
-        } else {
-          console.warn(" " + c.warning + c.yellow(" agentRegistryV2Address not configured — skipping agent registration"));
-        }
-
-        // ── Step 7: Summary ───────────────────────────────────────────────────
-        console.log("\n" + c.dim("── Onboarding complete ─────────────────────────────────────────"));
-        const summaryItems: { label: string; value: string; last?: boolean }[] = [
-          { label: "Wallet", value: walletAddress },
-          { label: "Owner", value: account },
-          { label: "Machine", value: machineWallet.address + (authHash ? " (authorized)" : " (pending auth)") },
-        ];
-        if (agentRegistered) {
-          summaryItems.push({ label: "Agent", value: agentName });
-          summaryItems.push({ label: "Service", value: serviceType });
-          summaryItems.push({ label: "Endpoint", value: agentEndpoint || "(none)" });
-        }
-        summaryItems.push({ label: "Trust", value: "100 (Restricted)", last: true });
-        renderTree(summaryItems);
-        console.log("\n" + c.dim(" Next: fund your wallet with 0.002 ETH on Base"));
-        console.log("       " + c.dim("arc402 daemon start"));
+        // ── Steps 2–6: Complete onboarding ceremony (same WalletConnect session)
+        const sendTxCeremony = async (
+          call: { to: string; data: string; value: string },
+          description: string,
+        ): Promise<string> => {
+          console.log(" " + c.dim(`◈ ${description}`));
+          const hash = await sendTransactionWithSession(client, session, account, chainId, call);
+          console.log(" " + c.dim("  waiting for confirmation..."));
+          await provider.waitForTransaction(hash, 1);
+          console.log(" " + c.success + " " + c.white(description));
+          return hash;
+        };
+        await runCompleteOnboardingCeremony(walletAddress, account, config, provider, sendTxCeremony);
         printOpenShellHint();
       } else {
         console.warn("⚠ WalletConnect not configured. Using stored private key (insecure).");

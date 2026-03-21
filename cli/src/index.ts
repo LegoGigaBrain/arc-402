@@ -2,16 +2,21 @@
 import { createProgram } from "./program";
 import { startREPL } from "./repl";
 
-// Handle --print flag: clean text output, no ANSI colors, no REPL.
-// Strip it before Commander sees it so it doesn't error on an unknown option.
-const printIdx = process.argv.indexOf("--print");
-if (printIdx !== -1) {
-  process.argv.splice(printIdx, 1);
-  process.env.NO_COLOR = "1";
-  process.env.ARC402_PRINT = "1";
-}
+const printMode = process.argv.includes("--print");
 
-if (process.argv.length <= 2) {
+if (printMode) {
+  // --print mode: skip REPL entirely, suppress ANSI/spinners, run command, exit.
+  // Used by OpenClaw agents running arc402 commands via ACP.
+  process.argv = process.argv.filter((a) => a !== "--print");
+  process.env["NO_COLOR"] = "1";
+  process.env["FORCE_COLOR"] = "0";
+  process.env["ARC402_PRINT"] = "1";
+  const program = createProgram();
+  void program.parseAsync(process.argv).then(() => process.exit(0)).catch((e: unknown) => {
+    console.error(e instanceof Error ? e.message : String(e));
+    process.exit(1);
+  });
+} else if (process.argv.length <= 2) {
   // No subcommand — enter interactive REPL
   void startREPL();
 } else {

@@ -41,6 +41,12 @@ export interface Arc402Config {
   telegramBotToken?: string;
   telegramChatId?: string;
   telegramThreadId?: number;
+  /** Tracks onboarding progress so `wallet deploy` can resume after interruption. */
+  onboardingProgress?: {
+    walletAddress: string;
+    step: number;          // last completed step number (2=machineKey, 3=passkey, 4=policy, 5=agent)
+    completedSteps: string[];
+  };
   wcSession?: {
     topic: string;
     expiry: number;    // Unix timestamp

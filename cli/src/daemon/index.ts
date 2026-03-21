@@ -188,6 +188,9 @@ function checkRateLimit(ip: string): boolean {
   return bucket.count <= RATE_LIMIT;
 }
 
+// Cleanup stale rate limit entries every 5 minutes to prevent unbounded growth
+let rateLimitCleanupInterval: ReturnType<typeof setInterval> | null = null;
+
 // ─── Body size limit ──────────────────────────────────────────────────────────
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1 MB
@@ -588,6 +591,14 @@ export async function runDaemon(foreground = false): Promise<void> {
     }
   }, 30_000);
 
+  // Rate limit map cleanup — every 5 minutes (prevents unbounded growth)
+  rateLimitCleanupInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [ip, bucket] of rateLimitMap) {
+      if (bucket.resetTime < now) rateLimitMap.delete(ip);
+    }
+  }, 5 * 60 * 1000);
+
   // Balance monitor — every 5 minutes
   const balanceInterval = setInterval(async () => {
     try {
@@ -618,6 +629,26 @@ export async function runDaemon(foreground = false): Promise<void> {
   const httpPort = config.relay.listen_port ?? 4402;
 
   /**
+   * Optionally verifies X-ARC402-Signature against the request body.
+   * Logs the result but never rejects — unsigned requests are accepted for backwards compat.
+   */
+  function verifyRequestSignature(body: string, req: http.IncomingMessage): void {
+    const sig = req.headers["x-arc402-signature"] as string | undefined;
+    if (!sig) return;
+    const claimedSigner = req.headers["x-arc402-signer"] as string | undefined;
+    try {
+      const recovered = ethers.verifyMessage(body, sig);
+      if (claimedSigner && recovered.toLowerCase() !== claimedSigner.toLowerCase()) {
+        log({ event: "sig_mismatch", claimed: claimedSigner, recovered });
+      } else {
+        log({ event: "sig_verified", signer: recovered });
+      }
+    } catch {
+      log({ event: "sig_invalid" });
+    }
+  }
+
+  /**
    * Read request body with a size cap. Destroys the request and sends 413
    * if the body exceeds MAX_BODY_SIZE. Returns null in that case.
    */
@@ -643,11 +674,22 @@ export async function runDaemon(foreground = false): Promise<void> {
 
   const PUBLIC_GET_PATHS = new Set(["/", "/health", "/agent", "/capabilities", "/status"]);
 
+  // CORS whitelist — localhost for local tooling, arc402.xyz for the web app
+  const CORS_WHITELIST = new Set(["localhost", "127.0.0.1", "arc402.xyz", "app.arc402.xyz"]);
+
   const httpServer = http.createServer(async (req, res) => {
-    // CORS headers
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    // CORS — only reflect origin header if it's in the whitelist
+    const origin = (req.headers["origin"] ?? "") as string;
+    if (origin) {
+      try {
+        const { hostname } = new URL(origin);
+        if (CORS_WHITELIST.has(hostname)) {
+          res.setHeader("Access-Control-Allow-Origin", origin);
+          res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+          res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+        }
+      } catch { /* ignore invalid origin */ }
+    }
     if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
     const url = new URL(req.url || "/", `http://localhost:${httpPort}`);
@@ -707,6 +749,7 @@ export async function runDaemon(foreground = false): Promise<void> {
     if (pathname === "/hire" && req.method === "POST") {
       const body = await readBody(req, res);
       if (body === null) return;
+      verifyRequestSignature(body, req);
       try {
           const msg = JSON.parse(body) as Record<string, unknown>;
 
@@ -787,6 +830,7 @@ export async function runDaemon(foreground = false): Promise<void> {
     if (pathname === "/handshake" && req.method === "POST") {
       const body = await readBody(req, res);
       if (body === null) return;
+      verifyRequestSignature(body, req);
       try {
           const msg = JSON.parse(body);
           log({ event: "handshake_received", from: msg.from, type: msg.type, note: msg.note });
@@ -824,6 +868,7 @@ export async function runDaemon(foreground = false): Promise<void> {
     if (pathname === "/message" && req.method === "POST") {
       const body = await readBody(req, res);
       if (body === null) return;
+      verifyRequestSignature(body, req);
       try {
         const msg = JSON.parse(body) as Record<string, unknown>;
         const from = String(msg.from ?? "");
@@ -844,6 +889,7 @@ export async function runDaemon(foreground = false): Promise<void> {
     if (pathname === "/delivery" && req.method === "POST") {
       const body = await readBody(req, res);
       if (body === null) return;
+      verifyRequestSignature(body, req);
       try {
         const msg = JSON.parse(body) as Record<string, unknown>;
         const agreementId = String(msg.agreementId ?? msg.agreement_id ?? "");
@@ -961,21 +1007,25 @@ export async function runDaemon(foreground = false): Promise<void> {
       return;
     }
 
-    // GET /status — health with active agreement count
+    // GET /status — health with active agreement count (sensitive counts only for authenticated)
     if (pathname === "/status" && req.method === "GET") {
-      const activeList = db.listActiveHireRequests();
-      const pendingList = db.listPendingHireRequests();
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
+      const statusAuth = (req.headers["authorization"] ?? "") as string;
+      const statusToken = statusAuth.startsWith("Bearer ") ? statusAuth.slice(7) : "";
+      const statusAuthed = statusToken === apiToken;
+      const statusPayload: Record<string, unknown> = {
         protocol: "arc-402",
         version: "0.3.0",
         agent: config.wallet.contract_address,
         status: "online",
         uptime: Math.floor((Date.now() - ipcCtx.startTime) / 1000),
-        active_agreements: activeList.length,
-        pending_approval: pendingList.length,
         capabilities: config.policy.allowed_capabilities,
-      }));
+      };
+      if (statusAuthed) {
+        statusPayload.active_agreements = db.listActiveHireRequests().length;
+        statusPayload.pending_approval = db.listPendingHireRequests().length;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(statusPayload));
       return;
     }
 
@@ -1011,6 +1061,7 @@ export async function runDaemon(foreground = false): Promise<void> {
     if (relayInterval) clearInterval(relayInterval);
     clearInterval(timeoutInterval);
     clearInterval(balanceInterval);
+    if (rateLimitCleanupInterval) clearInterval(rateLimitCleanupInterval);
 
     // Close HTTP + IPC
     httpServer.close();

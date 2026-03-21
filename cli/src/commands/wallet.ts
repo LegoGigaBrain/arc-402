@@ -23,6 +23,27 @@ import { c } from "../ui/colors";
 import { formatAddress } from "../ui/format";
 
 const POLICY_ENGINE_DEFAULT = "0x44102e70c2A366632d98Fe40d892a2501fC7fFF2";
+const GUARDIAN_KEY_PATH = path.join(os.homedir(), ".arc402", "guardian.key");
+
+/** Save guardian private key to a restricted standalone file (never to config.json). */
+function saveGuardianKey(privateKey: string): void {
+  fs.mkdirSync(path.dirname(GUARDIAN_KEY_PATH), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(GUARDIAN_KEY_PATH, privateKey + "\n", { mode: 0o400 });
+}
+
+/** Load guardian private key from file, falling back to config for backwards compat. */
+function loadGuardianKey(config: Arc402Config): string | null {
+  try {
+    return fs.readFileSync(GUARDIAN_KEY_PATH, "utf-8").trim();
+  } catch {
+    // Migration: if key still in config, migrate it to the file now
+    if (config.guardianPrivateKey) {
+      saveGuardianKey(config.guardianPrivateKey);
+      return config.guardianPrivateKey;
+    }
+    return null;
+  }
+}
 
 function parseAmount(raw: string): bigint {
   const lower = raw.toLowerCase();
@@ -182,6 +203,9 @@ async function runCompleteOnboardingCeremony(
     );
     console.log(" " + c.success + " Machine key authorized");
   }
+  // Save progress after machine key step
+  config.onboardingProgress = { walletAddress, step: 2, completedSteps: ["machineKey"] };
+  saveConfig(config);
 
   // ── Step 3: Passkey ───────────────────────────────────────────────────────
   console.log("\n" + c.dim("── Step 3: Passkey (Face ID / WebAuthn) ──────────────────────"));
@@ -213,6 +237,9 @@ async function runCompleteOnboardingCeremony(
       console.log(" " + c.success + " Passkey set (via browser)");
     }
   }
+  // Save progress after passkey step
+  config.onboardingProgress = { walletAddress, step: 3, completedSteps: ["machineKey", "passkey"] };
+  saveConfig(config);
 
   // ── Step 4: Policy ────────────────────────────────────────────────────────
   console.log("\n" + c.dim("── Step 4: Policy ─────────────────────────────────────────────"));
@@ -340,6 +367,9 @@ async function runCompleteOnboardingCeremony(
   saveConfig(config);
 
   console.log(" " + c.success + " Policy configured");
+  // Save progress after policy step
+  config.onboardingProgress = { walletAddress, step: 4, completedSteps: ["machineKey", "passkey", "policy"] };
+  saveConfig(config);
 
   // ── Step 5: Agent Registration ─────────────────────────────────────────────
   console.log("\n" + c.dim("── Step 5: Agent Registration ─────────────────────────────────"));
@@ -428,6 +458,9 @@ async function runCompleteOnboardingCeremony(
   } else {
     console.log(" " + c.warning + " AgentRegistry address not configured — skipping");
   }
+  // Save progress after agent step, then clear on ceremony complete
+  config.onboardingProgress = { walletAddress, step: 5, completedSteps: ["machineKey", "passkey", "policy", "agent"] };
+  saveConfig(config);
 
   // ── Step 7: Workroom Init ─────────────────────────────────────────────────
   console.log("\n" + c.dim("── Step 7: Workroom ────────────────────────────────────────────"));
@@ -522,6 +555,10 @@ async function runCompleteOnboardingCeremony(
   const endpointLabel = agentEndpoint
     ? c.white(agentEndpoint) + c.dim(` → localhost:${relayPort}`)
     : c.dim("—");
+
+  // Clear onboarding progress — ceremony complete
+  delete (config as unknown as Record<string, unknown>).onboardingProgress;
+  saveConfig(config);
 
   console.log("\n " + c.success + c.white(" Onboarding complete"));
   renderTree([
@@ -1066,19 +1103,54 @@ export function registerWalletCommands(program: Command): void {
           ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
           : undefined;
 
+        // ── Resume check ──────────────────────────────────────────────────────
+        const resumeProgress = config.onboardingProgress;
+        const isResuming = !!(
+          resumeProgress?.walletAddress &&
+          resumeProgress.walletAddress === config.walletContractAddress &&
+          config.ownerAddress
+        );
+        if (isResuming) {
+          const stepNames: Record<number, string> = {
+            2: "machine key", 3: "passkey", 4: "policy setup", 5: "agent registration",
+          };
+          const nextStep = (resumeProgress!.step ?? 1) + 1;
+          console.log(" " + c.dim(`◈ Resuming onboarding from step ${nextStep} (${stepNames[nextStep] ?? "ceremony"})...`));
+        }
+
+        // ── Gas estimation ─────────────────────────────────────────────────────
+        if (!isResuming) {
+          let gasMsg = "~0.003 ETH (6 transactions on Base)";
+          try {
+            const feeData = await provider.getFeeData();
+            const gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice ?? BigInt(1_500_000_000);
+            const deployGas = await provider.estimateGas({
+              to: factoryAddress,
+              data: factoryInterface.encodeFunctionData("createWallet", ["0x0000000071727De22E5E9d8BAf0edAc6f37da032"]),
+            }).catch(() => BigInt(280_000));
+            const ceremonyGas = BigInt(700_000); // ~5 ceremony txs × ~140k each
+            const totalGasEth = parseFloat(ethers.formatEther((deployGas + ceremonyGas) * gasPrice));
+            gasMsg = `~${totalGasEth.toFixed(4)} ETH (6 transactions on Base)`;
+          } catch { /* use default */ }
+          console.log(" " + c.dim(`◈ Estimated gas: ${gasMsg}`));
+        }
+
         // ── Step 1: Connect ────────────────────────────────────────────────────
+        const connectPrompt = isResuming
+          ? "Connect wallet to resume onboarding"
+          : "Approve ARC402Wallet deployment — you will be set as owner";
         const { client, session, account } = await connectPhoneWallet(
           config.walletConnectProjectId,
           chainId,
           config,
-          { telegramOpts, prompt: "Approve ARC402Wallet deployment — you will be set as owner", hardware: !!opts.hardware }
+          { telegramOpts, prompt: connectPrompt, hardware: !!opts.hardware }
         );
 
         const networkName = chainId === 8453 ? "Base" : "Base Sepolia";
         const shortAddr = `${account.slice(0, 6)}...${account.slice(-5)}`;
         console.log("\n" + c.success + c.white(` Connected: ${shortAddr} on ${networkName}`));
 
-        if (telegramOpts) {
+        if (telegramOpts && !isResuming) {
           // Send "connected" message with a deploy confirmation button.
           // TODO: wire up full callback_data round-trip when a persistent bot process is available.
           await sendTelegramMessage({
@@ -1090,48 +1162,57 @@ export function registerWalletCommands(program: Command): void {
           });
         }
 
-        // ── Step 2: Confirm & Deploy ───────────────────────────────────────────
-        // WalletConnect approval already confirmed intent — sending automatically
+        let walletAddress: string;
 
-        console.log("Deploying...");
-        const txHash = await sendTransactionWithSession(client, session, account, chainId, {
-          to: factoryAddress,
-          data: factoryInterface.encodeFunctionData("createWallet", ["0x0000000071727De22E5E9d8BAf0edAc6f37da032"]),
-          value: "0x0",
-        });
+        if (isResuming) {
+          // Resume: skip deploy, use existing wallet
+          walletAddress = config.walletContractAddress!;
+          console.log(" " + c.dim(`◈ Using existing wallet: ${walletAddress}`));
+        } else {
+          // ── Step 2: Confirm & Deploy ─────────────────────────────────────────
+          // WalletConnect approval already confirmed intent — sending automatically
 
-        console.log(`\nTransaction submitted: ${txHash}`);
-        console.log("Waiting for confirmation...");
-        const receipt = await provider.waitForTransaction(txHash);
-        if (!receipt) {
-          console.error("Transaction not confirmed. Check on-chain.");
-          process.exit(1);
+          console.log("Deploying...");
+          const txHash = await sendTransactionWithSession(client, session, account, chainId, {
+            to: factoryAddress,
+            data: factoryInterface.encodeFunctionData("createWallet", ["0x0000000071727De22E5E9d8BAf0edAc6f37da032"]),
+            value: "0x0",
+          });
+
+          console.log(`\nTransaction submitted: ${txHash}`);
+          console.log("Waiting for confirmation...");
+          const receipt = await provider.waitForTransaction(txHash);
+          if (!receipt) {
+            console.error("Transaction not confirmed. Check on-chain.");
+            process.exit(1);
+          }
+          let deployedWallet: string | null = null;
+          const factoryContract = new ethers.Contract(factoryAddress, WALLET_FACTORY_ABI, provider);
+          for (const log of receipt.logs) {
+            try {
+              const parsed = factoryContract.interface.parseLog(log);
+              if (parsed?.name === "WalletCreated") {
+                deployedWallet = parsed.args.walletAddress as string;
+                break;
+              }
+            } catch { /* skip unparseable logs */ }
+          }
+          if (!deployedWallet) {
+            console.error("Could not find WalletCreated event in receipt. Check the transaction on-chain.");
+            process.exit(1);
+          }
+          walletAddress = deployedWallet;
+          // ── Step 1 complete: save wallet + owner immediately ─────────────────
+          config.walletContractAddress = walletAddress;
+          config.ownerAddress = account;
+          saveConfig(config);
+          try { fs.chmodSync(getConfigPath(), 0o600); } catch { /* best-effort */ }
+          console.log("\n " + c.success + c.white(" Wallet deployed"));
+          renderTree([
+            { label: "Wallet", value: walletAddress },
+            { label: "Owner", value: account, last: true },
+          ]);
         }
-        let walletAddress: string | null = null;
-        const factoryContract = new ethers.Contract(factoryAddress, WALLET_FACTORY_ABI, provider);
-        for (const log of receipt.logs) {
-          try {
-            const parsed = factoryContract.interface.parseLog(log);
-            if (parsed?.name === "WalletCreated") {
-              walletAddress = parsed.args.walletAddress as string;
-              break;
-            }
-          } catch { /* skip unparseable logs */ }
-        }
-        if (!walletAddress) {
-          console.error("Could not find WalletCreated event in receipt. Check the transaction on-chain.");
-          process.exit(1);
-        }
-        // ── Step 1 complete: save wallet + owner immediately ─────────────────
-        config.walletContractAddress = walletAddress;
-        config.ownerAddress = account;
-        saveConfig(config);
-        try { fs.chmodSync(getConfigPath(), 0o600); } catch { /* best-effort */ }
-        console.log("\n " + c.success + c.white(" Wallet deployed"));
-        renderTree([
-          { label: "Wallet", value: walletAddress },
-          { label: "Owner", value: account, last: true },
-        ]);
 
         // ── Steps 2–6: Complete onboarding ceremony (same WalletConnect session)
         const sendTxCeremony = async (
@@ -1175,8 +1256,10 @@ export function registerWalletCommands(program: Command): void {
         const guardianWallet = ethers.Wallet.createRandom();
         config.walletContractAddress = walletAddress;
         config.ownerAddress = address;
-        config.guardianPrivateKey = guardianWallet.privateKey;
         config.guardianAddress = guardianWallet.address;
+        // Save key to restricted file — never store in config.json
+        saveGuardianKey(guardianWallet.privateKey);
+        if (config.guardianPrivateKey) delete (config as unknown as Record<string, unknown>).guardianPrivateKey;
         saveConfig(config);
 
         // Call setGuardian on the deployed wallet
@@ -1206,7 +1289,7 @@ export function registerWalletCommands(program: Command): void {
           { label: "Wallet", value: walletAddress },
           { label: "Guardian", value: guardianWallet.address, last: true },
         ]);
-        console.log(`Guardian private key saved to config (keep it safe — used for emergency freeze only)`);
+        console.log(`Guardian private key saved to ~/.arc402/guardian.key (chmod 400 — keep it safe, used for emergency freeze only)`);
         console.log(`Your wallet contract is ready for policy enforcement`);
         printOpenShellHint();
       }
@@ -1438,12 +1521,13 @@ export function registerWalletCommands(program: Command): void {
         console.error("walletContractAddress not set in config. Run `arc402 wallet deploy` first.");
         process.exit(1);
       }
-      if (!config.guardianPrivateKey) {
-        console.error("guardianPrivateKey not set in config. Guardian key was generated during `arc402 wallet deploy`.");
+      const guardianKey = loadGuardianKey(config);
+      if (!guardianKey) {
+        console.error(`Guardian key not found. Expected at ~/.arc402/guardian.key (or guardianPrivateKey in config for legacy setups).`);
         process.exit(1);
       }
       const provider = new ethers.JsonRpcProvider(config.rpcUrl);
-      const guardianSigner = new ethers.Wallet(config.guardianPrivateKey, provider);
+      const guardianSigner = new ethers.Wallet(guardianKey, provider);
       const walletContract = new ethers.Contract(config.walletContractAddress, ARC402_WALLET_GUARDIAN_ABI, guardianSigner);
 
       let tx;
@@ -1587,12 +1671,13 @@ export function registerWalletCommands(program: Command): void {
       });
 
       await provider.waitForTransaction(txHash);
-      config.guardianPrivateKey = guardianWallet.privateKey;
+      saveGuardianKey(guardianWallet.privateKey);
+      if (config.guardianPrivateKey) delete (config as unknown as Record<string, unknown>).guardianPrivateKey;
       config.guardianAddress = guardianWallet.address;
       saveConfig(config);
       console.log("\n" + c.success + c.white(` Guardian set to: ${guardianWallet.address}`));
       console.log(" " + c.dim("Tx:") + " " + c.white(txHash));
-      console.log(" " + c.dim("Guardian private key saved to config."));
+      console.log(" " + c.dim("Guardian private key saved to ~/.arc402/guardian.key (chmod 400)."));
       console.log(" " + c.warning + " " + c.yellow("The guardian key can freeze your wallet. Store it separately from your hot key."));
     });
 
@@ -2419,9 +2504,10 @@ export function registerWalletCommands(program: Command): void {
         }
       }
 
-      // Persist guardian key if generated
+      // Persist guardian key if generated — save to restricted file, not config.json
       if (guardianWallet) {
-        config.guardianPrivateKey = guardianWallet.privateKey;
+        saveGuardianKey(guardianWallet.privateKey);
+        if (config.guardianPrivateKey) delete (config as unknown as Record<string, unknown>).guardianPrivateKey;
         config.guardianAddress = guardianWallet.address;
         saveConfig(config);
       }
@@ -2433,7 +2519,7 @@ export function registerWalletCommands(program: Command): void {
         txHashes.forEach((h, i) => console.log(" " + c.dim(`Tx ${i + 1}:`) + " " + c.white(h)));
       }
       if (guardianWallet) {
-        console.log(" " + c.success + c.dim(` Guardian key saved to config — address: ${guardianWallet.address}`));
+        console.log(" " + c.success + c.dim(` Guardian key saved to ~/.arc402/guardian.key — address: ${guardianWallet.address}`));
         console.log(" " + c.warning + " " + c.yellow("Store the guardian private key separately from your hot key."));
       }
       console.log(c.dim("\nVerify with: arc402 wallet status && arc402 wallet policy show"));

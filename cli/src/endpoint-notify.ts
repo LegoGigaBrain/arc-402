@@ -92,11 +92,13 @@ export async function resolveAgentEndpoint(
  * POSTs JSON payload to {endpoint}{path}. Returns true on success.
  * Never throws — logs a warning on failure.
  * Validates endpoint URL for SSRF before connecting.
+ * If signingKey is provided, signs the payload and adds X-ARC402-Signature / X-ARC402-Signer headers.
  */
 export async function notifyAgent(
   endpoint: string,
   path: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  signingKey?: string
 ): Promise<boolean> {
   if (!endpoint) return false;
   try {
@@ -106,10 +108,18 @@ export async function notifyAgent(
     return false;
   }
   try {
+    const body = JSON.stringify(payload);
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (signingKey) {
+      const wallet = new ethers.Wallet(signingKey);
+      const signature = await wallet.signMessage(body);
+      headers["X-ARC402-Signature"] = signature;
+      headers["X-ARC402-Signer"] = wallet.address;
+    }
     const res = await fetch(`${endpoint}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      headers,
+      body,
     });
     return res.ok;
   } catch (err) {

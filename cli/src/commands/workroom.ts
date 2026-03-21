@@ -9,6 +9,10 @@ import {
   runCmd,
 } from "../openshell-runtime";
 import { DAEMON_LOG, DAEMON_TOML } from "../daemon/config";
+import { c } from "../ui/colors";
+import { startSpinner } from "../ui/spinner";
+import { renderTree } from "../ui/tree";
+import { formatAddress } from "../ui/format";
 
 // ─── Daemon lifecycle notify ──────────────────────────────────────────────────
 
@@ -113,33 +117,33 @@ export function registerWorkroomCommands(program: Command): void {
     .command("init")
     .description("Create the ARC-402 Workroom: build Docker image, validate policy, prepare runtime bundle.")
     .action(async () => {
-      console.log("ARC-402 Workroom Init");
-      console.log("─────────────────────");
+      console.log(c.brightCyan("ARC-402 Workroom Init"));
+      console.log(c.dim("─────────────────────"));
 
       // Check Docker
       if (!dockerAvailable()) {
-        console.error("Docker is not available. Install Docker Desktop and try again.");
+        console.error(c.failure + " " + c.red("Docker is not available. Install Docker Desktop and try again."));
         process.exit(1);
       }
-      console.log("✓ Docker available");
+      console.log(" " + c.success + c.white(" Docker available"));
 
       // Check policy file
       if (!fs.existsSync(POLICY_FILE)) {
-        console.log("No policy file found. Generating default...");
+        console.log(c.dim("No policy file found. Generating default..."));
         // Import and call the existing policy generator
         const { registerOpenShellCommands } = require("./openshell");
-        console.log(`Policy file will be generated at: ${POLICY_FILE}`);
-        console.log("Run 'arc402 workroom policy preset core-launch' after init to apply defaults.");
+        console.log(c.dim(`Policy file will be generated at: ${POLICY_FILE}`));
+        console.log(c.dim("Run 'arc402 workroom policy preset core-launch' after init to apply defaults."));
       } else {
-        console.log(`✓ Policy file: ${POLICY_FILE}`);
+        console.log(" " + c.success + c.dim(" Policy file: ") + c.white(POLICY_FILE));
       }
 
       // Check daemon.toml
       if (!fs.existsSync(DAEMON_TOML)) {
-        console.error("daemon.toml not found. Run 'arc402 daemon init' first.");
+        console.error(c.failure + " " + c.red("daemon.toml not found. Run 'arc402 daemon init' first."));
         process.exit(1);
       }
-      console.log("✓ daemon.toml found");
+      console.log(" " + c.success + c.white(" daemon.toml found"));
 
       // Set up Arena directories and default policy
       if (!fs.existsSync(ARENA_DATA_DIR)) {
@@ -147,9 +151,9 @@ export function registerWorkroomCommands(program: Command): void {
         for (const sub of ["feed", "profile", "state", "queue"]) {
           fs.mkdirSync(path.join(ARENA_DATA_DIR, sub), { recursive: true });
         }
-        console.log("✓ Arena directories created");
+        console.log(" " + c.success + c.white(" Arena directories created"));
       } else {
-        console.log("✓ Arena directories exist");
+        console.log(" " + c.success + c.white(" Arena directories exist"));
       }
 
       // Copy default arena policy if not present
@@ -157,34 +161,34 @@ export function registerWorkroomCommands(program: Command): void {
         const defaultArenaPolicy = path.join(WORKROOM_DIR, "arena-policy.yaml");
         if (fs.existsSync(defaultArenaPolicy)) {
           fs.copyFileSync(defaultArenaPolicy, ARENA_POLICY_FILE);
-          console.log("✓ Arena policy: default installed");
+          console.log(" " + c.success + c.white(" Arena policy: default installed"));
         } else {
-          console.log("⚠ Arena policy template not found — create manually at " + ARENA_POLICY_FILE);
+          console.log(" " + c.warning + " " + c.yellow("Arena policy template not found — create manually at " + ARENA_POLICY_FILE));
         }
       } else {
-        console.log("✓ Arena policy exists");
+        console.log(" " + c.success + c.white(" Arena policy exists"));
       }
 
       // Build image
       if (!imageExists()) {
         if (!buildImage()) {
-          console.error("Failed to build workroom image.");
+          console.error(c.failure + " " + c.red("Failed to build workroom image."));
           process.exit(1);
         }
       }
-      console.log(`✓ Image: ${WORKROOM_IMAGE}`);
+      console.log(" " + c.success + c.dim(" Image: ") + c.white(WORKROOM_IMAGE));
 
       // Package CLI runtime for the workroom
       const cliDist = path.resolve(__dirname, "..", "..");
       const cliPackage = path.resolve(__dirname, "..", "..", "..", "package.json");
       if (fs.existsSync(cliDist) && fs.existsSync(cliPackage)) {
-        console.log("✓ CLI runtime available for workroom mount");
+        console.log(" " + c.success + c.white(" CLI runtime available for workroom mount"));
       } else {
-        console.warn("⚠ CLI dist not found — workroom will need runtime bundle");
+        console.warn(" " + c.warning + " " + c.yellow("CLI dist not found — workroom will need runtime bundle"));
       }
 
-      console.log("\nWorkroom initialized. Start with: arc402 workroom start");
-      console.log(`Policy hash: ${getPolicyHash()}`);
+      console.log("\n" + c.success + c.white(" Workroom initialized. Start with: arc402 workroom start"));
+      console.log(c.dim("Policy hash: ") + c.white(getPolicyHash()));
     });
 
   // ── start ─────────────────────────────────────────────────────────────────
@@ -229,7 +233,7 @@ export function registerWorkroomCommands(program: Command): void {
       // CLI runtime path
       const cliRoot = path.resolve(__dirname, "..", "..", "..");
 
-      console.log("Starting ARC-402 Workroom...");
+      console.log(c.dim("Starting ARC-402 Workroom..."));
 
       const args = [
         "run", "-d",
@@ -267,16 +271,18 @@ export function registerWorkroomCommands(program: Command): void {
       spawnSync("sleep", ["2"]);
 
       if (containerRunning()) {
-        console.log("\n✓ ARC-402 Workroom is running");
-        console.log(`  Container: ${WORKROOM_CONTAINER}`);
-        console.log(`  Policy hash: ${getPolicyHash()}`);
-        console.log(`  Relay port: 4402`);
-        console.log(`  Logs: arc402 workroom logs`);
+        console.log("\n" + c.success + c.white(" ARC-402 Workroom is running"));
+        renderTree([
+          { label: "Container", value: WORKROOM_CONTAINER },
+          { label: "Policy hash", value: getPolicyHash() },
+          { label: "Relay port", value: "4402" },
+          { label: "Logs", value: "arc402 workroom logs", last: true },
+        ]);
         // Notify local daemon of workroom entry
         notifyDaemonWorkroomStatus("entered");
       } else {
-        console.error("Workroom started but exited immediately. Check logs:");
-        console.error("  docker logs arc402-workroom");
+        console.error(c.failure + " " + c.red("Workroom started but exited immediately. Check logs:"));
+        console.error(c.dim("  docker logs arc402-workroom"));
         process.exit(1);
       }
     });
@@ -290,11 +296,11 @@ export function registerWorkroomCommands(program: Command): void {
         console.log("Workroom is not running.");
         return;
       }
-      console.log("Stopping ARC-402 Workroom...");
+      console.log(c.dim("Stopping ARC-402 Workroom..."));
       // Notify daemon before stopping (daemon may be inside container)
       notifyDaemonWorkroomStatus("exited");
       runCmd("docker", ["stop", WORKROOM_CONTAINER]);
-      console.log("✓ Workroom stopped");
+      console.log(" " + c.success + c.white(" Workroom stopped"));
     });
 
   // ── status ────────────────────────────────────────────────────────────────
@@ -302,22 +308,26 @@ export function registerWorkroomCommands(program: Command): void {
     .command("status")
     .description("Show ARC-402 Workroom health, policy, and active state.")
     .action(async () => {
-      console.log("ARC-402 Workroom Status");
-      console.log("───────────────────────");
+      console.log(c.brightCyan("ARC-402 Workroom Status"));
+      console.log(c.dim("───────────────────────"));
 
       // Docker
       if (!dockerAvailable()) {
-        console.log("Docker:       ❌ not available");
+        console.log(c.dim("Docker:       ") + c.failure + " " + c.red("not available"));
         return;
       }
-      console.log("Docker:       ✓ available");
+      console.log(c.dim("Docker:       ") + c.success + c.white(" available"));
 
       // Image
-      console.log(`Image:        ${imageExists() ? "✓ " + WORKROOM_IMAGE : "❌ not built (run: arc402 workroom init)"}`);
+      if (imageExists()) {
+        console.log(c.dim("Image:        ") + c.success + " " + c.white(WORKROOM_IMAGE));
+      } else {
+        console.log(c.dim("Image:        ") + c.failure + " " + c.red("not built (run: arc402 workroom init)"));
+      }
 
       // Container
       if (containerRunning()) {
-        console.log(`Container:    ✓ running (${WORKROOM_CONTAINER})`);
+        console.log(c.dim("Container:    ") + c.success + c.white(` running (${WORKROOM_CONTAINER})`));
 
         // Get container uptime
         const inspect = runCmd("docker", ["inspect", WORKROOM_CONTAINER, "--format", "{{.State.StartedAt}}"]);
@@ -326,30 +336,38 @@ export function registerWorkroomCommands(program: Command): void {
           const uptime = Math.floor((Date.now() - started.getTime()) / 1000);
           const h = Math.floor(uptime / 3600);
           const m = Math.floor((uptime % 3600) / 60);
-          console.log(`Uptime:       ${h}h ${m}m`);
+          console.log(c.dim("Uptime:       ") + c.white(`${h}h ${m}m`));
         }
 
         // Get iptables rule count from inside container
         const rules = runCmd("docker", ["exec", WORKROOM_CONTAINER, "iptables", "-L", "OUTPUT", "-n", "--line-numbers"]);
         if (rules.ok) {
           const ruleCount = rules.stdout.split("\n").filter(l => l.match(/^\d+/)).length;
-          console.log(`Network rules: ${ruleCount} iptables rules enforced`);
+          console.log(c.dim("Network rules: ") + c.white(`${ruleCount} iptables rules enforced`));
         }
       } else if (containerExists()) {
-        console.log(`Container:    ⚠ stopped (run: arc402 workroom start)`);
+        console.log(c.dim("Container:    ") + c.warning + " " + c.yellow("stopped (run: arc402 workroom start)"));
       } else {
-        console.log(`Container:    ❌ not created (run: arc402 workroom init)`);
+        console.log(c.dim("Container:    ") + c.failure + " " + c.red("not created (run: arc402 workroom init)"));
       }
 
       // Policy
-      console.log(`Policy file:  ${fs.existsSync(POLICY_FILE) ? "✓ " + POLICY_FILE : "❌ missing"}`);
-      console.log(`Policy hash:  ${getPolicyHash()}`);
+      if (fs.existsSync(POLICY_FILE)) {
+        console.log(c.dim("Policy file:  ") + c.success + " " + c.white(POLICY_FILE));
+      } else {
+        console.log(c.dim("Policy file:  ") + c.failure + " " + c.red("missing"));
+      }
+      console.log(c.dim("Policy hash:  ") + c.white(getPolicyHash()));
 
       // Arena
       const arenaExists = fs.existsSync(ARENA_DATA_DIR);
       const arenaPolicy = fs.existsSync(ARENA_POLICY_FILE);
-      console.log(`Arena data:   ${arenaExists ? "✓ " + ARENA_DATA_DIR : "❌ missing (run: arc402 workroom init)"}`);
-      console.log(`Arena policy: ${arenaPolicy ? "✓ loaded" : "❌ missing"}`);
+      if (arenaExists) {
+        console.log(c.dim("Arena data:   ") + c.success + " " + c.white(ARENA_DATA_DIR));
+      } else {
+        console.log(c.dim("Arena data:   ") + c.failure + " " + c.red("missing (run: arc402 workroom init)"));
+      }
+      console.log(c.dim("Arena policy: ") + (arenaPolicy ? c.success + c.white(" loaded") : c.failure + " " + c.red("missing")));
 
       // Arena queue (pending approvals)
       if (arenaExists) {
@@ -357,9 +375,9 @@ export function registerWorkroomCommands(program: Command): void {
         if (fs.existsSync(queueDir)) {
           const pending = fs.readdirSync(queueDir).filter(f => f.endsWith(".json")).length;
           if (pending > 0) {
-            console.log(`Arena queue:  ⚠ ${pending} action(s) awaiting approval`);
+            console.log(c.dim("Arena queue:  ") + c.warning + " " + c.yellow(`${pending} action(s) awaiting approval`));
           } else {
-            console.log(`Arena queue:  ✓ empty`);
+            console.log(c.dim("Arena queue:  ") + c.success + c.white(" empty"));
           }
         }
       }
@@ -399,8 +417,8 @@ export function registerWorkroomCommands(program: Command): void {
     .command("doctor")
     .description("Diagnose workroom health: Docker, image, container, network, policy, daemon.")
     .action(async () => {
-      console.log("ARC-402 Workroom Doctor");
-      console.log("───────────────────────");
+      console.log(c.brightCyan("ARC-402 Workroom Doctor"));
+      console.log(c.dim("───────────────────────"));
 
       const checks: Array<{ label: string; pass: boolean; detail: string }> = [];
 
@@ -436,17 +454,19 @@ export function registerWorkroomCommands(program: Command): void {
       }
 
       // Print results
-      for (const c of checks) {
-        const icon = c.pass ? "✓" : "✗";
-        const color = c.pass ? "" : "  ← FIX";
-        console.log(`  ${icon} ${c.label}: ${c.detail}${color}`);
+      for (const chk of checks) {
+        if (chk.pass) {
+          console.log(" " + c.success + " " + c.dim(chk.label + ":") + " " + c.white(chk.detail));
+        } else {
+          console.log(" " + c.failure + " " + c.dim(chk.label + ":") + " " + c.red(chk.detail) + c.yellow("  ← FIX"));
+        }
       }
 
-      const failures = checks.filter(c => !c.pass);
+      const failures = checks.filter(chk => !chk.pass);
       if (failures.length === 0) {
-        console.log("\n✓ All checks passed. Workroom is healthy.");
+        console.log("\n" + c.success + c.white(" All checks passed. Workroom is healthy."));
       } else {
-        console.log(`\n✗ ${failures.length} issue(s) found.`);
+        console.log("\n" + c.failure + " " + c.red(`${failures.length} issue(s) found.`));
       }
     });
 
@@ -482,18 +502,18 @@ export function registerWorkroomCommands(program: Command): void {
         console.error("Workroom is not running. Start it first: arc402 workroom start");
         process.exit(1);
       }
-      console.log(`Testing connectivity to ${host} from inside workroom...`);
+      console.log(c.dim(`Testing connectivity to ${host} from inside workroom...`));
       const result = runCmd("docker", [
         "exec", WORKROOM_CONTAINER,
         "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5",
         `https://${host}`,
       ]);
       if (result.ok && result.stdout.trim() !== "000") {
-        console.log(`✓ ${host} is reachable (HTTP ${result.stdout.trim()})`);
+        console.log(" " + c.success + " " + c.white(host) + c.dim(` is reachable (HTTP ${result.stdout.trim()})`));
       } else {
-        console.log(`✗ ${host} is NOT reachable from the workroom`);
-        console.log("  This host may not be in the workroom policy.");
-        console.log("  Add it with: arc402 openshell policy add <name> <host>");
+        console.log(" " + c.failure + " " + c.red(`${host} is NOT reachable from the workroom`));
+        console.log(c.dim("  This host may not be in the workroom policy."));
+        console.log(c.dim("  Add it with: arc402 openshell policy add <name> <host>"));
       }
     });
 
@@ -553,9 +573,9 @@ Write these learnings concisely. They will be available on your next job.
 - If the task is unclear, produce the best interpretation and document assumptions
 - Every deliverable must be verifiable against the task spec
 `);
-        console.log(`✓ Worker SOUL.md created: ${soulPath}`);
+        console.log(" " + c.success + c.dim(` Worker SOUL.md created: ${soulPath}`));
       } else {
-        console.log(`✓ Worker SOUL.md already exists: ${soulPath}`);
+        console.log(" " + c.success + c.dim(` Worker SOUL.md already exists: ${soulPath}`));
       }
 
       // Generate default MEMORY.md
@@ -572,7 +592,7 @@ Write these learnings concisely. They will be available on your next job.
 
 No jobs completed yet. Learnings will accumulate here as the worker completes hired tasks.
 `);
-        console.log(`✓ Worker MEMORY.md created: ${memoryPath}`);
+        console.log(" " + c.success + c.dim(` Worker MEMORY.md created: ${memoryPath}`));
       }
 
       // Generate learnings.md
@@ -586,7 +606,7 @@ No jobs completed yet. Learnings will accumulate here as the worker completes hi
 
 No learnings yet. Complete your first hired task to start accumulating expertise.
 `);
-        console.log(`✓ Learnings file created: ${learningsPath}`);
+        console.log(" " + c.success + c.dim(` Learnings file created: ${learningsPath}`));
       }
 
       // Worker config
@@ -601,13 +621,13 @@ No learnings yet. Complete your first hired task to start accumulating expertise
           total_earned_eth: "0",
         };
         fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-        console.log(`✓ Worker config created: ${configPath}`);
+        console.log(" " + c.success + c.dim(` Worker config created: ${configPath}`));
       }
 
-      console.log(`\nWorker initialized at: ${workerDir}`);
-      console.log("Next: customize the worker SOUL.md and add skills.");
-      console.log("  arc402 workroom worker set-soul <file>");
-      console.log("  arc402 workroom worker set-skills <dir>");
+      console.log("\n" + c.success + c.white(` Worker initialized at: ${workerDir}`));
+      console.log(c.dim("Next: customize the worker SOUL.md and add skills."));
+      console.log(c.dim("  arc402 workroom worker set-soul <file>"));
+      console.log(c.dim("  arc402 workroom worker set-skills <dir>"));
     });
 
   worker
@@ -636,16 +656,18 @@ No learnings yet. Complete your first hired task to start accumulating expertise
         ? fs.readdirSync(skillsDir).length
         : 0;
 
-      console.log("ARC-402 Workroom Worker");
-      console.log("───────────────────────");
-      console.log(`Name:          ${config.name}`);
-      console.log(`Model:         ${config.model}`);
-      console.log(`Created:       ${config.created}`);
-      console.log(`Jobs done:     ${config.job_count}`);
-      console.log(`Job memories:  ${jobFiles}`);
-      console.log(`Learnings:     ${learningsSize > 200 ? Math.round(learningsSize / 1024) + " KB" : "empty"}`);
-      console.log(`Skills:        ${skillCount}`);
-      console.log(`Total earned:  ${config.total_earned_eth} ETH`);
+      console.log(c.brightCyan("ARC-402 Workroom Worker"));
+      console.log(c.dim("───────────────────────"));
+      renderTree([
+        { label: "Name", value: config.name },
+        { label: "Model", value: config.model },
+        { label: "Created", value: config.created },
+        { label: "Jobs done", value: String(config.job_count) },
+        { label: "Job memories", value: String(jobFiles) },
+        { label: "Learnings", value: learningsSize > 200 ? Math.round(learningsSize / 1024) + " KB" : "empty" },
+        { label: "Skills", value: String(skillCount) },
+        { label: "Total earned", value: config.total_earned_eth + " ETH", last: true },
+      ]);
     });
 
   worker
@@ -659,7 +681,7 @@ No learnings yet. Complete your first hired task to start accumulating expertise
       const dest = path.join(ARC402_DIR, "worker", "SOUL.md");
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.copyFileSync(file, dest);
-      console.log(`✓ Worker SOUL.md updated from: ${file}`);
+      console.log(" " + c.success + c.white(` Worker SOUL.md updated from: ${file}`));
     });
 
   worker
@@ -684,7 +706,7 @@ No learnings yet. Complete your first hired task to start accumulating expertise
           fs.cpSync(src, dst, { recursive: true });
         }
       }
-      console.log(`✓ ${files.length} items copied to worker skills`);
+      console.log(" " + c.success + c.white(` ${files.length} items copied to worker skills`));
     });
 
   worker
@@ -710,10 +732,10 @@ No learnings yet. Complete your first hired task to start accumulating expertise
           count++;
         }
       }
-      console.log(`✓ ${count} items copied to worker knowledge`);
-      console.log(`  Path: ${dest}`);
-      console.log(`  The worker can reference these files during hired tasks.`);
-      console.log(`  To update: run this command again with the updated directory.`);
+      console.log(" " + c.success + c.white(` ${count} items copied to worker knowledge`));
+      console.log(" " + c.dim("Path:") + " " + c.white(dest));
+      console.log(c.dim("  The worker can reference these files during hired tasks."));
+      console.log(c.dim("  To update: run this command again with the updated directory."));
     });
 
   worker
@@ -767,7 +789,7 @@ No learnings yet. Complete your first hired task to start accumulating expertise
         config.job_count = 0;
         fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
       }
-      console.log("✓ Worker memory cleared. Starting fresh.");
+      console.log(" " + c.success + c.white(" Worker memory cleared. Starting fresh."));
     });
 
   // ── token usage ──────────────────────────────────────────────────────────
@@ -877,14 +899,18 @@ No learnings yet. Complete your first hired task to start accumulating expertise
         return;
       }
       const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-      console.log("ARC-402 Earnings");
-      console.log("────────────────");
-      console.log(`Total earned:  ${config.total_earned_eth} ETH`);
-      console.log(`Jobs completed: ${config.job_count}`);
+      console.log(c.brightCyan("ARC-402 Earnings"));
+      console.log(c.dim("────────────────"));
+      const earningsItems: { label: string; value: string; last?: boolean }[] = [
+        { label: "Total earned", value: config.total_earned_eth + " ETH" },
+        { label: "Jobs completed", value: String(config.job_count) },
+      ];
       if (config.job_count > 0) {
         const avg = (parseFloat(config.total_earned_eth) / config.job_count).toFixed(6);
-        console.log(`Average/job:   ${avg} ETH`);
+        earningsItems.push({ label: "Average/job", value: avg + " ETH" });
       }
+      earningsItems[earningsItems.length - 1].last = true;
+      renderTree(earningsItems);
     });
 
   workroom
@@ -918,16 +944,16 @@ No learnings yet. Complete your first hired task to start accumulating expertise
         console.error("Workroom is not running.");
         process.exit(1);
       }
-      console.log("Reloading workroom policy...");
+      console.log(c.dim("Reloading workroom policy..."));
       // Trigger DNS refresh manually (which re-reads policy and updates iptables)
       const result = runCmd("docker", [
         "exec", WORKROOM_CONTAINER,
         "bash", "-c", "/dns-refresh.sh /workroom/.arc402/openshell-policy.yaml &",
       ]);
       if (result.ok) {
-        console.log("✓ Policy reload triggered");
+        console.log(" " + c.success + c.white(" Policy reload triggered"));
       } else {
-        console.error("Failed to reload policy");
+        console.error(c.failure + " " + c.red("Failed to reload policy"));
       }
     });
 }

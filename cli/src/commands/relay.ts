@@ -127,7 +127,7 @@ export function registerRelayCommands(program: Command): void {
         console.log(JSON.stringify(result.data));
       } else {
         const d = result.data as { messageId?: string };
-        console.log(`Sent. messageId: ${d.messageId}`);
+        console.log(' ' + c.success + c.white(' Sent — messageId: ' + d.messageId));
       }
     });
 
@@ -159,7 +159,7 @@ export function registerRelayCommands(program: Command): void {
       }
 
       if (messages.length === 0) {
-        console.log("No messages.");
+        console.log(' ' + c.dim('No messages.'));
         return;
       }
 
@@ -217,7 +217,7 @@ export function registerRelayCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify({ started: true, pid: child.pid, pidFile: PID_FILE }));
       } else {
-        console.log(`Daemon started (PID ${child.pid}). PID file: ${PID_FILE}`);
+        console.log(' ' + c.success + c.white(' Daemon started (PID ' + child.pid + ')'));
       }
     });
 
@@ -230,7 +230,7 @@ export function registerRelayCommands(program: Command): void {
         if (opts.json) {
           console.log(JSON.stringify({ stopped: false, reason: "no pid file" }));
         } else {
-          console.log("No running daemon found (no PID file).");
+          console.log(' ' + c.dim('No running daemon found.'));
         }
         return;
       }
@@ -242,7 +242,7 @@ export function registerRelayCommands(program: Command): void {
         if (opts.json) {
           console.log(JSON.stringify({ stopped: true, pid }));
         } else {
-          console.log(`Daemon stopped (PID ${pid}).`);
+          console.log(' ' + c.success + c.white(' Daemon stopped (PID ' + pid + ')'));
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

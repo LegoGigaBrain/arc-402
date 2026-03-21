@@ -3,6 +3,8 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import * as YAML from "yaml";
+import { c } from '../ui/colors';
+import { startSpinner } from '../ui/spinner';
 import {
   ARC402_DIR,
   DEFAULT_RUNTIME_REMOTE_ROOT,
@@ -757,7 +759,7 @@ If you update the local CLI build and want the sandbox to pick it up immediately
             synced_at: new Date().toISOString(),
           },
         });
-        console.log(`✓ Runtime synced to ${provisioned.remoteRoot}`);
+        console.log(' ' + c.success + c.white(` Runtime synced to ${provisioned.remoteRoot}`));
       } catch (err) {
         console.error(`Runtime sync failed: ${err instanceof Error ? err.message : String(err)}`);
         process.exit(1);
@@ -972,7 +974,7 @@ If you update the local CLI build and want the sandbox to pick it up immediately
       const key = peerPolicyKey(cleanedHost);
       const result = ensurePolicyEntry(policy, key, buildPolicyEntry(`peer-agent:${cleanedHost}`, cleanedHost));
       applyAndPersistPolicy(policy);
-      console.log(`✓ Peer agent host ${cleanedHost} ${result} under ${key}`);
+      console.log(' ' + c.success + c.white(` Peer agent host ${cleanedHost} ${result} under ${key}`));
       console.log("  This only affects sandbox outbound access. It does not claim or expose a public endpoint.");
     });
 
@@ -989,7 +991,7 @@ If you update the local CLI build and want the sandbox to pick it up immediately
         process.exit(1);
       }
       applyAndPersistPolicy(policy);
-      console.log(`✓ Peer agent host ${cleanedHost} removed (${key})`);
+      console.log(' ' + c.success + c.white(` Peer agent host ${cleanedHost} removed (${key})`));
     });
 
   peerCmd
@@ -1018,7 +1020,7 @@ If you update the local CLI build and want the sandbox to pick it up immediately
       const key = customPolicyKey(name);
       const result = ensurePolicyEntry(policy, key, buildPolicyEntry(name, host, [...NODE_BINARIES, ...PYTHON_BINARIES]));
       applyAndPersistPolicy(policy);
-      console.log(`✓ ${host} ${result} as ${key}`);
+      console.log(' ' + c.success + c.white(` ${host} ${result} as ${key}`));
       console.log("  Prefer `arc402 openshell policy peer add <host>` for peer agents or `preset <name>` for launch-safe expansion packs.");
     });
 
@@ -1048,6 +1050,6 @@ If you update the local CLI build and want the sandbox to pick it up immediately
       delete policy.network_policies[key];
 
       applyAndPersistPolicy(policy);
-      console.log(`✓ ${removedHost} removed from daemon sandbox policy (hot-reloaded)`);
+      console.log(' ' + c.success + c.white(` ${removedHost} removed from daemon sandbox policy (hot-reloaded)`));
     });
 }

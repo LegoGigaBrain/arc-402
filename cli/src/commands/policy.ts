@@ -155,7 +155,7 @@ shortlist
     }
     await (await contract.addPreferred(wallet, opts.capability, address)).wait();
     if (opts.json) return console.log(JSON.stringify({ address, capability: opts.capability, preferred: true }));
-    console.log(`Added ${address} to shortlist for ${opts.capability}`);
+    console.log(' ' + c.success + c.white(' Shortlisted: ' + formatAddress(address) + ' for ' + opts.capability));
   });
 
 shortlist
@@ -174,11 +174,11 @@ shortlist
     const isPreferredNow = await contract.isPreferred(wallet, opts.capability, address);
     if (!isPreferredNow) {
       if (opts.json) return console.log(JSON.stringify({ address, capability: opts.capability, preferred: false, notPreferred: true }));
-      return console.log(`${address} is not shortlisted for ${opts.capability}`);
+      return console.log(' ' + c.dim('Not shortlisted: ' + formatAddress(address) + ' for ' + opts.capability));
     }
     await (await contract.removePreferred(wallet, opts.capability, address)).wait();
     if (opts.json) return console.log(JSON.stringify({ address, capability: opts.capability, preferred: false }));
-    console.log(`Removed ${address} from shortlist for ${opts.capability}`);
+    console.log(' ' + c.success + c.white(' Removed from shortlist: ' + formatAddress(address) + ' for ' + opts.capability));
   });
 
 shortlist
@@ -197,7 +197,11 @@ shortlist
     const contract = getPolicyEngine(config.policyEngineAddress, provider);
     const preferred = await contract.isPreferred(wallet, opts.capability, address);
     if (opts.json) return console.log(JSON.stringify({ address, capability: opts.capability, preferred }));
-    console.log(preferred ? `${address} is shortlisted for ${opts.capability}` : `${address} is NOT shortlisted for ${opts.capability}`);
+    if (preferred) {
+      console.log(' ' + c.success + c.white(' ' + formatAddress(address) + ' is shortlisted for ' + opts.capability));
+    } else {
+      console.log(' ' + c.warning + c.white(' ' + formatAddress(address) + ' is NOT shortlisted for ' + opts.capability));
+    }
   });
 
 shortlist

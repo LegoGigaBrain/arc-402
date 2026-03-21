@@ -4,6 +4,7 @@ import { AgentRegistryClient, CapabilityRegistryClient, ReputationOracleClient, 
 import { loadConfig } from "../config";
 import { getClient } from "../client";
 import { getTrustTier, printTable, truncateAddress } from "../utils/format";
+import { c } from '../ui/colors';
 
 // Minimal ABI for the new getAgentsWithCapability function (Spec 18)
 const CAPABILITY_REGISTRY_EXTRA_ABI = [
@@ -273,6 +274,7 @@ export function registerDiscoverCommand(program: Command): void {
         ));
       }
 
+      console.log('\n ' + c.mark + c.white(' Discover Results') + c.dim(` — ${scored.length} agent${scored.length !== 1 ? 's' : ''} found`));
       printTable(
         ["RANK", "ADDRESS", "NAME", "SERVICE", "TRUST", "SCORE", "CAPABILITIES"],
         scored.map((agent) => {

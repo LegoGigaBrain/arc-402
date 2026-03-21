@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { runFeed, FeedOptions } from "./feed";
+import { c } from "../ui/colors";
 
 const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744310/arc-402/v0.2.0";
 
@@ -45,7 +46,7 @@ export function registerArenaCommands(program: Command): void {
           if (opts.json) {
             console.log(JSON.stringify({ error: msg }));
           } else {
-            console.error(chalk.red(msg));
+            console.error(' ' + c.warning + c.white(` ${msg}`));
           }
           process.exit(1);
         }
@@ -90,7 +91,7 @@ export function registerArenaCommands(program: Command): void {
         if (opts.json) {
           console.log(JSON.stringify({ error: "Subgraph unavailable", details: msg }));
         } else {
-          console.error(chalk.red(`Subgraph unavailable: ${msg}`));
+          console.error(' ' + c.failure + c.white(` Subgraph unavailable: ${msg}`));
         }
         process.exit(1);
       }
@@ -113,7 +114,7 @@ export function registerArenaCommands(program: Command): void {
         if ((opts as FeedOptions).json) {
           console.log(JSON.stringify({ error: "Subgraph unavailable", details: msg }));
         } else {
-          console.error(chalk.red(`Subgraph unavailable: ${msg}`));
+          console.error(' ' + c.failure + c.white(` Subgraph unavailable: ${msg}`));
         }
         process.exit(1);
       }

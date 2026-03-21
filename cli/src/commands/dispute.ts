@@ -7,6 +7,8 @@ import { getClient, requireSigner } from "../client";
 import { hashFile, hashString } from "../utils/hash";
 import { printSenderInfo, executeContractWriteViaWallet } from "../wallet-router";
 import { SERVICE_AGREEMENT_ABI } from "../abis";
+import { c } from '../ui/colors';
+import { startSpinner } from '../ui/spinner';
 
 export function registerDisputeCommand(program: Command): void {
   const dispute = program.command("dispute").description("Formal dispute workflow; remediation-first by default, with narrow hard-fail direct-dispute exceptions");
@@ -33,7 +35,7 @@ export function registerDisputeCommand(program: Command): void {
       const disputeClass = classMap[String(opts.class).toLowerCase()];
       if (!mode || !disputeClass) throw new Error("Invalid --mode or --class");
       const feeInTokens = await client.getFeeQuote(BigInt(opts.price), opts.token, mode, disputeClass);
-      console.log(`Fee quote for agreement ${agreementId}: ${feeInTokens.toString()} tokens`);
+      console.log(' ' + c.mark + c.white(` Fee quote — agreement #${agreementId}: ${feeInTokens.toString()} tokens`));
     });
 
   // Open with explicit mode/class
@@ -68,7 +70,7 @@ export function registerDisputeCommand(program: Command): void {
         const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
         await client.openDisputeWithMode(BigInt(agreementId), mode, disputeClass, opts.reason, BigInt(opts.fee));
       }
-      console.log(`dispute opened for ${agreementId} (${opts.mode} / ${opts.class})`);
+      console.log(' ' + c.success + c.white(` Dispute opened — agreement #${agreementId}`));
     });
 
   // Join mutual dispute (respondent pays their half) — DisputeArbitration contract, no wallet routing
@@ -81,7 +83,7 @@ export function registerDisputeCommand(program: Command): void {
       const { signer } = await requireSigner(config);
       const client = new DisputeArbitrationClient(config.disputeArbitrationAddress, signer);
       await client.joinMutualDispute(BigInt(agreementId), BigInt(opts.fee));
-      console.log(`joined mutual dispute ${agreementId}`);
+      console.log(' ' + c.success + c.white(` Joined mutual dispute — agreement #${agreementId}`));
     });
 
   dispute.command("open <id>")
@@ -177,7 +179,7 @@ export function registerDisputeCommand(program: Command): void {
           await client.dispute(BigInt(id), opts.reason);
         }
       }
-      console.log(`dispute opened for ${id}`);
+      console.log(' ' + c.success + c.white(` Dispute opened — agreement #${id}`));
 
       // J4-04: Display arbitration selection window deadline
       try {
@@ -210,7 +212,7 @@ export function registerDisputeCommand(program: Command): void {
       const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
       await client.submitDisputeEvidence(BigInt(id), evidenceType, hash, opts.uri);
     }
-    console.log(`evidence submitted for ${id} hash=${hash}`);
+    console.log(' ' + c.success + c.white(` Evidence submitted — agreement #${id}`));
   });
 
   // status — read-only, no wallet routing needed
@@ -263,7 +265,7 @@ export function registerDisputeCommand(program: Command): void {
         const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
         await client.nominateArbitrator(BigInt(id), opts.arbitrator);
       }
-      console.log(`arbitrator nominated for ${id}: ${opts.arbitrator}`);
+      console.log(' ' + c.success + c.white(` Arbitrator nominated — agreement #${id}`));
     });
 
   dispute.command("vote <id>")
@@ -309,7 +311,7 @@ export function registerDisputeCommand(program: Command): void {
         const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
         await client.castArbitrationVote(BigInt(id), vote, BigInt(opts.providerAward), BigInt(opts.clientAward));
       }
-      console.log(`arbitration vote recorded for ${id}`);
+      console.log(' ' + c.success + c.white(` Vote recorded — agreement #${id}`));
     });
 
   dispute.command("human <id>")
@@ -329,7 +331,7 @@ export function registerDisputeCommand(program: Command): void {
         const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
         await client.requestHumanEscalation(BigInt(id), opts.reason);
       }
-      console.log(`human escalation requested for ${id}`);
+      console.log(' ' + c.success + c.white(` Escalated to human — agreement #${id}`));
     });
 
   dispute.command("resolve <id>").description("Owner-only admin path if you are operating the dispute contract").requiredOption("--outcome <outcome>", "provider|refund|partial-provider|partial-client|mutual-cancel|human-review").option("--provider-award <amount>", "Wei/token units", "0").option("--client-award <amount>", "Wei/token units", "0").action(async (id, opts) => {
@@ -348,7 +350,7 @@ export function registerDisputeCommand(program: Command): void {
       const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
       await client.resolveDisputeDetailed(BigInt(id), mapping[String(opts.outcome)], BigInt(opts.providerAward), BigInt(opts.clientAward));
     }
-    console.log(`resolved ${id}`);
+    console.log(' ' + c.success + c.white(` Resolved — agreement #${id}`));
   });
 
   dispute.command("owner-resolve <agreementId>")
@@ -368,6 +370,6 @@ export function registerDisputeCommand(program: Command): void {
         const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
         await client.ownerResolveDispute(BigInt(agreementId), !!opts.favorProvider);
       }
-      console.log(`owner resolved agreement ${agreementId} — favor provider: ${!!opts.favorProvider}`);
+      console.log(' ' + c.success + c.white(` Owner resolved — agreement #${agreementId}`));
     });
 }

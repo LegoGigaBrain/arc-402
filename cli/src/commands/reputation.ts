@@ -25,7 +25,7 @@ reputation
     const oracle = new ReputationOracleClient(config.reputationOracleAddress, signer);
     await oracle.publishSignal(address, ReputationSignalType.WARN, ethers.ZeroHash, opts.reason);
     if (opts.json) return console.log(JSON.stringify({ address, signal: "WARN", reason: opts.reason }, null, 2));
-    console.log(`WARN signal published against ${address}: "${opts.reason}"`);
+    console.log(' ' + c.warning + c.white(' WARN published against ' + formatAddress(address)));
   });
 
 reputation
@@ -43,7 +43,7 @@ reputation
     const oracle = new ReputationOracleClient(config.reputationOracleAddress, signer);
     await oracle.publishSignal(address, ReputationSignalType.BLOCK, ethers.ZeroHash, opts.reason);
     if (opts.json) return console.log(JSON.stringify({ address, signal: "BLOCK", reason: opts.reason }, null, 2));
-    console.log(`BLOCK signal published against ${address}: "${opts.reason}"`);
+    console.log(' ' + c.failure + c.white(' BLOCK published against ' + formatAddress(address)));
   });
 
 reputation
@@ -67,9 +67,13 @@ reputation
       weightedScore: rep.weightedScore.toString(),
     };
     if (opts.json) return console.log(JSON.stringify(payload, null, 2));
-    console.log(`address=${address}`);
-    console.log(`endorsements=${rep.endorsements}  warnings=${rep.warnings}  blocks=${rep.blocks}`);
-    console.log(`weightedScore=${rep.weightedScore}`);
+    console.log('\n ' + c.mark + c.white(' Reputation — ' + formatAddress(address)));
+    renderTree([
+      { label: 'Endorsements', value: rep.endorsements.toString() },
+      { label: 'Warnings', value: rep.warnings.toString() },
+      { label: 'Blocks', value: rep.blocks.toString() },
+      { label: 'Score', value: rep.weightedScore.toString(), last: true },
+    ]);
   });
 
 export default reputation;

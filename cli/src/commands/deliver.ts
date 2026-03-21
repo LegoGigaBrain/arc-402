@@ -12,7 +12,6 @@ import { resolveAgentEndpoint, notifyAgent, DEFAULT_REGISTRY_ADDRESS } from "../
 import { c } from '../ui/colors';
 import { startSpinner } from '../ui/spinner';
 import { renderTree } from '../ui/tree';
-import { formatAddress } from '../ui/format';
 
 export function registerDeliverCommand(program: Command): void {
   program
@@ -114,6 +113,7 @@ export function registerDeliverCommand(program: Command): void {
       }
 
       const hash = opts.output ? hashFile(opts.output) : hashString(opts.message ?? `agreement:${id}`);
+      const deliverSpinner = startSpinner(`${opts.fulfill ? 'Fulfilling' : 'Committing deliverable for'} agreement #${id}…`);
       if (config.walletContractAddress) {
         const fn = opts.fulfill ? "fulfill" : "commitDeliverable";
         await executeContractWriteViaWallet(
@@ -124,7 +124,10 @@ export function registerDeliverCommand(program: Command): void {
         const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
         if (opts.fulfill) await client.fulfill(BigInt(id), hash); else await client.commitDeliverable(BigInt(id), hash);
       }
-      console.log(`${opts.fulfill ? 'fulfilled' : 'committed'} ${id} hash=${hash}`);
+      deliverSpinner.succeed(` ${opts.fulfill ? 'Fulfilled' : 'Delivered'} — agreement #${id}`);
+      renderTree([
+        { label: 'Hash', value: hash, last: true },
+      ]);
 
       // Notify client's HTTP endpoint (non-blocking)
       if (clientAddress) {

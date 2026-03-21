@@ -20,6 +20,7 @@ import { sendTelegramMessage } from "../telegram-notify";
 import { renderTree } from "../ui/tree";
 import { startSpinner } from "../ui/spinner";
 import { c } from "../ui/colors";
+import { formatAddress } from "../ui/format";
 
 const POLICY_ENGINE_DEFAULT = "0x44102e70c2A366632d98Fe40d892a2501fC7fFF2";
 
@@ -69,9 +70,9 @@ async function runWalletOnboardingCeremony(
     alreadyDefiEnabled = await policyGov.defiAccessEnabled(walletAddress);
   } catch { /* assume not enabled */ }
 
-  console.log("\n── Onboarding ceremony ────────────────────────────────────────");
-  console.log(`  PolicyEngine: ${policyAddress}`);
-  console.log(`  Wallet:       ${walletAddress}`);
+  console.log("\n" + c.dim("── Onboarding ceremony ────────────────────────────────────────"));
+  console.log(" " + c.dim("PolicyEngine:") + " " + c.white(policyAddress));
+  console.log(" " + c.dim("Wallet:      ") + " " + c.white(walletAddress));
 
   // Step 1: registerWallet (if not already done)
   if (!alreadyRegistered) {
@@ -89,7 +90,7 @@ async function runWalletOnboardingCeremony(
       value: "0x0",
     }, "registerWallet on PolicyEngine");
   } else {
-    console.log("  ✓ registerWallet — already done by constructor");
+    console.log(" " + c.success + c.dim(" registerWallet — already done by constructor"));
   }
 
   // Step 2: enableDefiAccess (if not already done)
@@ -100,7 +101,7 @@ async function runWalletOnboardingCeremony(
       value: "0x0",
     }, "enableDefiAccess on PolicyEngine");
   } else {
-    console.log("  ✓ enableDefiAccess — already done by constructor");
+    console.log(" " + c.success + c.dim(" enableDefiAccess — already done by constructor"));
   }
 
   // Steps 3–6: category limits (always set — idempotent)
@@ -116,10 +117,10 @@ async function runWalletOnboardingCeremony(
     }, `setCategoryLimitFor: ${name} → ${amountEth} ETH`);
   }
 
-  console.log("── Onboarding complete ─────────────────────────────────────────");
-  console.log("💡 Tip: For production security, also configure:");
-  console.log("  arc402 wallet set-velocity-limit <eth>   — wallet-level hourly ETH cap");
-  console.log("  arc402 wallet policy set-daily-limit --category general --amount <eth>   — daily per-category cap");
+  console.log(c.dim("── Onboarding complete ─────────────────────────────────────────"));
+  console.log(c.dim("Tip: For production security, also configure:"));
+  console.log(" " + c.dim("arc402 wallet set-velocity-limit <eth>   — wallet-level hourly ETH cap"));
+  console.log(" " + c.dim("arc402 wallet policy set-daily-limit --category general --amount <eth>   — daily per-category cap"));
 }
 
 function printOpenShellHint(): void {
@@ -177,10 +178,18 @@ export function registerWalletCommands(program: Command): void {
     if (opts.json) {
       console.log(JSON.stringify(payload, null, 2));
     } else {
-      console.log(`${payload.address}\nETH=${payload.ethBalance}\nUSDC=${payload.usdcBalance}\nTrust=${payload.trustScore} ${payload.trustTier}`);
-      if (payload.walletContractAddress) console.log(`Contract=${payload.walletContractAddress}`);
-      if (contractFrozen !== null) console.log(`Frozen=${contractFrozen}`);
-      if (contractGuardian && contractGuardian !== ethers.ZeroAddress) console.log(`Guardian=${contractGuardian}`);
+      const treeItems: { label: string; value: string; last?: boolean }[] = [
+        { label: "Address", value: payload.address },
+        { label: "Network", value: payload.network },
+        { label: "ETH", value: payload.ethBalance + " ETH" },
+        { label: "USDC", value: payload.usdcBalance + " USDC" },
+        { label: "Trust", value: `${payload.trustScore} ${payload.trustTier}` },
+      ];
+      if (payload.walletContractAddress) treeItems.push({ label: "Contract", value: payload.walletContractAddress });
+      if (contractFrozen !== null) treeItems.push({ label: "Frozen", value: contractFrozen ? c.red("YES") : c.green("no") });
+      if (contractGuardian && contractGuardian !== ethers.ZeroAddress) treeItems.push({ label: "Guardian", value: contractGuardian });
+      treeItems[treeItems.length - 1].last = true;
+      renderTree(treeItems);
     }
   });
 
@@ -215,7 +224,7 @@ export function registerWalletCommands(program: Command): void {
         if (opts.json) {
           console.log(JSON.stringify({ ok: false, error: `Could not delete ${wcStoragePath}: ${msg}` }));
         } else {
-          console.warn(`⚠ Could not delete ${wcStoragePath}: ${msg}`);
+          console.warn(" " + c.warning + " " + c.yellow(`Could not delete ${wcStoragePath}: ${msg}`));
           console.warn("  You may need to delete it manually.");
         }
         return;
@@ -224,10 +233,10 @@ export function registerWalletCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify({ ok: true, hadSession, storageWiped }));
       } else {
-        console.log("✓ WalletConnect session cleared");
-        if (storageWiped) console.log(`  Storage wiped: ${wcStoragePath}`);
-        else console.log("  (No storage file found — already clean)");
-        console.log("\nNext: run any wallet command and scan the fresh QR code.");
+        console.log(" " + c.success + c.white(" WalletConnect session cleared"));
+        if (storageWiped) console.log(" " + c.dim("Storage wiped:") + " " + c.white(wcStoragePath));
+        else console.log(" " + c.dim("(No storage file found — already clean)"));
+        console.log("\n" + c.dim("Next: run any wallet command and scan the fresh QR code."));
       }
     });
 
@@ -252,9 +261,11 @@ export function registerWalletCommands(program: Command): void {
         walletFactoryAddress: defaults.walletFactoryAddress,
       };
       saveConfig(config);
-      console.log(`Address: ${generated.address}`);
-      console.log(`Config saved to ${getConfigPath()}`);
-      console.log(`Next: fund your wallet with ETH, then run: arc402 wallet deploy`);
+      renderTree([
+        { label: "Address", value: generated.address },
+        { label: "Config", value: getConfigPath(), last: true },
+      ]);
+      console.log(c.dim("Next: fund your wallet with ETH, then run: arc402 wallet deploy"));
     });
 
   // ─── import ────────────────────────────────────────────────────────────────
@@ -284,9 +295,11 @@ export function registerWalletCommands(program: Command): void {
         walletFactoryAddress: defaults.walletFactoryAddress,
       };
       saveConfig(config);
-      console.log(`Address: ${imported.address}`);
-      console.log(`Config saved to ${getConfigPath()}`);
-      console.warn(`WARN: Store your private key safely — anyone with it controls your wallet`);
+      renderTree([
+        { label: "Address", value: imported.address },
+        { label: "Config", value: getConfigPath(), last: true },
+      ]);
+      console.warn(" " + c.warning + " " + c.yellow("Store your private key safely — anyone with it controls your wallet"));
     });
 
   // ─── fund ──────────────────────────────────────────────────────────────────
@@ -524,16 +537,19 @@ export function registerWalletCommands(program: Command): void {
         config.walletContractAddress = senderAddress;
         config.ownerAddress = ownerAddress;
         saveConfig(config);
-        console.log(`\n✓ ARC402Wallet deployed (sponsored) at: ${senderAddress}`);
-        console.log("Gas sponsorship active — initial setup ops are free");
-        console.log(`Owner: ${ownerAddress}`);
-        console.log(`\n⚠  IMPORTANT: Onboarding ceremony was not run on this wallet.`);
-        console.log(`   Category spend limits have NOT been configured. All executeSpend and`);
-        console.log(`   executeTokenSpend calls will fail with "PolicyEngine: category not configured"`);
-        console.log(`   until you run governance setup manually via WalletConnect:`);
-        console.log(`\n     arc402 wallet governance setup`);
-        console.log(`\n   This must be done before making any spend from this wallet.`);
-        console.log(`\nNext: arc402 wallet set-passkey <x> <y> --sponsored`);
+        console.log("\n" + c.success + c.white(" ARC402Wallet deployed (sponsored)"));
+        renderTree([
+          { label: "Wallet", value: senderAddress },
+          { label: "Owner", value: ownerAddress },
+          { label: "Gas", value: "Sponsorship active — initial setup ops are free", last: true },
+        ]);
+        console.log(" " + c.warning + " " + c.yellow("IMPORTANT: Onboarding ceremony was not run on this wallet."));
+        console.log(c.dim("   Category spend limits have NOT been configured. All executeSpend and"));
+        console.log(c.dim(`   executeTokenSpend calls will fail with "PolicyEngine: category not configured"`));
+        console.log(c.dim("   until you run governance setup manually via WalletConnect:"));
+        console.log("\n" + c.dim("     arc402 wallet governance setup"));
+        console.log("\n" + c.dim("   This must be done before making any spend from this wallet."));
+        console.log("\n" + c.dim("Next: arc402 wallet set-passkey <x> <y> --sponsored"));
         printOpenShellHint();
       } else if (opts.smartWallet) {
         const { txHash, account } = await requestCoinbaseSmartWalletSignature(
@@ -570,10 +586,13 @@ export function registerWalletCommands(program: Command): void {
         config.walletContractAddress = walletAddress;
         config.ownerAddress = account;
         saveConfig(config);
-        console.log(`ARC402Wallet deployed at: ${walletAddress}`);
-        console.log(`Owner: ${account} (your Base Smart Wallet)`);
-        console.log(`Your wallet contract is ready for policy enforcement`);
-        console.log(`\nNext: run 'arc402 wallet set-guardian' to configure the emergency guardian key.`);
+        console.log("\n" + c.success + c.white(" ARC402Wallet deployed"));
+        renderTree([
+          { label: "Wallet", value: walletAddress },
+          { label: "Owner", value: account + c.dim(" (Base Smart Wallet)"), last: true },
+        ]);
+        console.log(c.dim("Your wallet contract is ready for policy enforcement"));
+        console.log(c.dim("\nNext: run 'arc402 wallet set-guardian' to configure the emergency guardian key."));
         printOpenShellHint();
       } else if (config.walletConnectProjectId) {
         const telegramOpts = config.telegramBotToken && config.telegramChatId
@@ -590,7 +609,7 @@ export function registerWalletCommands(program: Command): void {
 
         const networkName = chainId === 8453 ? "Base" : "Base Sepolia";
         const shortAddr = `${account.slice(0, 6)}...${account.slice(-5)}`;
-        console.log(`\n✓ Connected: ${shortAddr} on ${networkName}`);
+        console.log("\n" + c.success + c.white(` Connected: ${shortAddr} on ${networkName}`));
 
         if (telegramOpts) {
           // Send "connected" message with a deploy confirmation button.
@@ -639,8 +658,11 @@ export function registerWalletCommands(program: Command): void {
         config.walletContractAddress = walletAddress;
         config.ownerAddress = account;
         saveConfig(config);
-        console.log(`\n✓ ARC402Wallet deployed at: ${walletAddress}`);
-        console.log(`Owner: ${account} (your phone wallet)`);
+        console.log("\n" + c.success + c.white(" ARC402Wallet deployed"));
+        renderTree([
+          { label: "Wallet", value: walletAddress },
+          { label: "Owner", value: account + c.dim(" (phone wallet)"), last: true },
+        ]);
 
         // ── Mandatory onboarding ceremony (same WalletConnect session) ────────
         console.log("\nStarting mandatory onboarding ceremony in this WalletConnect session...");
@@ -650,21 +672,21 @@ export function registerWalletCommands(program: Command): void {
           config,
           provider,
           async (call, description) => {
-            console.log(`  Sending: ${description}`);
+            console.log(" " + c.dim(`Sending: ${description}`));
             const hash = await sendTransactionWithSession(client, session, account, chainId, call);
             await provider.waitForTransaction(hash, 1);
-            console.log(`  ✓ ${description}: ${hash}`);
+            console.log(" " + c.success + " " + c.dim(description) + " " + c.dim(hash));
             return hash;
           },
         );
 
-        console.log(`Your wallet contract is ready for policy enforcement`);
+        console.log(c.dim("Your wallet contract is ready for policy enforcement"));
         const paymasterUrl2 = config.paymasterUrl ?? NETWORK_DEFAULTS[config.network]?.paymasterUrl;
         const deployedBalance = await provider.getBalance(walletAddress);
         if (paymasterUrl2 && deployedBalance < BigInt(1_000_000_000_000_000)) {
-          console.log("Gas sponsorship active — initial setup ops are free");
+          console.log(c.dim("Gas sponsorship active — initial setup ops are free"));
         }
-        console.log(`\nNext: run 'arc402 wallet set-guardian' to configure the emergency guardian key.`);
+        console.log(c.dim("\nNext: run 'arc402 wallet set-guardian' to configure the emergency guardian key."));
         printOpenShellHint();
       } else {
         console.warn("⚠ WalletConnect not configured. Using stored private key (insecure).");
@@ -711,10 +733,10 @@ export function registerWalletCommands(program: Command): void {
           config,
           provider2,
           async (call, description) => {
-            console.log(`  Sending: ${description}`);
+            console.log(" " + c.dim(`Sending: ${description}`));
             const tx2 = await signer.sendTransaction({ to: call.to, data: call.data, value: call.value === "0x0" ? 0n : BigInt(call.value) });
             await tx2.wait(1);
-            console.log(`  ✓ ${description}: ${tx2.hash}`);
+            console.log(" " + c.success + " " + c.dim(description) + " " + c.dim(tx2.hash));
             return tx2.hash;
           },
         );
@@ -935,9 +957,9 @@ export function registerWalletCommands(program: Command): void {
       );
 
       await provider.waitForTransaction(txHash);
-      console.log(`\n✓ Active policy updated`);
-      console.log(`  Tx: ${txHash}`);
-      console.log(`  Policy: ${policyIdHex}`);
+      console.log("\n" + c.success + c.white(" Active policy updated"));
+      console.log(" " + c.dim("Tx:") + " " + c.white(txHash));
+      console.log(" " + c.dim("Policy:") + " " + c.white(policyIdHex));
     });
 
   // ─── freeze (guardian key — emergency wallet freeze) ──────────────────────
@@ -1021,11 +1043,11 @@ export function registerWalletCommands(program: Command): void {
 
       const networkName = chainId === 8453 ? "Base" : "Base Sepolia";
       const shortAddr = `${account.slice(0, 6)}...${account.slice(-5)}`;
-      console.log(`\n✓ Connected: ${shortAddr} on ${networkName}`);
-      console.log(`\nWallet to unfreeze: ${config.walletContractAddress}`);
+      console.log("\n" + c.success + c.white(` Connected: ${shortAddr} on ${networkName}`));
+      console.log("\n" + c.dim("Wallet to unfreeze:") + " " + c.white(config.walletContractAddress ?? ""));
       // WalletConnect approval already confirmed intent — sending automatically
 
-      console.log("Sending transaction...");
+      console.log(c.dim("Sending transaction..."));
       const txHash = await sendTransactionWithSession(client, session, account, chainId, {
         to: config.walletContractAddress,
         data: walletInterface.encodeFunctionData("unfreeze", []),
@@ -1036,8 +1058,8 @@ export function registerWalletCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify({ txHash, walletAddress: config.walletContractAddress }));
       } else {
-        console.log(`\n✓ Wallet ${config.walletContractAddress} unfrozen`);
-        console.log(`  Tx: ${txHash}`);
+        console.log("\n" + c.success + c.white(` Wallet ${config.walletContractAddress} unfrozen`));
+        console.log(" " + c.dim("Tx:") + " " + c.white(txHash));
       }
     });
 
@@ -1094,10 +1116,10 @@ export function registerWalletCommands(program: Command): void {
 
       const networkName = chainId === 8453 ? "Base" : "Base Sepolia";
       const shortAddr = `${account.slice(0, 6)}...${account.slice(-5)}`;
-      console.log(`\n✓ Connected: ${shortAddr} on ${networkName}`);
+      console.log("\n" + c.success + c.white(` Connected: ${shortAddr} on ${networkName}`));
       // WalletConnect approval already confirmed intent — sending automatically
 
-      console.log("Sending transaction...");
+      console.log(c.dim("Sending transaction..."));
       const txHash = await sendTransactionWithSession(client, session, account, chainId, {
         to: config.walletContractAddress,
         data: walletInterface.encodeFunctionData("setGuardian", [guardianWallet.address]),
@@ -1108,10 +1130,10 @@ export function registerWalletCommands(program: Command): void {
       config.guardianPrivateKey = guardianWallet.privateKey;
       config.guardianAddress = guardianWallet.address;
       saveConfig(config);
-      console.log(`\n✓ Guardian set to: ${guardianWallet.address}`);
-      console.log(`  Tx: ${txHash}`);
-      console.log(`  Guardian private key saved to config.`);
-      console.log(`  WARN: The guardian key can freeze your wallet. Store it separately from your hot key.`);
+      console.log("\n" + c.success + c.white(` Guardian set to: ${guardianWallet.address}`));
+      console.log(" " + c.dim("Tx:") + " " + c.white(txHash));
+      console.log(" " + c.dim("Guardian private key saved to config."));
+      console.log(" " + c.warning + " " + c.yellow("The guardian key can freeze your wallet. Store it separately from your hot key."));
     });
 
   // ─── policy-engine freeze / unfreeze (legacy — for PolicyEngine-level freeze) ──
@@ -1208,11 +1230,11 @@ export function registerWalletCommands(program: Command): void {
 
       const networkName = chainId === 8453 ? "Base" : "Base Sepolia";
       const shortAddr = `${account.slice(0, 6)}...${account.slice(-5)}`;
-      console.log(`\n✓ Connected: ${shortAddr} on ${networkName}`);
+      console.log("\n" + c.success + c.white(` Connected: ${shortAddr} on ${networkName}`));
 
       // WalletConnect approval already confirmed intent — sending automatically
 
-      console.log("Sending transaction...");
+      console.log(c.dim("Sending transaction..."));
       const txHash = await sendTransactionWithSession(client, session, account, chainId, {
         to: config.walletContractAddress,
         data: calldata,
@@ -1220,9 +1242,9 @@ export function registerWalletCommands(program: Command): void {
       });
 
       const unlockAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
-      console.log(`\n✓ Registry upgrade proposed`);
-      console.log(`  Tx: ${txHash}`);
-      console.log(`  Unlock at: ${unlockAt.toISOString()} (approximately)`);
+      console.log("\n" + c.success + c.white(" Registry upgrade proposed"));
+      console.log(" " + c.dim("Tx:") + " " + c.white(txHash));
+      console.log(" " + c.dim("Unlock at:") + " " + c.white(unlockAt.toISOString()) + c.dim(" (approximately)"));
       console.log(`\nNext steps:`);
       console.log(`  Wait 2 days, then run:`);
       console.log(`  arc402 wallet execute-registry-upgrade`);
@@ -1306,9 +1328,9 @@ export function registerWalletCommands(program: Command): void {
         confirmedRegistry = await walletContract.registry();
       } catch { /* use pendingRegistry as fallback */ }
 
-      console.log(`\n✓ Registry upgrade executed`);
-      console.log(`  Tx: ${txHash}`);
-      console.log(`  New registry: ${confirmedRegistry}`);
+      console.log("\n" + c.success + c.white(" Registry upgrade executed"));
+      console.log(" " + c.dim("Tx:") + " " + c.white(txHash));
+      console.log(" " + c.dim("New registry:") + " " + c.white(confirmedRegistry));
       if (confirmedRegistry.toLowerCase() === pendingRegistry.toLowerCase()) {
         console.log(`  Registry updated successfully — addresses now resolve through new registry.`);
       } else {
@@ -1362,7 +1384,7 @@ export function registerWalletCommands(program: Command): void {
       } catch { /* ignore */ }
 
       if (alreadyWhitelisted) {
-        console.log(`✓ ${checksumTarget} is already whitelisted for ${config.walletContractAddress}`);
+        console.log(" " + c.success + " " + c.white(checksumTarget) + c.dim(` is already whitelisted for ${config.walletContractAddress}`));
         process.exit(0);
       }
 
@@ -1397,10 +1419,12 @@ export function registerWalletCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify({ ok: true, txHash, wallet: config.walletContractAddress, target: checksumTarget }));
       } else {
-        console.log(`\n✓ Contract whitelisted`);
-        console.log(`  Tx:     ${txHash}`);
-        console.log(`  Wallet: ${config.walletContractAddress}`);
-        console.log(`  Target: ${checksumTarget}`);
+        console.log("\n" + c.success + c.white(" Contract whitelisted"));
+        renderTree([
+          { label: "Tx", value: txHash },
+          { label: "Wallet", value: config.walletContractAddress ?? "" },
+          { label: "Target", value: checksumTarget, last: true },
+        ]);
       }
     });
 
@@ -1459,9 +1483,9 @@ export function registerWalletCommands(program: Command): void {
       );
 
       await provider.waitForTransaction(txHash);
-      console.log(`\n✓ X402 interceptor updated`);
-      console.log(`  Tx: ${txHash}`);
-      console.log(`  Interceptor: ${checksumAddress}`);
+      console.log("\n" + c.success + c.white(" X402 interceptor updated"));
+      console.log(" " + c.dim("Tx:") + " " + c.white(txHash));
+      console.log(" " + c.dim("Interceptor:") + " " + c.white(checksumAddress));
     });
 
   // ─── set-velocity-limit ────────────────────────────────────────────────────
@@ -1524,9 +1548,9 @@ export function registerWalletCommands(program: Command): void {
       );
 
       await provider.waitForTransaction(txHash);
-      console.log(`\n✓ Velocity limit updated`);
-      console.log(`  Tx: ${txHash}`);
-      console.log(`  New limit: ${limitEth} ETH per rolling window`);
+      console.log("\n" + c.success + c.white(" Velocity limit updated"));
+      console.log(" " + c.dim("Tx:") + " " + c.white(txHash));
+      console.log(" " + c.dim("New limit:") + " " + c.white(`${limitEth} ETH per rolling window`));
     });
 
   // ─── register-policy ───────────────────────────────────────────────────────
@@ -1598,9 +1622,9 @@ export function registerWalletCommands(program: Command): void {
       );
 
       await provider.waitForTransaction(txHash);
-      console.log(`\n✓ Wallet registered on PolicyEngine`);
-      console.log(`  Tx: ${txHash}`);
-      console.log(`\nNext: run 'arc402 wallet policy set-limit' to configure spending limits.`);
+      console.log("\n" + c.success + c.white(" Wallet registered on PolicyEngine"));
+      console.log(" " + c.dim("Tx:") + " " + c.white(txHash));
+      console.log(c.dim("\nNext: run 'arc402 wallet policy set-limit' to configure spending limits."));
     });
 
   // ─── cancel-registry-upgrade ───────────────────────────────────────────────
@@ -1670,8 +1694,8 @@ export function registerWalletCommands(program: Command): void {
         config
       );
 
-      console.log(`\n✓ Registry upgrade cancelled`);
-      console.log(`  Tx: ${txHash}`);
+      console.log("\n" + c.success + c.white(" Registry upgrade cancelled"));
+      console.log(" " + c.dim("Tx:") + " " + c.white(txHash));
     });
 
   // ─── governance setup ──────────────────────────────────────────────────────
@@ -1925,17 +1949,17 @@ export function registerWalletCommands(program: Command): void {
         saveConfig(config);
       }
 
-      console.log(`\n✓ Governance setup complete`);
+      console.log("\n" + c.success + c.white(" Governance setup complete"));
       if (usedBatch) {
-        console.log(`  Batch tx: ${txHashes[0]}`);
+        console.log(" " + c.dim("Batch tx:") + " " + c.white(txHashes[0]));
       } else {
-        txHashes.forEach((h, i) => console.log(`  Tx ${i + 1}: ${h}`));
+        txHashes.forEach((h, i) => console.log(" " + c.dim(`Tx ${i + 1}:`) + " " + c.white(h)));
       }
       if (guardianWallet) {
-        console.log(`  Guardian key saved to config — address: ${guardianWallet.address}`);
-        console.log(`  WARN: Store the guardian private key separately from your hot key.`);
+        console.log(" " + c.success + c.dim(` Guardian key saved to config — address: ${guardianWallet.address}`));
+        console.log(" " + c.warning + " " + c.yellow("Store the guardian private key separately from your hot key."));
       }
-      console.log(`\nVerify with: arc402 wallet status && arc402 wallet policy show`);
+      console.log(c.dim("\nVerify with: arc402 wallet status && arc402 wallet policy show"));
     });
 
   // ─── authorize-machine-key ─────────────────────────────────────────────────
@@ -1972,7 +1996,7 @@ export function registerWalletCommands(program: Command): void {
       } catch { /* ignore */ }
 
       if (alreadyAuthorized) {
-        console.log(`\n✓ ${checksumKey} is already authorized as a machine key on ${config.walletContractAddress}`);
+        console.log("\n" + c.success + " " + c.white(checksumKey) + c.dim(` is already authorized as a machine key on ${config.walletContractAddress}`));
         process.exit(0);
       }
 
@@ -2000,24 +2024,26 @@ export function registerWalletCommands(program: Command): void {
         }
       );
 
-      console.log(`\n✓ Connected: ${account}`);
-      console.log("Sending authorizeMachineKey transaction...");
+      console.log("\n" + c.success + c.white(` Connected: ${account}`));
+      console.log(c.dim("Sending authorizeMachineKey transaction..."));
 
       const hash = await sendTransactionWithSession(client, session, account, chainId, txData);
-      console.log(`\nTransaction submitted: ${hash}`);
-      console.log("Waiting for confirmation...");
+      console.log("\n" + c.dim("Transaction submitted:") + " " + c.white(hash));
+      console.log(c.dim("Waiting for confirmation..."));
 
       const receipt = await provider.waitForTransaction(hash, 1, 60000);
       if (!receipt || receipt.status !== 1) {
-        console.error("Transaction failed.");
+        console.error(c.failure + " " + c.red("Transaction failed."));
         process.exit(1);
       }
 
       const confirmed = await walletContract.authorizedMachineKeys(checksumKey);
-      console.log(`\n✓ Machine key authorized: ${confirmed ? "YES" : "NO"}`);
-      console.log(`  Wallet:      ${config.walletContractAddress}`);
-      console.log(`  Machine key: ${checksumKey}`);
-      console.log(`  Tx:          ${hash}`);
+      console.log("\n" + c.success + c.white(` Machine key authorized: ${confirmed ? "YES" : "NO"}`));
+      renderTree([
+        { label: "Wallet", value: config.walletContractAddress ?? "" },
+        { label: "Machine key", value: checksumKey },
+        { label: "Tx", value: hash, last: true },
+      ]);
 
       await client.disconnect({ topic: session.topic, reason: { code: 6000, message: "done" } });
       process.exit(0);
@@ -2080,8 +2106,8 @@ export function registerWalletCommands(program: Command): void {
         { telegramOpts, prompt: `Revoke machine key ${checksumKey} on ARC402Wallet` }
       );
 
-      console.log(`\n✓ Connected: ${account}`);
-      console.log("Sending revokeMachineKey transaction...");
+      console.log("\n" + c.success + c.white(` Connected: ${account}`));
+      console.log(c.dim("Sending revokeMachineKey transaction..."));
 
       const hash = await sendTransactionWithSession(client, session, account, chainId, {
         to: config.walletContractAddress,
@@ -2089,20 +2115,22 @@ export function registerWalletCommands(program: Command): void {
         value: "0x0",
       });
 
-      console.log(`\nTransaction submitted: ${hash}`);
-      console.log("Waiting for confirmation...");
+      console.log("\n" + c.dim("Transaction submitted:") + " " + c.white(hash));
+      console.log(c.dim("Waiting for confirmation..."));
 
       const receipt = await provider.waitForTransaction(hash, 1, 60000);
       if (!receipt || receipt.status !== 1) {
-        console.error("Transaction failed.");
+        console.error(c.failure + " " + c.red("Transaction failed."));
         process.exit(1);
       }
 
       const stillAuthorized = await walletContract.authorizedMachineKeys(checksumKey);
-      console.log(`\n✓ Machine key revoked: ${stillAuthorized ? "NO (still authorized — check tx)" : "YES"}`);
-      console.log(`  Wallet:      ${config.walletContractAddress}`);
-      console.log(`  Machine key: ${checksumKey}`);
-      console.log(`  Tx:          ${hash}`);
+      console.log("\n" + c.success + c.white(` Machine key revoked: ${stillAuthorized ? "NO (still authorized — check tx)" : "YES"}`));
+      renderTree([
+        { label: "Wallet", value: config.walletContractAddress ?? "" },
+        { label: "Machine key", value: checksumKey },
+        { label: "Tx", value: hash, last: true },
+      ]);
 
       await client.disconnect({ topic: session.topic, reason: { code: 6000, message: "done" } });
       process.exit(0);
@@ -2228,11 +2256,13 @@ export function registerWalletCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify({ walletAddress: walletAddr, contextId, taskType: opts.taskType, txHash: receipt?.hash }));
       } else {
-        console.log(`✓ Context opened`);
-        console.log(`  contextId: ${contextId}`);
-        console.log(`  taskType:  ${opts.taskType}`);
-        console.log(`  Tx:        ${receipt?.hash}`);
-        console.log(`\nNote: Each context allows only one spend. Call \`arc402 wallet attest\` then \`arc402 wallet drain\` (or executeSpend directly).`);
+        console.log(" " + c.success + c.white(" Context opened"));
+        renderTree([
+          { label: "contextId", value: contextId },
+          { label: "taskType", value: opts.taskType },
+          { label: "Tx", value: receipt?.hash ?? "", last: true },
+        ]);
+        console.log(c.dim("\nNote: Each context allows only one spend. Call `arc402 wallet attest` then `arc402 wallet drain` (or executeSpend directly)."));
       }
     });
 
@@ -2303,14 +2333,16 @@ export function registerWalletCommands(program: Command): void {
           txHash: receipt?.hash,
         }));
       } else {
-        console.log(`✓ Attestation created`);
-        console.log(`  attestationId: ${attestationId}`);
-        console.log(`  recipient:     ${checksumRecipient}`);
-        console.log(`  amount:        ${opts.amount} ETH`);
-        console.log(`  token:         ${tokenAddress === ethers.ZeroAddress ? "ETH" : tokenAddress}`);
-        console.log(`  expiresAt:     ${new Date(expiresAt * 1000).toISOString()}`);
-        console.log(`  Tx:            ${receipt?.hash}`);
-        console.log(`\nUse this attestationId in \`arc402 wallet drain\` or your spend flow.`);
+        console.log(" " + c.success + c.white(" Attestation created"));
+        renderTree([
+          { label: "attestationId", value: attestationId },
+          { label: "recipient", value: checksumRecipient },
+          { label: "amount", value: opts.amount + " ETH" },
+          { label: "token", value: tokenAddress === ethers.ZeroAddress ? "ETH" : tokenAddress },
+          { label: "expiresAt", value: new Date(expiresAt * 1000).toISOString() },
+          { label: "Tx", value: receipt?.hash ?? "", last: true },
+        ]);
+        console.log(c.dim("\nUse this attestationId in `arc402 wallet drain` or your spend flow."));
       }
     });
 
@@ -2438,9 +2470,9 @@ export function registerWalletCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify({ walletAddress: walletAddr, txHash: receipt?.hash, contextOpen: false }));
       } else {
-        console.log(`✓ Context closed`);
-        console.log(`  Tx: ${receipt?.hash}`);
-        console.log(`  Wallet: ${walletAddr}`);
+        console.log(" " + c.success + c.white(" Context closed"));
+        console.log(" " + c.dim("Tx:") + " " + c.white(receipt?.hash ?? ""));
+        console.log(" " + c.dim("Wallet:") + " " + c.white(walletAddr));
       }
     });
 
@@ -2546,23 +2578,23 @@ export function registerWalletCommands(program: Command): void {
       // ── Step 1: context cleanup ────────────────────────────────────────────
       const isOpen: boolean = await walletContract.contextOpen();
       if (isOpen) {
-        console.log("Stale context found — closing it first...");
+        console.log(c.dim("Stale context found — closing it first..."));
         const closeTx = await walletContract.closeContext();
         await closeTx.wait(2);
-        console.log(`  ✓ Closed: ${closeTx.hash}`);
+        console.log(" " + c.success + c.dim(` Closed: ${closeTx.hash}`));
       }
 
       // ── Step 2: openContext ────────────────────────────────────────────────
       const contextId = ethers.keccak256(ethers.toUtf8Bytes(`drain-${Date.now()}`));
-      console.log("Opening context...");
+      console.log(c.dim("Opening context..."));
       const openTx = await walletContract.openContext(contextId, "drain");
       const openReceipt = await openTx.wait(1);
-      console.log(`  ✓ openContext: ${openReceipt?.hash}`);
+      console.log(" " + c.success + c.dim(` openContext: ${openReceipt?.hash}`));
 
       // ── Step 3: attest (direct on wallet — onlyOwnerOrMachineKey, NOT via executeContractCall)
       const attestationId = ethers.hexlify(ethers.randomBytes(32));
       const expiry = Math.floor(Date.now() / 1000) + 600; // 10 min TTL
-      console.log("Creating attestation (direct on wallet)...");
+      console.log(c.dim("Creating attestation (direct on wallet)..."));
       const attestTx = await walletContract.attest(
         attestationId,
         "spend",
@@ -2573,10 +2605,10 @@ export function registerWalletCommands(program: Command): void {
         expiry,
       );
       const attestReceipt = await attestTx.wait(1);
-      console.log(`  ✓ attest: ${attestReceipt?.hash}`);
+      console.log(" " + c.success + c.dim(` attest: ${attestReceipt?.hash}`));
 
       // ── Step 4: executeSpend ───────────────────────────────────────────────
-      console.log("Executing spend...");
+      console.log(c.dim("Executing spend..."));
       let spendReceiptHash: string | undefined;
       try {
         const spendTx = await walletContract.executeSpend(
@@ -2590,13 +2622,13 @@ export function registerWalletCommands(program: Command): void {
       } catch (e) {
         handleWalletError(e);
       }
-      console.log(`  ✓ executeSpend: ${spendReceiptHash}`);
+      console.log(" " + c.success + c.dim(` executeSpend: ${spendReceiptHash}`));
 
       // ── Step 5: closeContext ───────────────────────────────────────────────
-      console.log("Closing context...");
+      console.log(c.dim("Closing context..."));
       const closeTx2 = await walletContract.closeContext();
       const closeReceipt = await closeTx2.wait(1);
-      console.log(`  ✓ closeContext: ${closeReceipt?.hash}`);
+      console.log(" " + c.success + c.dim(` closeContext: ${closeReceipt?.hash}`));
 
       const newBalance = await provider.getBalance(walletAddr);
       if (opts.json) {
@@ -2615,9 +2647,11 @@ export function registerWalletCommands(program: Command): void {
           remainingBalance: ethers.formatEther(newBalance),
         }));
       } else {
-        console.log(`\n✓ Drain complete`);
-        console.log(`  Sent:      ${ethers.formatEther(drainAmount)} ETH → ${checksumRecipient}`);
-        console.log(`  Remaining: ${ethers.formatEther(newBalance)} ETH`);
+        console.log("\n" + c.success + c.white(" Drain complete"));
+        renderTree([
+          { label: "Sent", value: `${ethers.formatEther(drainAmount)} ETH → ${checksumRecipient}` },
+          { label: "Remaining", value: `${ethers.formatEther(newBalance)} ETH`, last: true },
+        ]);
       }
     });
 
@@ -2745,23 +2779,23 @@ export function registerWalletCommands(program: Command): void {
       // ── Step 1: context cleanup ──────────────────────────────────────────────
       const isOpenT: boolean = await walletContractT.contextOpen();
       if (isOpenT) {
-        console.log("Stale context found — closing it first...");
+        console.log(c.dim("Stale context found — closing it first..."));
         const closeTxT = await walletContractT.closeContext();
         await closeTxT.wait(2);
-        console.log(`  ✓ Closed: ${closeTxT.hash}`);
+        console.log(" " + c.success + c.dim(` Closed: ${closeTxT.hash}`));
       }
 
       // ── Step 2: openContext ──────────────────────────────────────────────────
       const contextIdT = ethers.keccak256(ethers.toUtf8Bytes(`drain-token-${Date.now()}`));
-      console.log("Opening context...");
+      console.log(c.dim("Opening context..."));
       const openTxT = await walletContractT.openContext(contextIdT, "drain");
       const openReceiptT = await openTxT.wait(1);
-      console.log(`  ✓ openContext: ${openReceiptT?.hash}`);
+      console.log(" " + c.success + c.dim(` openContext: ${openReceiptT?.hash}`));
 
       // ── Step 3: attest with token address ────────────────────────────────────
       const attestationIdT = ethers.hexlify(ethers.randomBytes(32));
       const expiryT = Math.floor(Date.now() / 1000) + 600; // 10 min TTL
-      console.log("Creating attestation (with token address)...");
+      console.log(c.dim("Creating attestation (with token address)..."));
       const attestTxT = await walletContractT.attest(
         attestationIdT,
         "spend",
@@ -2772,10 +2806,10 @@ export function registerWalletCommands(program: Command): void {
         expiryT,
       );
       const attestReceiptT = await attestTxT.wait(1);
-      console.log(`  ✓ attest: ${attestReceiptT?.hash}`);
+      console.log(" " + c.success + c.dim(` attest: ${attestReceiptT?.hash}`));
 
       // ── Step 4: executeTokenSpend ────────────────────────────────────────────
-      console.log("Executing token spend...");
+      console.log(c.dim("Executing token spend..."));
       const spendTxT = await walletContractT.executeTokenSpend(
         checksumRecipient,
         tokenAmount,
@@ -2784,13 +2818,13 @@ export function registerWalletCommands(program: Command): void {
         attestationIdT,
       );
       const spendReceiptT = await spendTxT.wait(1);
-      console.log(`  ✓ executeTokenSpend: ${spendReceiptT?.hash}`);
+      console.log(" " + c.success + c.dim(` executeTokenSpend: ${spendReceiptT?.hash}`));
 
       // ── Step 5: closeContext ─────────────────────────────────────────────────
-      console.log("Closing context...");
+      console.log(c.dim("Closing context..."));
       const closeTxT2 = await walletContractT.closeContext();
       const closeReceiptT = await closeTxT2.wait(1);
-      console.log(`  ✓ closeContext: ${closeReceiptT?.hash}`);
+      console.log(" " + c.success + c.dim(` closeContext: ${closeReceiptT?.hash}`));
 
       const newTokenBalance: bigint = await erc20.balanceOf(walletAddr);
       if (opts.json) {
@@ -2810,10 +2844,12 @@ export function registerWalletCommands(program: Command): void {
           remainingTokenBalance: ethers.formatUnits(newTokenBalance, decimals),
         }));
       } else {
-        console.log(`\n✓ Token drain complete`);
-        console.log(`  Sent:      ${amountArg} → ${checksumRecipient}`);
-        console.log(`  Token:     ${tokenAddress}`);
-        console.log(`  Remaining: ${ethers.formatUnits(newTokenBalance, decimals)}`);
+        console.log("\n" + c.success + c.white(" Token drain complete"));
+        renderTree([
+          { label: "Sent", value: `${amountArg} → ${checksumRecipient}` },
+          { label: "Token", value: tokenAddress },
+          { label: "Remaining", value: ethers.formatUnits(newTokenBalance, decimals), last: true },
+        ]);
       }
     });
 
@@ -2876,25 +2912,27 @@ export function registerWalletCommands(program: Command): void {
         }
       );
 
-      console.log(`\n✓ Connected: ${account}`);
-      console.log("Sending setPasskey transaction...");
+      console.log("\n" + c.success + c.white(` Connected: ${account}`));
+      console.log(c.dim("Sending setPasskey transaction..."));
 
       const hash = await sendTransactionWithSession(client, session, account, chainId, txData);
-      console.log(`\nTransaction submitted: ${hash}`);
-      console.log("Waiting for confirmation...");
+      console.log("\n" + c.dim("Transaction submitted:") + " " + c.white(hash));
+      console.log(c.dim("Waiting for confirmation..."));
 
       const receipt = await provider.waitForTransaction(hash, 1, 60000);
       if (!receipt || receipt.status !== 1) {
-        console.error("Transaction failed.");
+        console.error(c.failure + " " + c.red("Transaction failed."));
         process.exit(1);
       }
 
-      console.log(`\n✓ Passkey activated on ARC402Wallet`);
-      console.log(`  Wallet:   ${config.walletContractAddress}`);
-      console.log(`  pubKeyX:  ${pubKeyX}`);
-      console.log(`  pubKeyY:  ${pubKeyY}`);
-      console.log(`  Tx:       ${hash}`);
-      console.log(`\nGovernance ops now require Face ID instead of MetaMask.`);
+      console.log("\n" + c.success + c.white(" Passkey activated on ARC402Wallet"));
+      renderTree([
+        { label: "Wallet", value: config.walletContractAddress ?? "" },
+        { label: "pubKeyX", value: pubKeyX },
+        { label: "pubKeyY", value: pubKeyY },
+        { label: "Tx", value: hash, last: true },
+      ]);
+      console.log(c.dim("\nGovernance ops now require Face ID instead of MetaMask."));
 
       await client.disconnect({ topic: session.topic, reason: { code: 6000, message: "done" } });
       process.exit(0);

@@ -91,15 +91,15 @@ export function registerMigrateCommands(program: Command): void {
         migratedFrom: wasSource ? migratedFrom : null,
       };
       if (opts.json) return console.log(JSON.stringify(payload, null, 2));
-      console.log(`address=${address}`);
-      console.log(`  active wallet: ${activeWallet}`);
-      if (isCurrent) {
-        console.log(`  status: current (no further migration)`);
-      } else {
-        console.log(`  status: migrated — score queries resolve to ${activeWallet}`);
-      }
-      if (hasMigrated) console.log(`  migrated to:   ${migratedTo}`);
-      if (wasSource)   console.log(`  migrated from: ${migratedFrom}`);
+      const statusItems: import('../ui/tree').TreeItem[] = [
+        { label: 'Address', value: formatAddress(address) },
+        { label: 'Active', value: formatAddress(activeWallet) },
+        { label: 'Status', value: isCurrent ? 'current (no further migration)' : `migrated — resolves to ${formatAddress(activeWallet)}` },
+      ];
+      if (hasMigrated) statusItems.push({ label: 'Migrated to', value: formatAddress(migratedTo) });
+      if (wasSource) statusItems.push({ label: 'Migrated from', value: formatAddress(migratedFrom) });
+      statusItems[statusItems.length - 1].last = true;
+      renderTree(statusItems);
     });
 
   // ─── migrate lineage <address> ────────────────────────────────────────────
@@ -164,18 +164,14 @@ export function registerMigrateCommands(program: Command): void {
       };
       if (opts.json) return console.log(JSON.stringify(payload, null, 2));
 
-      console.log(`address=${address}`);
-      console.log(`  lineage depth: ${lineage.length} wallet${lineage.length !== 1 ? "s" : ""}`);
-      console.log(`  migrations:    ${entries.length}`);
-      console.log();
-      lineage.forEach((addr, i) => {
-        const label = i === 0 ? " (origin)" : i === lineage.length - 1 ? " (current)" : "";
-        console.log(`  [${i}] ${addr}${label}`);
-        if (i < entries.length) {
-          const e = entries[i];
-          if (e.timestamp) console.log(`      migrated: ${e.timestamp}`);
-          if (e.scoreAtMigration) console.log(`      score at migration: ${e.scoreAtMigration} (decay: ${Number(e.decayBps) / 100}%)`);
-        }
+      const lineageItems = lineage.map((addr, i) => {
+        const roleLabel = i === 0 ? ' (origin)' : i === lineage.length - 1 ? ' (current)' : '';
+        const e = i < entries.length ? entries[i] : null;
+        let value = formatAddress(addr) + roleLabel;
+        if (e?.timestamp) value += `  · ${e.timestamp}`;
+        if (e?.scoreAtMigration) value += `  · score: ${e.scoreAtMigration} (decay: ${Number(e.decayBps) / 100}%)`;
+        return { label: `[${i}]`, value, last: i === lineage.length - 1 };
       });
+      renderTree(lineageItems);
     });
 }

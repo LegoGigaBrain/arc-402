@@ -11,6 +11,7 @@ import {
 import { loadConfig } from "../config";
 import { requireSigner, getClient } from "../client";
 import { hashFile, hashString } from "../utils/hash";
+import { c } from '../ui/colors';
 
 const sessionManager = new SessionManager();
 
@@ -102,7 +103,7 @@ export function registerNegotiateCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify({ sessionId: session.sessionId, message: proposal }));
       } else {
-        console.log(`Session started: ${session.sessionId}`);
+        console.log(' ' + c.success + c.white(' Session started: ' + session.sessionId.slice(0, 12) + '...'));
         console.log(`Signed PROPOSE:`);
         console.log(JSON.stringify(proposal, null, 2));
       }
@@ -138,7 +139,7 @@ export function registerNegotiateCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify(counter));
       } else {
-        console.log(`Signed COUNTER added to session ${sessionId.slice(0, 10)}...`);
+        console.log(' ' + c.success + c.white(' Counter added to session'));
         console.log(JSON.stringify(counter, null, 2));
       }
     });
@@ -177,8 +178,8 @@ export function registerNegotiateCommands(program: Command): void {
           message: accept,
         }));
       } else {
-        console.log(`✓ Session ${sessionId.slice(0, 10)}... ACCEPTED`);
-        console.log(`✓ Transcript hash: ${updatedSession.transcriptHash}`);
+        console.log(' ' + c.success + c.white(' Session ACCEPTED — transcript locked'));
+        console.log(' ' + c.dim('  Transcript:') + ' ' + c.white(updatedSession.transcriptHash ?? ''));
         if (opts.record) {
           console.log(`\nTranscript hash is ready to commit on-chain.`);
           console.log(`Run: arc402 hire --session ${sessionId} to propose() and record the transcript hash.`);
@@ -212,7 +213,7 @@ export function registerNegotiateCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify(reject));
       } else {
-        console.log(`✗ Session ${sessionId.slice(0, 10)}... REJECTED`);
+        console.log(' ' + c.failure + c.white(' Session REJECTED'));
         console.log(`Reason: ${opts.reason}`);
       }
     });
@@ -239,9 +240,9 @@ export function registerNegotiateCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify(result));
       } else if (result.valid) {
-        console.log(`✓ Valid — signer: ${result.recoveredSigner}`);
+        console.log(' ' + c.success + c.white(' Valid — signer: ' + result.recoveredSigner));
       } else {
-        console.error(`✗ Invalid — ${result.error}`);
+        console.error(' ' + c.failure + c.white(' Invalid — ' + result.error));
         process.exit(1);
       }
     });

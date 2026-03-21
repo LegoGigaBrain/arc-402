@@ -49,16 +49,21 @@ export function registerWatchtowerCommands(program: Command): void {
         .split(",")
         .map((s: string) => s.trim())
         .filter(Boolean);
+      const regSpinner = startSpinner('Registering watchtower…');
       const result = await client.registerWatchtower({
         name: opts.name,
         description: opts.description,
         capabilities,
       });
       if (opts.json || program.opts().json) {
+        regSpinner.stop();
         console.log(JSON.stringify(result));
       } else {
-        console.log(`registered as watchtower: ${opts.name}`);
-        console.log(`tx: ${result.txHash}`);
+        regSpinner.succeed(c.success + c.white(' Registered as watchtower'));
+        renderTree([
+          { label: 'Name', value: opts.name },
+          { label: 'Tx', value: result.txHash, last: true },
+        ]);
       }
     });
 
@@ -86,14 +91,19 @@ export function registerWatchtowerCommands(program: Command): void {
       if (opts.json || program.opts().json) {
         console.log(JSON.stringify(status, null, 2));
       } else {
-        console.log(`watchtower: ${status.addr}`);
-        console.log(`  name:         ${status.name}`);
-        console.log(`  description:  ${status.description}`);
-        console.log(`  capabilities: ${status.capabilities.join(", ") || "(none)"}`);
-        console.log(`  active:       ${status.active}`);
+        console.log('\n ' + c.mark + c.white(' Watchtower — ' + formatAddress(status.addr)));
+        const statusItems: { label: string; value: string; last?: boolean }[] = [
+          { label: 'Name', value: status.name },
+          { label: 'Description', value: status.description },
+          { label: 'Capabilities', value: status.capabilities.join(', ') || '(none)' },
+          { label: 'Active', value: String(status.active) },
+        ];
         if (status.registeredAt) {
-          console.log(`  registered:   ${new Date(status.registeredAt * 1000).toISOString()}`);
+          statusItems.push({ label: 'Registered', value: new Date(status.registeredAt * 1000).toISOString(), last: true });
+        } else {
+          statusItems[statusItems.length - 1].last = true;
         }
+        renderTree(statusItems);
       }
     });
 
@@ -164,7 +174,7 @@ export function registerWatchtowerCommands(program: Command): void {
               if (opts.json) {
                 console.log(JSON.stringify({ event: "challenge_submitted", channelId, txHash: result.txHash }));
               } else {
-                console.log(`challenge submitted: ${result.txHash}`);
+                console.log(' ' + c.success + c.white(' Challenge submitted — tx ' + result.txHash.slice(0, 12) + '...'));
               }
               return;
             } else {
@@ -201,12 +211,13 @@ export function registerWatchtowerCommands(program: Command): void {
         config.serviceAgreementAddress,
         signer
       );
+      const authSpinner = startSpinner('Authorizing watchtower…');
       const result = await client.authorizeWatchtower(channelId, watchtower);
       if (opts.json || program.opts().json) {
+        authSpinner.stop();
         console.log(JSON.stringify(result));
       } else {
-        console.log(`watchtower authorized: ${watchtower}`);
-        console.log(`tx: ${result.txHash}`);
+        authSpinner.succeed(c.success + c.white(' Authorized: ' + formatAddress(watchtower)));
       }
     });
 
@@ -225,12 +236,13 @@ export function registerWatchtowerCommands(program: Command): void {
         config.serviceAgreementAddress,
         signer
       );
+      const revokeSpinner = startSpinner('Revoking watchtower…');
       const result = await client.revokeWatchtower(channelId, watchtower);
       if (opts.json || program.opts().json) {
+        revokeSpinner.stop();
         console.log(JSON.stringify(result));
       } else {
-        console.log(`watchtower revoked: ${watchtower}`);
-        console.log(`tx: ${result.txHash}`);
+        revokeSpinner.succeed(c.success + c.white(' Revoked: ' + formatAddress(watchtower)));
       }
     });
 }

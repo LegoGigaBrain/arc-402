@@ -31,6 +31,7 @@ export function registerVerifyCommand(program: Command): void {
       if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
       const { signer } = await requireSigner(config);
       printSenderInfo(config);
+      const spinner = startSpinner('Submitting…');
 
       // Pre-flight: check agreement is in PENDING_VERIFICATION status (J2-04)
       if (!opts.auto) {
@@ -64,12 +65,12 @@ export function registerVerifyCommand(program: Command): void {
             SERVICE_AGREEMENT_ABI, "autoRelease", [BigInt(id)],
           );
           if (opts.json) return console.log(JSON.stringify({ agreementId: id, action: "autoRelease", txHash: tx.hash }));
-          console.log(`autoRelease submitted for agreement #${id}. tx=${tx.hash}`);
+          spinner.succeed('Auto-released — agreement #' + id + ' — tx ' + tx.hash.slice(0, 10) + '...');
         } else {
           const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
           const tx = await client.autoRelease(BigInt(id));
           if (opts.json) return console.log(JSON.stringify({ agreementId: id, action: "autoRelease", txHash: tx.hash }));
-          console.log(`autoRelease submitted for agreement #${id}. tx=${tx.hash}`);
+          spinner.succeed('Auto-released — agreement #' + id + ' — tx ' + tx.hash.slice(0, 10) + '...');
         }
       } else {
         if (config.walletContractAddress) {
@@ -78,12 +79,12 @@ export function registerVerifyCommand(program: Command): void {
             SERVICE_AGREEMENT_ABI, "verifyDeliverable", [BigInt(id)],
           );
           if (opts.json) return console.log(JSON.stringify({ agreementId: id, action: "verifyDeliverable", txHash: tx.hash }));
-          console.log(`Agreement #${id} verified — escrow released. tx=${tx.hash}`);
+          spinner.succeed('Verified — agreement #' + id + ' — escrow released');
         } else {
           const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
           const tx = await client.verifyDeliverable(BigInt(id));
           if (opts.json) return console.log(JSON.stringify({ agreementId: id, action: "verifyDeliverable", txHash: tx.hash }));
-          console.log(`Agreement #${id} verified — escrow released. tx=${tx.hash}`);
+          spinner.succeed('Verified — agreement #' + id + ' — escrow released');
         }
       }
     });

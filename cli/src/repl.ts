@@ -481,8 +481,21 @@ class TUI {
       return;
     }
 
-    if (input === "help") {
+    if (input === "help" || input === "/help") {
       await this.runHelp();
+      this.afterCommand();
+      return;
+    }
+
+    // ── /chat prefix — explicit chat route ────────────────────────────────────
+
+    if (input.startsWith("/chat ") || input === "/chat") {
+      const msg = input.slice(6).trim();
+      if (msg) {
+        this.commandRunning = true;
+        await this.sendChat(msg);
+        this.commandRunning = false;
+      }
       this.afterCommand();
       return;
     }
@@ -492,11 +505,9 @@ class TUI {
     const firstWord = input.split(/\s+/)[0];
     const allKnown = [...BUILTIN_CMDS, ...this.topCmds];
     if (!allKnown.includes(firstWord)) {
-      this.writeOutput(
-        chalk.dim(
-          "\n ◈ Chat coming soon — type a command or help\n"
-        )
-      );
+      this.commandRunning = true;
+      await this.sendChat(input);
+      this.commandRunning = false;
       this.afterCommand();
       return;
     }
@@ -564,6 +575,89 @@ class TUI {
     this.commandRunning = false;
 
     this.afterCommand();
+  }
+
+  // ── OpenClaw chat ─────────────────────────────────────────────────────────────
+
+  private async sendChat(message: string): Promise<void> {
+    write(ansi.move(this.scrollBot, 1));
+
+    let res: Response;
+    try {
+      res = await fetch("http://localhost:19000/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, session: "arc402-repl" }),
+        signal: AbortSignal.timeout(30000),
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isDown =
+        msg.includes("ECONNREFUSED") ||
+        msg.includes("fetch failed") ||
+        msg.includes("ENOTFOUND") ||
+        msg.includes("UND_ERR_SOCKET");
+      if (isDown) {
+        process.stdout.write(
+          "\n " +
+            chalk.yellow("⚠") +
+            " " +
+            chalk.dim("OpenClaw gateway not running. Start with: ") +
+            chalk.white("openclaw gateway start") +
+            "\n"
+        );
+      } else {
+        process.stdout.write(
+          "\n " + c.failure + " " + chalk.red(msg) + "\n"
+        );
+      }
+      return;
+    }
+
+    if (!res.body) {
+      process.stdout.write(
+        "\n" + chalk.dim(" ◈ ") + chalk.white("(empty response)") + "\n"
+      );
+      return;
+    }
+
+    process.stdout.write("\n");
+
+    const flushLine = (line: string): void => {
+      // Unwrap SSE data lines
+      if (line.startsWith("data: ")) {
+        line = line.slice(6);
+        if (line === "[DONE]") return;
+        try {
+          const j = JSON.parse(line) as {
+            text?: string;
+            content?: string;
+            delta?: { text?: string };
+          };
+          line = j.text ?? j.content ?? j.delta?.text ?? line;
+        } catch {
+          /* use raw */
+        }
+      }
+      if (line.trim()) {
+        process.stdout.write(chalk.dim(" ◈ ") + chalk.white(line) + "\n");
+      }
+    };
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) flushLine(line);
+    }
+
+    if (buffer.trim()) flushLine(buffer);
   }
 
   // ── After each command: repaint banner + input ───────────────────────────────
@@ -644,6 +738,25 @@ class TUI {
     }
     if (process.stdin.isTTY) process.stdin.setRawMode(true);
     process.stdin.on("data", this.boundKeyHandler);
+
+    process.stdout.write("\n");
+    process.stdout.write(chalk.cyanBright("Chat") + "\n");
+    process.stdout.write(
+      "  " +
+        chalk.white("<message>") +
+        chalk.dim("          Send message to OpenClaw gateway\n")
+    );
+    process.stdout.write(
+      "  " +
+        chalk.white("/chat <message>") +
+        chalk.dim("   Explicitly route to chat\n")
+    );
+    process.stdout.write(
+      chalk.dim(
+        "  Gateway: http://localhost:19000  (openclaw gateway start)\n"
+      )
+    );
+    process.stdout.write("\n");
   }
 
   // ── Exit ──────────────────────────────────────────────────────────────────────

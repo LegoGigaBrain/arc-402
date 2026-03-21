@@ -27,7 +27,7 @@ import {
   type DaemonConfig,
 } from "./config";
 import { verifyWallet, getWalletBalance } from "./wallet-monitor";
-import { Notifier } from "./notify";
+import { buildNotifier } from "./notify";
 import { HireListener } from "./hire-listener";
 import { UserOpsManager, buildAcceptCalldata } from "./userops";
 import { generateReceipt, extractLearnings, createJobDirectory, cleanJobDirectory } from "./job-lifecycle";
@@ -519,19 +519,7 @@ export async function runDaemon(foreground = false): Promise<void> {
   }
 
   // ── Setup notifier ───────────────────────────────────────────────────────
-  const notifier = new Notifier(
-    config.notifications.telegram_bot_token,
-    config.notifications.telegram_chat_id,
-    {
-      hire_request: config.notifications.notify_on_hire_request,
-      hire_accepted: config.notifications.notify_on_hire_accepted,
-      hire_rejected: config.notifications.notify_on_hire_rejected,
-      delivery: config.notifications.notify_on_delivery,
-      dispute: config.notifications.notify_on_dispute,
-      channel_challenge: config.notifications.notify_on_channel_challenge,
-      low_balance: config.notifications.notify_on_low_balance,
-    }
-  );
+  const notifier = buildNotifier(config);
 
   // ── Step 10: Start relay listener ───────────────────────────────────────
   const hireListener = new HireListener(config, db, notifier, config.wallet.contract_address);

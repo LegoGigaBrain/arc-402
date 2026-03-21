@@ -68,6 +68,9 @@ export interface DaemonConfig {
     notify_on_channel_challenge: boolean;
     notify_on_low_balance: boolean;
     low_balance_threshold_eth: string;
+    discord: { webhook_url: string };
+    webhook: { url: string; headers: Record<string, string> };
+    email: { smtp_host: string; smtp_port: number; smtp_user: string; smtp_pass: string; to: string };
   };
   work: {
     handler: "exec" | "http" | "noop";
@@ -114,6 +117,9 @@ function withDefaults(raw: Record<string, unknown>): DaemonConfig {
   const wt = (raw.watchtower as Record<string, unknown>) ?? {};
   const p = (raw.policy as Record<string, unknown>) ?? {};
   const notif = (raw.notifications as Record<string, unknown>) ?? {};
+  const notifDiscord = (notif.discord as Record<string, unknown>) ?? {};
+  const notifWebhook = (notif.webhook as Record<string, unknown>) ?? {};
+  const notifEmail = (notif.email as Record<string, unknown>) ?? {};
   const work = (raw.work as Record<string, unknown>) ?? {};
 
   return {
@@ -169,6 +175,18 @@ function withDefaults(raw: Record<string, unknown>): DaemonConfig {
       notify_on_channel_challenge: bool(notif.notify_on_channel_challenge, true),
       notify_on_low_balance: bool(notif.notify_on_low_balance, true),
       low_balance_threshold_eth: str(notif.low_balance_threshold_eth, "0.005"),
+      discord: { webhook_url: str(notifDiscord.webhook_url) },
+      webhook: {
+        url: str(notifWebhook.url),
+        headers: (notifWebhook.headers as Record<string, string>) ?? {},
+      },
+      email: {
+        smtp_host: str(notifEmail.smtp_host),
+        smtp_port: num(notifEmail.smtp_port, 587),
+        smtp_user: str(notifEmail.smtp_user),
+        smtp_pass: str(notifEmail.smtp_pass, "env:SMTP_PASS"),
+        to: str(notifEmail.to),
+      },
     },
     work: {
       handler: (str(work.handler, "noop")) as "exec" | "http" | "noop",
@@ -213,6 +231,9 @@ export function loadDaemonConfig(configPath = DAEMON_TOML): DaemonConfig {
   // Resolve optional env: values silently (missing = disabled feature)
   config.notifications.telegram_bot_token = tryResolveEnvValue(config.notifications.telegram_bot_token);
   config.notifications.telegram_chat_id = tryResolveEnvValue(config.notifications.telegram_chat_id);
+  config.notifications.discord.webhook_url = tryResolveEnvValue(config.notifications.discord.webhook_url);
+  config.notifications.webhook.url = tryResolveEnvValue(config.notifications.webhook.url);
+  config.notifications.email.smtp_pass = tryResolveEnvValue(config.notifications.email.smtp_pass);
   config.work.http_auth_token = tryResolveEnvValue(config.work.http_auth_token);
 
   return config;
@@ -299,6 +320,20 @@ notify_on_dispute = true         # Notify when a dispute is raised (by either pa
 notify_on_channel_challenge = true  # Notify when watchtower submits a channel challenge
 notify_on_low_balance = false    # Disabled by default — enable if you want balance alerts
 low_balance_threshold_eth = "0.005"  # Balance alert threshold
+
+[notifications.discord]
+webhook_url = ""                 # Discord channel webhook URL (leave empty to disable)
+
+[notifications.webhook]
+url = ""                         # POST JSON {title, body, timestamp} to this URL (leave empty to disable)
+# headers = { Authorization = "Bearer ..." }  # Optional headers
+
+[notifications.email]
+smtp_host = ""                   # SMTP server hostname (leave empty to disable)
+smtp_port = 587
+smtp_user = ""                   # SMTP login / from address
+smtp_pass = "env:SMTP_PASS"      # Load from env, not hardcoded
+to = ""                          # Recipient address
 
 [work]
 handler = "noop"               # exec | http | noop

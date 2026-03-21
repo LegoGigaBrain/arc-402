@@ -19,7 +19,9 @@ import {
   DAEMON_SOCK,
   DAEMON_TOML,
   TEMPLATE_DAEMON_TOML,
+  loadDaemonConfig,
 } from "../daemon/config";
+import { buildNotifier } from "../daemon/notify";
 import {
   buildOpenShellSecretExports,
   buildOpenShellSshConfig,
@@ -942,6 +944,77 @@ export function registerDaemonCommands(program: Command): void {
       console.log("  4. Verify with arc402 openshell status");
       console.log("  5. Start the OpenShell-owned ARC-402 runtime: arc402 daemon start");
     });
+
+  // ── daemon notifications ──────────────────────────────────────────────────────
+  const notifications = daemon
+    .command("notifications")
+    .description("Show or test configured notification channels");
+
+  notifications
+    .command("show")
+    .description("Show all configured notification channels")
+    .action(() => {
+      if (!fs.existsSync(DAEMON_TOML)) {
+        console.error("daemon.toml not found. Run `arc402 daemon init` first.");
+        process.exit(1);
+      }
+      const cfg = loadDaemonConfig();
+      const notif = cfg.notifications;
+      const channels: string[] = [];
+
+      if (notif.telegram_bot_token && notif.telegram_chat_id) {
+        channels.push(`telegram  chat_id=${notif.telegram_chat_id}`);
+      }
+      if (notif.discord?.webhook_url) {
+        const u = new URL(notif.discord.webhook_url);
+        channels.push(`discord   ${u.hostname}${u.pathname.slice(0, 30)}...`);
+      }
+      if (notif.webhook?.url) {
+        channels.push(`webhook   ${notif.webhook.url}`);
+      }
+      if (notif.email?.smtp_host && notif.email?.to) {
+        channels.push(`email     ${notif.email.smtp_host}:${notif.email.smtp_port} → ${notif.email.to}`);
+      }
+
+      if (channels.length === 0) {
+        console.log("No notification channels configured.");
+        console.log("Edit ~/.arc402/daemon.toml to add Telegram, Discord, webhook, or email.");
+      } else {
+        console.log(`Configured channels (${channels.length}):`);
+        for (const ch of channels) console.log(`  ${ch}`);
+      }
+    });
+
+  notifications
+    .command("test")
+    .description("Send a test message to all configured channels")
+    .action(async () => {
+      if (!fs.existsSync(DAEMON_TOML)) {
+        console.error("daemon.toml not found. Run `arc402 daemon init` first.");
+        process.exit(1);
+      }
+      const cfg = loadDaemonConfig();
+      const notifier = buildNotifier(cfg);
+      if (!notifier.isEnabled()) {
+        console.log("No notification channels configured. Nothing to test.");
+        process.exit(0);
+      }
+      console.log("Sending test notification to all channels...");
+      try {
+        await notifier.send("daemon_started", "ARC-402 Test Notification",
+          "This is a test message from arc402 daemon notifications test."
+        );
+        console.log("Test notification sent successfully.");
+      } catch (err) {
+        console.error(`Test notification failed: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    });
+
+  // Default action: show (arc402 daemon notifications → arc402 daemon notifications show)
+  notifications.action(() => {
+    notifications.help();
+  });
 
   // ── daemon channel-watch ─────────────────────────────────────────────────────
   daemon

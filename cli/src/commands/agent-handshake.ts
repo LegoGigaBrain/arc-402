@@ -2,6 +2,8 @@ import { Command } from "commander";
 import { ethers } from "ethers";
 import { loadConfig } from "../config";
 import { requireSigner } from "../client";
+import { c } from "../ui/colors";
+import { renderTree } from "../ui/tree";
 
 // Challenge-response: both agents sign a shared nonce with their agent key
 // and verify each other against AgentRegistry
@@ -57,10 +59,13 @@ export function registerHandshakeCommand(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify(challenge));
       } else {
-        console.log(`✓ Your identity: ${myAddress} (registered)`);
-        console.log(`✓ Their identity: ${agentAddress} (registered, active)`);
-        console.log(`✓ Their endpoint: ${theirAgent.endpoint}`);
-        console.log(`\nSigned challenge (send to their endpoint to complete handshake):`);
+        console.log('\n ' + c.mark + c.white(' Handshake'));
+        renderTree([
+          { label: 'Your identity', value: `${myAddress} (registered)` },
+          { label: 'Their identity', value: `${agentAddress} (registered, active)` },
+          { label: 'Their endpoint', value: theirAgent.endpoint, last: true },
+        ]);
+        console.log('\n ' + c.dim('Signed challenge (send to their endpoint to complete handshake):'));
         console.log(JSON.stringify(challenge, null, 2));
       }
     });

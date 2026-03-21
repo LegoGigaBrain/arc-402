@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import { c } from '../ui/colors';
 
 const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744310/arc-402/v0.2.0";
 

@@ -17,6 +17,7 @@ import * as dns from "dns/promises";
 import * as fs from "fs";
 import * as net from "net";
 import chalk from "chalk";
+import { c } from '../ui/colors';
 
 interface DoctorCheck {
   layer: string;
@@ -477,7 +478,7 @@ export function registerEndpointCommands(program: Command): void {
       });
       saveEndpointConfig(cfg);
 
-      console.log(chalk.green(`✓ Endpoint scaffold written: ${ENDPOINT_CONFIG_PATH}`));
+      console.log(c.success + c.white(' Endpoint scaffold written: ' + ENDPOINT_CONFIG_PATH));
       console.log(`  Agent name:    ${cfg.agentName}`);
       console.log(`  Hostname:      ${cfg.hostname}`);
       console.log(`  Public URL:    ${cfg.publicUrl}`);
@@ -510,7 +511,7 @@ export function registerEndpointCommands(program: Command): void {
       const allGood = checks.every((check) => check.ok);
       const brokenLayers = Array.from(new Set(checks.filter((check) => !check.ok).map((check) => check.layer)));
 
-      console.log("ARC-402 Endpoint Status");
+      console.log('\n ' + c.mark + c.white(' ARC-402 Endpoint Status'));
       console.log("─────────────────────");
       console.log(`Agent name:      ${cfg.agentName}`);
       console.log(`Hostname:        ${cfg.hostname}`);
@@ -571,7 +572,7 @@ export function registerEndpointCommands(program: Command): void {
       });
       saveEndpointConfig(cfg);
 
-      console.log(chalk.green(`✓ Endpoint config locked to ${cfg.publicUrl}`));
+      console.log(c.success + c.white(' Endpoint config locked to ' + cfg.publicUrl));
       console.log(`  Hostname:      ${cfg.hostname}`);
       console.log(`  Tunnel target: ${cfg.tunnelTarget}`);
       console.log(`  Wallet:        ${cfg.walletAddress}`);

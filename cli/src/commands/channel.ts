@@ -6,6 +6,10 @@ import type { ChannelState } from "@arc402/sdk";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { c } from '../ui/colors';
+import { startSpinner } from '../ui/spinner';
+import { renderTree } from '../ui/tree';
+import { formatAddress } from '../ui/format';
 
 const CHANNEL_STATES_DIR = path.join(os.homedir(), ".arc402", "channel-states");
 
@@ -33,6 +37,7 @@ export function registerChannelCommands(program: Command): void {
       if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
       const { signer } = await requireSigner(config);
       const client = new ChannelClient(config.serviceAgreementAddress, signer);
+      const spinner = startSpinner('Opening session channel…');
       const result = await client.openSessionChannel(
         provider,
         opts.token,
@@ -41,10 +46,14 @@ export function registerChannelCommands(program: Command): void {
         Number(opts.deadline)
       );
       if (opts.json || program.opts().json) {
+        spinner.stop();
         console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log(`channel opened: ${result.channelId}`);
-        console.log(`tx: ${result.txHash}`);
+        spinner.succeed(' Opened — channel ' + result.channelId);
+        renderTree([
+          { label: 'Channel', value: result.channelId },
+          { label: 'Tx', value: result.txHash, last: true },
+        ]);
       }
     });
 
@@ -60,14 +69,15 @@ export function registerChannelCommands(program: Command): void {
       if (opts.json || program.opts().json) {
         console.log(JSON.stringify(ch, (_k, v) => typeof v === "bigint" ? v.toString() : v, 2));
       } else {
-        console.log(`channel: ${channelId}`);
-        console.log(`  status:    ${ch.status}`);
-        console.log(`  client:    ${ch.client}`);
-        console.log(`  provider:  ${ch.provider}`);
-        console.log(`  deposit:   ${ch.depositAmount}`);
-        console.log(`  settled:   ${ch.settledAmount}`);
-        console.log(`  seq:       ${ch.lastSequenceNumber}`);
-        console.log(`  deadline:  ${ch.deadline}`);
+        console.log('\n ' + c.mark + c.white(` Channel ${channelId}`));
+        renderTree([
+          { label: 'Status', value: ch.status },
+          { label: 'Client', value: formatAddress(ch.client) },
+          { label: 'Provider', value: formatAddress(ch.provider) },
+          { label: 'Deposit', value: ch.depositAmount.toString() },
+          { label: 'Settled', value: ch.settledAmount.toString() },
+          { label: 'Seq', value: ch.lastSequenceNumber.toString(), last: true },
+        ]);
       }
     });
 
@@ -107,8 +117,8 @@ export function registerChannelCommands(program: Command): void {
       if (opts.json || program.opts().json) {
         console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log(`close submitted: ${result.txHash}`);
-        console.log("challenge window open (24h)");
+        console.log(' ' + c.success + c.white(` Close submitted — ${result.txHash}`));
+        console.log(' ' + c.dim('Challenge window open (24h)'));
       }
     });
 
@@ -126,7 +136,7 @@ export function registerChannelCommands(program: Command): void {
       if (opts.json || program.opts().json) {
         console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log(`challenge submitted: ${result.txHash}`);
+        console.log(' ' + c.success + c.white(` Challenge submitted — ${result.txHash}`));
       }
     });
 
@@ -142,7 +152,7 @@ export function registerChannelCommands(program: Command): void {
       if (opts.json || program.opts().json) {
         console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log(`finalised: ${result.txHash}`);
+        console.log(' ' + c.success + c.white(` Finalised — ${result.txHash}`));
       }
     });
 
@@ -158,7 +168,7 @@ export function registerChannelCommands(program: Command): void {
       if (opts.json || program.opts().json) {
         console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log(`reclaimed: ${result.txHash}`);
+        console.log(' ' + c.success + c.white(` Reclaimed — ${result.txHash}`));
       }
     });
 
@@ -201,8 +211,8 @@ export function registerChannelCommands(program: Command): void {
       if (opts.json || program.opts().json) {
         console.log(JSON.stringify({ stored: true, channelId, path: dest }));
       } else {
-        console.log(`State stored: ${dest}`);
-        console.log(`  seq: ${state.sequenceNumber}`);
+        console.log(' ' + c.success + c.white(` State stored — ${dest}`));
+        console.log(' ' + c.dim(`seq: ${state.sequenceNumber}`));
       }
     });
 }

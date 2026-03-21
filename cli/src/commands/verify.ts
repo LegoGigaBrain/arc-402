@@ -5,6 +5,8 @@ import { loadConfig } from "../config";
 import { getClient, requireSigner } from "../client";
 import { printSenderInfo, executeContractWriteViaWallet } from "../wallet-router";
 import { SERVICE_AGREEMENT_ABI } from "../abis";
+import { c } from '../ui/colors';
+import { startSpinner } from '../ui/spinner';
 
 // Agreement status values from the contract
 const AGREEMENT_STATUS_NAMES: Record<number, string> = {

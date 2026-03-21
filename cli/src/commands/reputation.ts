@@ -3,6 +3,10 @@ import { ReputationOracleClient, ReputationSignalType } from "@arc402/sdk";
 import { ethers } from "ethers";
 import { loadConfig } from "../config";
 import { getClient, requireSigner } from "../client";
+import { c } from '../ui/colors';
+import { startSpinner } from '../ui/spinner';
+import { renderTree } from '../ui/tree';
+import { formatAddress } from '../ui/format';
 
 const reputation = new Command("reputation").description("Network-wide reputation signals");
 

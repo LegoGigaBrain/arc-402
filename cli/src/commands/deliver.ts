@@ -9,6 +9,10 @@ import { SERVICE_AGREEMENT_ABI } from "../abis";
 import { readFile } from "fs/promises";
 import prompts from "prompts";
 import { resolveAgentEndpoint, notifyAgent, DEFAULT_REGISTRY_ADDRESS } from "../endpoint-notify";
+import { c } from '../ui/colors';
+import { startSpinner } from '../ui/spinner';
+import { renderTree } from '../ui/tree';
+import { formatAddress } from '../ui/format';
 
 export function registerDeliverCommand(program: Command): void {
   program
@@ -88,8 +92,9 @@ export function registerDeliverCommand(program: Command): void {
         const { ethers } = await import("ethers");
         const hash = ethers.keccak256(buffer);
 
-        console.log(`encrypted upload: ${uri} (CID: ${cid})`);
+        console.log(' ' + c.dim('Encrypted upload:') + ' ' + c.white(uri));
 
+        const encSpinner = startSpinner('Committing deliverable…');
         if (config.walletContractAddress) {
           await executeContractWriteViaWallet(
             config.walletContractAddress, signer, config.serviceAgreementAddress,
@@ -99,7 +104,12 @@ export function registerDeliverCommand(program: Command): void {
           const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
           await client.commitDeliverable(BigInt(id), hash);
         }
-        console.log(`committed ${id} hash=${hash} (plaintext hash; encrypted at ${uri})`);
+        encSpinner.succeed(` Delivered — agreement #${id}`);
+        renderTree([
+          { label: 'Hash', value: hash },
+          { label: 'CID', value: cid },
+          { label: 'URI', value: uri, last: true },
+        ]);
         return;
       }
 

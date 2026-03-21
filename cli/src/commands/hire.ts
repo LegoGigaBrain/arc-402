@@ -7,6 +7,10 @@ import { hashFile, hashString } from "../utils/hash";
 import { parseDuration } from "../utils/time";
 import { printSenderInfo, executeContractWriteViaWallet } from "../wallet-router";
 import { AGENT_REGISTRY_ABI, SERVICE_AGREEMENT_ABI } from "../abis";
+import { c } from '../ui/colors';
+import { startSpinner } from '../ui/spinner';
+import { renderTree, TreeItem } from '../ui/tree';
+import { formatAddress } from '../ui/format';
 
 const DEFAULT_REGISTRY_ADDRESS = "0xD5c2851B00090c92Ba7F4723FB548bb30C9B6865";
 
@@ -132,6 +136,8 @@ export function registerHireCommand(program: Command): void {
 
       let agreementId: bigint;
 
+      const hireSpinner = startSpinner('Submitting agreement...');
+
       if (config.walletContractAddress) {
         // Smart wallet path — wallet handles per-tx USDC approval via maxApprovalAmount
         const tx = await executeContractWriteViaWallet(
@@ -185,6 +191,8 @@ export function registerHireCommand(program: Command): void {
         agreementId = result.agreementId;
       }
 
+      hireSpinner.succeed('Agreement proposed');
+
       // Notify provider's HTTP endpoint (non-blocking)
       const hireRegistryAddress = config.agentRegistryV2Address ?? config.agentRegistryAddress ?? DEFAULT_REGISTRY_ADDRESS;
       try {
@@ -224,7 +232,14 @@ export function registerHireCommand(program: Command): void {
         return console.log(JSON.stringify(output, null, 2));
       }
 
-      console.log(`agreementId=${agreementId!} deliverablesHash=${deliverablesHash}`);
-      if (transcriptHash) console.log(`transcriptHash=${transcriptHash}`);
+      console.log(' ' + c.success + c.white(` Agreement #${agreementId!} proposed`));
+      const hireTreeItems: TreeItem[] = [
+        { label: 'Agent', value: formatAddress(opts.agent) },
+        { label: 'Task', value: opts.task.slice(0, 60) + (opts.task.length > 60 ? '...' : '') },
+        { label: 'Service', value: opts.serviceType },
+        { label: 'Hash', value: String(deliverablesHash), last: !transcriptHash },
+      ];
+      if (transcriptHash) hireTreeItems.push({ label: 'Transcript', value: transcriptHash, last: true });
+      renderTree(hireTreeItems);
     });
 }

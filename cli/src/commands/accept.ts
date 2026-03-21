@@ -6,6 +6,8 @@ import { requireSigner } from "../client";
 import { printSenderInfo, executeContractWriteViaWallet } from "../wallet-router";
 import { SERVICE_AGREEMENT_ABI } from "../abis";
 import { resolveAgentEndpoint, notifyAgent, DEFAULT_REGISTRY_ADDRESS } from "../endpoint-notify";
+import { c } from "../ui/colors";
+import { startSpinner } from "../ui/spinner";
 
 export function registerAcceptCommand(program: Command): void {
   program.command("accept <id>").description("Provider accepts a proposed agreement").action(async (id) => {
@@ -27,16 +29,23 @@ export function registerAcceptCommand(program: Command): void {
       clientAddress = String(ag.client ?? "");
     } catch { /* non-fatal */ }
 
-    if (config.walletContractAddress) {
-      await executeContractWriteViaWallet(
-        config.walletContractAddress, signer, config.serviceAgreementAddress,
-        SERVICE_AGREEMENT_ABI, "accept", [BigInt(id)],
-      );
-    } else {
-      const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
-      await client.accept(BigInt(id));
+    const spinner = startSpinner("Submitting transaction...");
+    try {
+      if (config.walletContractAddress) {
+        await executeContractWriteViaWallet(
+          config.walletContractAddress, signer, config.serviceAgreementAddress,
+          SERVICE_AGREEMENT_ABI, "accept", [BigInt(id)],
+        );
+      } else {
+        const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
+        await client.accept(BigInt(id));
+      }
+      spinner.succeed();
+    } catch (err) {
+      spinner.fail();
+      throw err;
     }
-    console.log(`accepted ${id}`);
+    console.log(' ' + c.success + c.white(` Accepted — agreement #${id}`));
 
     // Notify client's HTTP endpoint (non-blocking)
     if (clientAddress) {
@@ -48,7 +57,7 @@ export function registerAcceptCommand(program: Command): void {
         await notifyAgent(endpoint, "/hire/accepted", payload);
         await notifyAgent(endpoint, "/delivery/accepted", payload);
       } catch (err) {
-        console.warn(`Warning: could not notify client endpoint: ${err instanceof Error ? err.message : String(err)}`);
+        console.warn(' ' + c.warning + c.white(` Could not notify client endpoint: ${err instanceof Error ? err.message : String(err)}`));
       }
     }
   });

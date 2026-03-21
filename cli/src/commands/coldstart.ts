@@ -2,6 +2,9 @@ import { Command } from "commander";
 import { ethers } from "ethers";
 import { loadConfig } from "../config";
 import { getClient, requireSigner } from "../client";
+import { c } from '../ui/colors';
+import { startSpinner } from '../ui/spinner';
+import { renderTree } from '../ui/tree';
 
 const VOUCHING_REGISTRY_ABI = [
   "function vouch(address newAgent, uint256 stakeAmount) external payable",
@@ -42,6 +45,7 @@ export function registerColdStartCommands(program: Command): void {
       const stakeAmount = opts.stake ? BigInt(opts.stake) : 0n;
       const contract = new ethers.Contract(config.vouchingRegistryAddress, VOUCHING_REGISTRY_ABI, signer);
 
+      const spinner = startSpinner(`Vouching for ${address}…`);
       const tx = await contract.vouch(address, stakeAmount);
       const receipt = await tx.wait();
 
@@ -53,11 +57,14 @@ export function registerColdStartCommands(program: Command): void {
         boostGranted: boost.toString(),
         txHash: receipt.hash,
       };
-      if (opts.json) return console.log(JSON.stringify(payload, null, 2));
-      console.log(`vouched for ${address}`);
-      if (stakeAmount > 0n) console.log(`  stake: ${ethers.formatEther(stakeAmount)} ETH`);
-      console.log(`  boost granted: +${boost} trust points`);
-      console.log(`  tx: ${receipt.hash}`);
+      if (opts.json) { spinner.stop(); return console.log(JSON.stringify(payload, null, 2)); }
+      spinner.succeed(` Vouched — ${address}`);
+      renderTree([
+        { label: 'New Agent', value: address },
+        { label: 'Stake', value: stakeAmount > 0n ? `${ethers.formatEther(stakeAmount)} ETH` : '0' },
+        { label: 'Boost', value: `+${boost} trust points` },
+        { label: 'Tx', value: receipt.hash, last: true },
+      ]);
     });
 
   // ─── bond ──────────────────────────────────────────────────────────────────
@@ -88,14 +95,18 @@ export function registerColdStartCommands(program: Command): void {
       }
 
       const amount = opts.amount ? BigInt(opts.amount) : BOND_DEFAULT_AMOUNT;
+      const bondSpinner = startSpinner('Posting bond…');
       const tx = await contract.postBond({ value: amount });
       const receipt = await tx.wait();
 
       const payload = { bonded: true, amount: amount.toString(), txHash: receipt.hash };
-      if (opts.json) return console.log(JSON.stringify(payload, null, 2));
-      console.log(`bond posted: ${ethers.formatEther(amount)} ETH`);
-      console.log(`  claimable after 90 days of clean operation`);
-      console.log(`  tx: ${receipt.hash}`);
+      if (opts.json) { bondSpinner.stop(); return console.log(JSON.stringify(payload, null, 2)); }
+      bondSpinner.succeed(` Bond posted — ${ethers.formatEther(amount)} ETH`);
+      renderTree([
+        { label: 'Amount', value: `${ethers.formatEther(amount)} ETH` },
+        { label: 'Tx', value: receipt.hash },
+        { label: 'Note', value: 'Claimable after 90 days of clean operation', last: true },
+      ]);
     });
 
   // arc402 bond status <address>
@@ -121,8 +132,8 @@ export function registerColdStartCommands(program: Command): void {
       } catch {
         const payload = { address, bonded: false };
         if (opts.json) return console.log(JSON.stringify(payload, null, 2));
-        console.log(`address=${address}`);
-        console.log(`  no active bond`);
+        console.log('\n ' + c.mark + c.white(` Bond Status — ${address}`));
+        renderTree([{ label: 'Status', value: 'No active bond', last: true }]);
         return;
       }
 
@@ -140,17 +151,15 @@ export function registerColdStartCommands(program: Command): void {
         daysRemaining,
       };
       if (opts.json) return console.log(JSON.stringify(payload, null, 2));
-      console.log(`address=${address}`);
+      console.log('\n ' + c.mark + c.white(` Bond Status — ${address}`));
       if (!active) {
-        console.log(`  no active bond`);
+        renderTree([{ label: 'Status', value: 'No active bond', last: true }]);
         return;
       }
-      console.log(`  amount: ${ethers.formatEther(amount)} ETH`);
-      console.log(`  posted: ${new Date(Number(postedAt) * 1000).toISOString()}`);
-      if (daysRemaining > 0) {
-        console.log(`  claimable in: ${daysRemaining} days`);
-      } else {
-        console.log(`  claimable: now`);
-      }
+      renderTree([
+        { label: 'Amount', value: `${ethers.formatEther(amount)} ETH` },
+        { label: 'Posted', value: new Date(Number(postedAt) * 1000).toISOString() },
+        { label: 'Claimable', value: daysRemaining > 0 ? `in ${daysRemaining} days` : 'now', last: true },
+      ]);
     });
 }

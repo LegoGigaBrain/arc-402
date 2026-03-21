@@ -5,6 +5,7 @@ import * as os from "os";
 import * as http from "http";
 import * as https from "https";
 import { spawn } from "child_process";
+import { c } from '../ui/colors';
 
 const PID_FILE = path.join(os.homedir(), ".arc402", "relay.pid");
 

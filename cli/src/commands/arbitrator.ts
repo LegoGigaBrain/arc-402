@@ -2,6 +2,9 @@ import { Command } from "commander";
 import { DisputeArbitrationClient } from "@arc402/sdk";
 import { loadConfig } from "../config";
 import { getClient, requireSigner } from "../client";
+import { c } from "../ui/colors";
+import { startSpinner } from "../ui/spinner";
+import { renderTree } from "../ui/tree";
 
 export function registerArbitratorCommand(program: Command): void {
   const arbitrator = program
@@ -23,16 +26,22 @@ export function registerArbitratorCommand(program: Command): void {
       const client = new DisputeArbitrationClient(config.disputeArbitrationAddress, provider);
 
       const eligible = await client.isEligibleArbitrator(arbitratorAddress);
-      console.log(`Arbitrator ${arbitratorAddress} eligible: ${eligible}`);
+      console.log('\n ' + c.mark + c.white(' Arbitrator status'));
+      renderTree([
+        { label: 'Address', value: arbitratorAddress },
+        { label: 'Eligible', value: eligible ? 'yes' : 'no', last: !agreementId },
+      ]);
 
       if (agreementId) {
         const bondState = await client.getArbitratorBondState(arbitratorAddress, BigInt(agreementId));
-        console.log(`Bond state for agreement ${agreementId}:`);
-        console.log(`  Amount: ${bondState.bondAmount.toString()} tokens`);
-        console.log(`  Locked: ${bondState.locked}`);
-        console.log(`  Slashed: ${bondState.slashed}`);
-        console.log(`  Returned: ${bondState.returned}`);
-        console.log(`  Locked at: ${new Date(Number(bondState.lockedAt) * 1000).toISOString()}`);
+        console.log('\n ' + c.mark + c.white(` Bond state — agreement #${agreementId}`));
+        renderTree([
+          { label: 'Amount', value: `${bondState.bondAmount.toString()} tokens` },
+          { label: 'Locked', value: String(bondState.locked) },
+          { label: 'Slashed', value: String(bondState.slashed) },
+          { label: 'Returned', value: String(bondState.returned) },
+          { label: 'Locked at', value: new Date(Number(bondState.lockedAt) * 1000).toISOString(), last: true },
+        ]);
       }
     });
 
@@ -48,11 +57,18 @@ export function registerArbitratorCommand(program: Command): void {
 
       const bondAmount = BigInt(opts.bond);
       if (bondAmount === 0n) {
-        console.warn("Warning: bond amount is 0. For ERC-20 agreements, pre-approve the DisputeArbitration contract.");
+        console.warn(' ' + c.warning + c.white(' Bond amount is 0. For ERC-20 agreements, pre-approve the DisputeArbitration contract.'));
       }
 
-      await client.acceptAssignment(BigInt(agreementId), bondAmount);
-      console.log(`accepted assignment for agreement ${agreementId}`);
+      const spinner = startSpinner("Submitting transaction...");
+      try {
+        await client.acceptAssignment(BigInt(agreementId), bondAmount);
+        spinner.succeed();
+      } catch (err) {
+        spinner.fail();
+        throw err;
+      }
+      console.log(' ' + c.success + c.white(` Assignment accepted — agreement #${agreementId}`));
     });
 
   bond
@@ -63,8 +79,15 @@ export function registerArbitratorCommand(program: Command): void {
       if (!config.disputeArbitrationAddress) throw new Error("disputeArbitrationAddress missing in config");
       const { signer } = await requireSigner(config);
       const client = new DisputeArbitrationClient(config.disputeArbitrationAddress, signer);
-      await client.triggerFallback(BigInt(agreementId));
-      console.log(`fallback triggered for ${agreementId}`);
+      const spinner = startSpinner("Submitting transaction...");
+      try {
+        await client.triggerFallback(BigInt(agreementId));
+        spinner.succeed();
+      } catch (err) {
+        spinner.fail();
+        throw err;
+      }
+      console.log(' ' + c.success + c.white(` Fallback triggered — agreement #${agreementId}`));
     });
 
   // Rate subcommands — nest under 'rate'
@@ -82,8 +105,15 @@ export function registerArbitratorCommand(program: Command): void {
       const client = new DisputeArbitrationClient(config.disputeArbitrationAddress, signer);
 
       const rateVal = BigInt(usdPerToken);
-      await client.setTokenUsdRate(tokenAddress, rateVal);
-      console.log(`token rate set: ${tokenAddress} = ${rateVal.toString()} USD/token`);
+      const spinner = startSpinner("Submitting transaction...");
+      try {
+        await client.setTokenUsdRate(tokenAddress, rateVal);
+        spinner.succeed();
+      } catch (err) {
+        spinner.fail();
+        throw err;
+      }
+      console.log(' ' + c.success + c.white(` Token rate set: ${tokenAddress} = ${rateVal.toString()} USD/token`));
     });
 
   // Admin: slash arbitrator (manual rules violation)
@@ -95,8 +125,15 @@ export function registerArbitratorCommand(program: Command): void {
       if (!config.disputeArbitrationAddress) throw new Error("disputeArbitrationAddress missing in config");
       const { signer } = await requireSigner(config);
       const client = new DisputeArbitrationClient(config.disputeArbitrationAddress, signer);
-      await client.slashArbitrator(BigInt(agreementId), arbitratorAddress, reason);
-      console.log(`slashed arbitrator ${arbitratorAddress} for ${reason}`);
+      const spinner = startSpinner("Submitting transaction...");
+      try {
+        await client.slashArbitrator(BigInt(agreementId), arbitratorAddress, reason);
+        spinner.succeed();
+      } catch (err) {
+        spinner.fail();
+        throw err;
+      }
+      console.log(' ' + c.success + c.white(` Slashed ${arbitratorAddress}`));
     });
 
   arbitrator
@@ -107,8 +144,15 @@ export function registerArbitratorCommand(program: Command): void {
       if (!config.disputeArbitrationAddress) throw new Error("disputeArbitrationAddress missing in config");
       const { signer } = await requireSigner(config);
       const client = new DisputeArbitrationClient(config.disputeArbitrationAddress, signer);
-      await client.reclaimExpiredBond(BigInt(agreementId));
-      console.log(`bond reclaimed for agreement ${agreementId}`);
+      const spinner = startSpinner("Submitting transaction...");
+      try {
+        await client.reclaimExpiredBond(BigInt(agreementId));
+        spinner.succeed();
+      } catch (err) {
+        spinner.fail();
+        throw err;
+      }
+      console.log(' ' + c.success + c.white(` Bond reclaimed — agreement #${agreementId}`));
     });
 
   arbitrator
@@ -123,7 +167,14 @@ export function registerArbitratorCommand(program: Command): void {
       if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
       const { signer } = await requireSigner(config);
       const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
-      await client.resolveFromArbitration(BigInt(agreementId), opts.recipient, BigInt(opts.providerAmount), BigInt(opts.clientAmount));
-      console.log(`resolved from arbitration: agreement ${agreementId}, recipient ${opts.recipient}`);
+      const spinner = startSpinner("Submitting transaction...");
+      try {
+        await client.resolveFromArbitration(BigInt(agreementId), opts.recipient, BigInt(opts.providerAmount), BigInt(opts.clientAmount));
+        spinner.succeed();
+      } catch (err) {
+        spinner.fail();
+        throw err;
+      }
+      console.log(' ' + c.success + c.white(` Resolved from arbitration — agreement #${agreementId}`));
     });
 }

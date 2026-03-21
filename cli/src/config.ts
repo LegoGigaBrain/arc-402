@@ -55,8 +55,21 @@ export const getConfigPath = () => CONFIG_PATH;
 
 export function loadConfig(): Arc402Config {
   if (!fs.existsSync(CONFIG_PATH)) {
-    console.error(`No config found at ${CONFIG_PATH}. Run \`arc402 config init\` to set up your configuration.`);
-    process.exit(1);
+    // Auto-create with Base Mainnet defaults — zero friction
+    const defaults = NETWORK_DEFAULTS["base-mainnet"] ?? {};
+    const autoConfig: Arc402Config = {
+      network: "base-mainnet",
+      rpcUrl: defaults.rpcUrl ?? "https://mainnet.base.org",
+      trustRegistryAddress: defaults.trustRegistryAddress ?? "",
+      agentRegistryAddress: (defaults as unknown as Record<string,string>).agentRegistryV2Address ?? defaults.agentRegistryAddress,
+      serviceAgreementAddress: defaults.serviceAgreementAddress,
+      reputationOracleAddress: defaults.reputationOracleAddress,
+      capabilityRegistryAddress: defaults.capabilityRegistryAddress,
+      governanceAddress: defaults.governanceAddress,
+    };
+    saveConfig(autoConfig);
+    console.log(`◈ Config auto-created at ${CONFIG_PATH} (Base Mainnet)`);
+    return autoConfig;
   }
   return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) as Arc402Config;
 }

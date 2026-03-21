@@ -5,6 +5,10 @@ import * as os from "os";
 import { loadConfig } from "../config";
 import { requireSigner, getClient } from "../client";
 import { WatchtowerClient, ChannelClient } from "@arc402/sdk";
+import { c } from '../ui/colors';
+import { startSpinner } from '../ui/spinner';
+import { renderTree } from '../ui/tree';
+import { formatAddress } from '../ui/format';
 
 const CHANNEL_STATES_DIR = path.join(os.homedir(), ".arc402", "channel-states");
 

@@ -2,6 +2,9 @@ import { Command } from "commander";
 import { ethers } from "ethers";
 import { loadConfig } from "../config";
 import { getClient, requireSigner } from "../client";
+import { c } from '../ui/colors';
+import { startSpinner } from '../ui/spinner';
+import { formatAddress } from '../ui/format';
 
 const POLICY_ENGINE_EXTENDED_ABI = [
   "function addToBlocklist(address wallet, address provider) external",
@@ -42,11 +45,11 @@ blocklist
     const already = await contract.isBlocked(wallet, address);
     if (already) {
       if (opts.json) return console.log(JSON.stringify({ address, blocked: true, alreadyBlocked: true }));
-      return console.log(`${address} is already blocked`);
+      return console.log(' ' + c.dim('Already blocked: ' + formatAddress(address)));
     }
     await (await contract.addToBlocklist(wallet, address)).wait();
     if (opts.json) return console.log(JSON.stringify({ address, blocked: true }));
-    console.log(`Added ${address} to blocklist`);
+    console.log(' ' + c.success + c.white(' Blocked: ' + formatAddress(address)));
   });
 
 blocklist
@@ -64,11 +67,11 @@ blocklist
     const isBlockedNow = await contract.isBlocked(wallet, address);
     if (!isBlockedNow) {
       if (opts.json) return console.log(JSON.stringify({ address, blocked: false, notBlocked: true }));
-      return console.log(`${address} is not on your blocklist`);
+      return console.log(' ' + c.dim('Not on blocklist: ' + formatAddress(address)));
     }
     await (await contract.removeFromBlocklist(wallet, address)).wait();
     if (opts.json) return console.log(JSON.stringify({ address, blocked: false }));
-    console.log(`Removed ${address} from blocklist`);
+    console.log(' ' + c.success + c.white(' Unblocked: ' + formatAddress(address)));
   });
 
 blocklist
@@ -86,7 +89,11 @@ blocklist
     const contract = getPolicyEngine(config.policyEngineAddress, provider);
     const blocked = await contract.isBlocked(wallet, address);
     if (opts.json) return console.log(JSON.stringify({ address, blocked }));
-    console.log(blocked ? `${address} is BLOCKED` : `${address} is not blocked`);
+    if (blocked) {
+      console.log(' ' + c.warning + c.white(' ' + formatAddress(address) + ' is BLOCKED'));
+    } else {
+      console.log(' ' + c.success + c.white(' ' + formatAddress(address) + ' is not blocked'));
+    }
   });
 
 blocklist
@@ -144,7 +151,7 @@ shortlist
     const alreadyPreferred = await contract.isPreferred(wallet, opts.capability, address);
     if (alreadyPreferred) {
       if (opts.json) return console.log(JSON.stringify({ address, capability: opts.capability, preferred: true, alreadyPreferred: true }));
-      return console.log(`${address} is already shortlisted for ${opts.capability}`);
+      return console.log(' ' + c.dim('Already shortlisted: ' + formatAddress(address) + ' for ' + opts.capability));
     }
     await (await contract.addPreferred(wallet, opts.capability, address)).wait();
     if (opts.json) return console.log(JSON.stringify({ address, capability: opts.capability, preferred: true }));

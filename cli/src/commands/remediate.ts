@@ -3,6 +3,8 @@ import { ProviderResponseType, ServiceAgreementClient } from "@arc402/sdk";
 import { loadConfig } from "../config";
 import { getClient, requireSigner } from "../client";
 import { hashFile, hashString } from "../utils/hash";
+import { c } from '../ui/colors';
+import { startSpinner } from '../ui/spinner';
 
 export function registerRemediateCommands(program: Command): void {
   const remediate = program.command("remediate").description("Negotiated remediation before formal dispute");

@@ -3,6 +3,9 @@ import { ReputationOracleClient, SponsorshipAttestationClient, TrustClient } fro
 import { loadConfig } from "../config";
 import { getClient } from "../client";
 import { getTrustTier, identityTierLabel } from "../utils/format";
+import { c } from '../ui/colors';
+import { renderTree } from '../ui/tree';
+import { formatAddress } from '../ui/format';
 
 export function registerTrustCommand(program: Command): void {
   program.command("trust <address>").description("Look up trust plus secondary sponsorship/reputation signals for an address").option("--json").action(async (address, opts) => {

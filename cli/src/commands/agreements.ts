@@ -7,6 +7,9 @@ import { getClient } from "../client";
 import { agreementStatusLabel, formatDate, printTable, truncateAddress } from "../utils/format";
 import { formatDeadline } from "../utils/time";
 import { hashString } from "../utils/hash";
+import { c } from "../ui/colors";
+import { renderTree } from "../ui/tree";
+import { formatAddress } from "../ui/format";
 
 // ─── AgreementTree minimal ABI ────────────────────────────────────────────────
 
@@ -61,11 +64,23 @@ export function registerAgreementsCommands(program: Command): void {
       const client = new ServiceAgreementClient(config.serviceAgreementAddress, provider);
       const agreement = await client.getAgreement(BigInt(id));
       if (opts.json) return console.log(JSON.stringify(agreement, (_k, value) => typeof value === "bigint" ? value.toString() : value, 2));
-      console.log(`agreement #${agreement.id}\nclient=${agreement.client}\nprovider=${agreement.provider}\nstatus=${agreementStatusLabel(agreement.status)}\ncreated=${formatDate(Number(agreement.createdAt))}\ndeadline=${formatDate(Number(agreement.deadline))}\nverifyWindowEnd=${Number(agreement.verifyWindowEnd) ? formatDate(Number(agreement.verifyWindowEnd)) : "n/a"}\ncommittedHash=${agreement.committedHash}`);
+      console.log('\n ' + c.mark + c.white(` Agreement #${agreement.id}`));
+      renderTree([
+        { label: 'Client', value: formatAddress(agreement.client) },
+        { label: 'Provider', value: formatAddress(agreement.provider) },
+        { label: 'Status', value: agreementStatusLabel(agreement.status) },
+        { label: 'Created', value: formatDate(Number(agreement.createdAt)) },
+        { label: 'Deadline', value: formatDate(Number(agreement.deadline)) },
+        { label: 'Verify end', value: Number(agreement.verifyWindowEnd) ? formatDate(Number(agreement.verifyWindowEnd)) : 'n/a' },
+        { label: 'Hash', value: String(agreement.committedHash), last: true },
+      ]);
       if ([AgreementStatus.REVISION_REQUESTED, AgreementStatus.REVISED, AgreementStatus.PARTIAL_SETTLEMENT, AgreementStatus.ESCALATED_TO_HUMAN, AgreementStatus.DISPUTED, AgreementStatus.ESCALATED_TO_ARBITRATION].includes(agreement.status)) {
         const remediation = await client.getRemediationCase(agreement.id);
         const dispute = await client.getDisputeCase(agreement.id);
-        console.log(`remediationActive=${remediation.active} cycles=${remediation.cycleCount} disputeOutcome=${dispute.outcome}`);
+        renderTree([
+          { label: 'Remediation', value: `active=${remediation.active} cycles=${remediation.cycleCount}` },
+          { label: 'Dispute', value: `outcome=${dispute.outcome}`, last: true },
+        ]);
       }
     });
 
@@ -90,9 +105,12 @@ export function registerAgreementsCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify({ txHash: receipt.hash, parentId: opts.parent, childId: opts.child }));
       } else {
-        console.log(`Sub-agreement registered.`);
-        console.log(`  Parent: ${opts.parent}  Child: ${opts.child}`);
-        console.log(`  tx: ${receipt.hash}`);
+        console.log('\n ' + c.mark + c.white(' Sub-agreement registered'));
+        renderTree([
+          { label: 'Parent', value: `#${opts.parent}` },
+          { label: 'Child', value: `#${opts.child}` },
+          { label: 'Tx', value: receipt.hash, last: true },
+        ]);
       }
     });
 
@@ -130,11 +148,13 @@ export function registerAgreementsCommands(program: Command): void {
         return;
       }
 
-      console.log(`Agreement Tree — node #${agreementId}`);
-      console.log(`  Root:     #${result.root}`);
-      console.log(`  Depth:    ${result.depth}`);
-      console.log(`  Path:     ${result.path.map((p) => "#" + p).join(" → ")}`);
-      console.log(`  Children: ${result.children.length > 0 ? result.children.map((c) => "#" + c).join(", ") : "(none)"}`);
+      console.log('\n ' + c.mark + c.white(` Agreement Tree — node #${agreementId}`));
+      renderTree([
+        { label: 'Root', value: `#${result.root}` },
+        { label: 'Depth', value: String(result.depth) },
+        { label: 'Path', value: result.path.map((p) => "#" + p).join(" → ") },
+        { label: 'Children', value: result.children.length > 0 ? result.children.map((ch) => "#" + ch).join(", ") : "(none)", last: true },
+      ]);
     });
 
   // ── arc402 agreements-tree-status <id> ───────────────────────────────────────
@@ -168,10 +188,12 @@ export function registerAgreementsCommands(program: Command): void {
         return;
       }
 
-      console.log(`Agreement #${agreementId} tree status:`);
-      console.log(`  Sub-agreements: ${result.childCount}`);
-      console.log(`  All settled:    ${result.allChildrenSettled ? "YES" : "NO"}`);
-      console.log(`  Ready to deliver to parent: ${result.readyToDeliver ? "YES" : "NO"}`);
+      console.log('\n ' + c.mark + c.white(` Agreement #${agreementId} — tree status`));
+      renderTree([
+        { label: 'Sub-agrmts', value: String(result.childCount) },
+        { label: 'All settled', value: result.allChildrenSettled ? 'YES' : 'NO' },
+        { label: 'Ready', value: result.readyToDeliver ? 'YES — ready to deliver to parent' : 'NO', last: true },
+      ]);
     });
 
   // ── arc402 agreements-create-tree ────────────────────────────────────────────
@@ -255,7 +277,7 @@ export function registerAgreementsCommands(program: Command): void {
       const rootDeadline = Number(opts.deadline);
       const rootHash = hashString(opts.task);
 
-      if (!opts.json) console.log(`\nProposing root agreement to ${opts.provider}...`);
+      if (!opts.json) console.log('\n ' + c.mark + c.white(` Proposing root agreement to ${opts.provider}...`));
       const rootTx = await saContract.propose(
         opts.provider, opts.serviceType, opts.task,
         rootPrice, ethers.ZeroAddress, rootDeadline, rootHash,
@@ -274,11 +296,11 @@ export function registerAgreementsCommands(program: Command): void {
       }
       if (rootAgreementId === undefined) throw new Error("Could not parse root AgreementProposed event");
 
-      if (!opts.json) console.log(`  Root agreement ID: ${rootAgreementId}`);
+      if (!opts.json) console.log(' ' + c.success + c.white(` Root agreement ID: #${rootAgreementId}`));
 
       const childAgreementIds: bigint[] = [];
       for (const sub of subSpecs) {
-        if (!opts.json) console.log(`  Proposing sub-agreement to ${sub.provider}...`);
+        if (!opts.json) console.log(' ' + c.dim(`  Proposing sub-agreement to ${sub.provider}...`));
         const subHash = hashString(sub.task);
         const subTx = await saContract.propose(
           sub.provider, sub.serviceType, sub.task,
@@ -294,7 +316,7 @@ export function registerAgreementsCommands(program: Command): void {
           } catch { /* skip */ }
         }
         if (childId === undefined) throw new Error(`Could not parse AgreementProposed for sub-agreement to ${sub.provider}`);
-        if (!opts.json) console.log(`    Sub-agreement ID: ${childId} — registering in tree...`);
+        if (!opts.json) console.log(' ' + c.success + c.white(` Sub-agreement #${childId} — registering in tree...`));
         await (await treeContract.registerSubAgreement(rootAgreementId, childId)).wait();
         childAgreementIds.push(childId);
       }
@@ -308,13 +330,17 @@ export function registerAgreementsCommands(program: Command): void {
       if (opts.json) {
         console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log(`\nAgreement tree created.`);
-        console.log(`  Root:     #${result.rootAgreementId}`);
-        if (result.childAgreementIds.length > 0) {
-          console.log(`  Children: ${result.childAgreementIds.map((id) => "#" + id).join(", ")}`);
-        } else {
-          console.log(`  Children: (none — sub-agreements can be added with agreements-sub-register)`);
-        }
+        console.log('\n ' + c.mark + c.white(' Agreement tree created'));
+        renderTree([
+          { label: 'Root', value: `#${result.rootAgreementId}` },
+          {
+            label: 'Children',
+            value: result.childAgreementIds.length > 0
+              ? result.childAgreementIds.map((id) => "#" + id).join(", ")
+              : "(none — sub-agreements can be added with agreements-sub-register)",
+            last: true,
+          },
+        ]);
       }
     });
 

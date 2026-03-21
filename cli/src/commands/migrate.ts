@@ -2,6 +2,10 @@ import { Command } from "commander";
 import { ethers } from "ethers";
 import { loadConfig } from "../config";
 import { getClient, requireSigner } from "../client";
+import { c } from '../ui/colors';
+import { startSpinner } from '../ui/spinner';
+import { renderTree } from '../ui/tree';
+import { formatAddress } from '../ui/format';
 
 const MIGRATION_REGISTRY_ABI = [
   "function registerMigration(address oldWallet, address newWallet) external",
@@ -35,8 +39,10 @@ export function registerMigrateCommands(program: Command): void {
       const { signer } = await requireSigner(config);
       const contract = new ethers.Contract(config.migrationRegistryAddress, MIGRATION_REGISTRY_ABI, signer);
 
+      const migrateSpinner = startSpinner('Registering migration...');
       const tx = await contract.registerMigration(oldWallet, newWallet);
       const receipt = await tx.wait();
+      migrateSpinner.succeed('Migration registered');
 
       const payload = {
         oldWallet,
@@ -44,11 +50,11 @@ export function registerMigrateCommands(program: Command): void {
         txHash: receipt.hash,
       };
       if (opts.json) return console.log(JSON.stringify(payload, null, 2));
-      console.log(`migration registered`);
-      console.log(`  old: ${oldWallet}`);
-      console.log(`  new: ${newWallet}`);
-      console.log(`  note: 10% trust score decay applied on migration`);
-      console.log(`  tx: ${receipt.hash}`);
+      renderTree([
+        { label: 'Old', value: formatAddress(oldWallet) },
+        { label: 'New', value: formatAddress(newWallet) },
+        { label: 'Note', value: '10% trust score decay applied', last: true },
+      ]);
     });
 
   // ─── migrate status <address> ──────────────────────────────────────────────

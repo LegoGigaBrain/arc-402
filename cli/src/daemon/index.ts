@@ -10,6 +10,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as net from "net";
+import * as http from "http";
 import { ethers } from "ethers";
 import Database from "better-sqlite3";
 
@@ -549,6 +550,156 @@ export async function runDaemon(foreground = false): Promise<void> {
   // ── Start IPC socket ─────────────────────────────────────────────────────
   const ipcServer = startIpcServer(ipcCtx, log);
 
+  // ── Start HTTP relay server (public endpoint) ────────────────────────────
+  const httpPort = config.relay.listen_port ?? 4402;
+
+  const httpServer = http.createServer(async (req, res) => {
+    // CORS headers
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+
+    const url = new URL(req.url || "/", `http://localhost:${httpPort}`);
+    const pathname = url.pathname;
+
+    // Health / info
+    if (pathname === "/" || pathname === "/health") {
+      const info = {
+        protocol: "arc-402",
+        version: "0.3.0",
+        agent: config.wallet.contract_address,
+        status: "online",
+        capabilities: config.policy.allowed_capabilities,
+        uptime: Math.floor((Date.now() - ipcCtx.startTime) / 1000),
+      };
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(info));
+      return;
+    }
+
+    // Agent info
+    if (pathname === "/agent") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        wallet: config.wallet.contract_address,
+        owner: config.wallet.owner_address,
+        machineKey: machineKeyAddress,
+        chainId: config.network.chain_id,
+        bundlerMode: config.bundler.mode,
+        relay: config.relay.enabled,
+      }));
+      return;
+    }
+
+    // Receive hire proposal
+    if (pathname === "/hire" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+      req.on("end", async () => {
+        try {
+          const msg = JSON.parse(body) as Record<string, unknown>;
+
+          // Feed into the hire listener's message handler
+          const proposal = {
+            messageId: String(msg.messageId ?? msg.id ?? `http_${Date.now()}`),
+            hirerAddress: String(msg.hirerAddress ?? msg.hirer_address ?? msg.from ?? ""),
+            capability: String(msg.capability ?? ""),
+            priceEth: String(msg.priceEth ?? msg.price_eth ?? "0"),
+            deadlineUnix: Number(msg.deadlineUnix ?? msg.deadline ?? 0),
+            specHash: String(msg.specHash ?? msg.spec_hash ?? ""),
+            agreementId: msg.agreementId ? String(msg.agreementId) : undefined,
+            signature: msg.signature ? String(msg.signature) : undefined,
+          };
+
+          // Dedup
+          const existing = db.getHireRequest(proposal.messageId);
+          if (existing) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ status: existing.status, id: proposal.messageId }));
+            return;
+          }
+
+          // Policy check
+          const { evaluatePolicy } = await import("./hire-listener");
+          const activeCount = db.countActiveHireRequests();
+          const policyResult = evaluatePolicy(proposal, config, activeCount);
+
+          if (!policyResult.allowed) {
+            db.insertHireRequest({
+              id: proposal.messageId,
+              agreement_id: proposal.agreementId ?? null,
+              hirer_address: proposal.hirerAddress,
+              capability: proposal.capability,
+              price_eth: proposal.priceEth,
+              deadline_unix: proposal.deadlineUnix,
+              spec_hash: proposal.specHash,
+              status: "rejected",
+              reject_reason: policyResult.reason ?? "policy_violation",
+            });
+            log({ event: "http_hire_rejected", id: proposal.messageId, reason: policyResult.reason });
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ status: "rejected", reason: policyResult.reason, id: proposal.messageId }));
+            return;
+          }
+
+          const status = config.policy.auto_accept ? "accepted" : "pending_approval";
+          db.insertHireRequest({
+            id: proposal.messageId,
+            agreement_id: proposal.agreementId ?? null,
+            hirer_address: proposal.hirerAddress,
+            capability: proposal.capability,
+            price_eth: proposal.priceEth,
+            deadline_unix: proposal.deadlineUnix,
+            spec_hash: proposal.specHash,
+            status,
+            reject_reason: null,
+          });
+
+          log({ event: "http_hire_received", id: proposal.messageId, hirer: proposal.hirerAddress, status });
+
+          if (config.notifications.notify_on_hire_request) {
+            await notifier.notifyHireRequest(proposal.messageId, proposal.hirerAddress, proposal.priceEth, proposal.capability);
+          }
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ status, id: proposal.messageId }));
+        } catch (err) {
+          log({ event: "http_hire_error", error: String(err) });
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "invalid_request" }));
+        }
+      });
+      return;
+    }
+
+    // Handshake acknowledgment endpoint
+    if (pathname === "/handshake" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+      req.on("end", () => {
+        try {
+          const msg = JSON.parse(body);
+          log({ event: "handshake_received", from: msg.from, type: msg.type, note: msg.note });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ received: true, agent: config.wallet.contract_address }));
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "invalid_request" }));
+        }
+      });
+      return;
+    }
+
+    // 404
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "not_found" }));
+  });
+
+  httpServer.listen(httpPort, "0.0.0.0", () => {
+    log({ event: "http_server_started", port: httpPort });
+  });
+
   // ── Step 12: Startup complete ────────────────────────────────────────────
   const subsystems = [];
   if (config.relay.enabled) subsystems.push("relay");
@@ -573,7 +724,8 @@ export async function runDaemon(foreground = false): Promise<void> {
     clearInterval(timeoutInterval);
     clearInterval(balanceInterval);
 
-    // Close IPC
+    // Close HTTP + IPC
+    httpServer.close();
     ipcServer.close();
     if (fs.existsSync(DAEMON_SOCK)) fs.unlinkSync(DAEMON_SOCK);
 

@@ -32,6 +32,7 @@ import { registerMigrateCommands } from "./commands/migrate";
 import { registerFeedCommand } from "./commands/feed";
 import { registerArenaCommands } from "./commands/arena";
 import { registerWatchCommand } from "./commands/watch";
+import { registerBackupCommand } from "./commands/backup";
 import reputation from "./commands/reputation.js";
 import policy from "./commands/policy.js";
 
@@ -78,6 +79,7 @@ export function createProgram(): Command {
   registerFeedCommand(program);
   registerArenaCommands(program);
   registerWatchCommand(program);
+  registerBackupCommand(program);
   program.addCommand(reputation);
   program.addCommand(policy);
 

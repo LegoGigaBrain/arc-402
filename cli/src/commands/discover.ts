@@ -5,6 +5,7 @@ import { loadConfig } from "../config";
 import { getClient } from "../client";
 import { getTrustTier, printTable, truncateAddress } from "../utils/format";
 import { c } from '../ui/colors';
+import { renderTree } from '../ui/tree';
 
 // Minimal ABI for the new getAgentsWithCapability function (Spec 18)
 const CAPABILITY_REGISTRY_EXTRA_ABI = [
@@ -66,6 +67,21 @@ function computeCompositeScores(agents: Omit<ScoredAgent, "compositeScore" | "ra
   }));
 }
 
+// ─── Endpoint health check ────────────────────────────────────────────────────
+
+async function pingEndpoint(endpoint: string): Promise<"online" | "offline"> {
+  if (!endpoint || !/^https?:\/\//.test(endpoint)) return "offline";
+  try {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 3000);
+    const resp = await fetch(`${endpoint.replace(/\/$/, "")}/health`, { signal: ctrl.signal });
+    clearTimeout(tid);
+    return resp.ok ? "online" : "offline";
+  } catch {
+    return "offline";
+  }
+}
+
 // ─── Command ──────────────────────────────────────────────────────────────────
 
 export function registerDiscoverCommand(program: Command): void {
@@ -84,6 +100,7 @@ export function registerDiscoverCommand(program: Command): void {
     .option("--top <n>",                 "Show top N agents by trust score")
     .option("--sort <field>",            "Sort by: trust | price | jobs | stake | composite", "composite")
     .option("--limit <n>",               "Max results", "20")
+    .option("--online",                  "Only show agents whose /health endpoint responds")
     .option("--json",                    "Machine-parseable output")
     .action(async (opts) => {
       const config = loadConfig();
@@ -264,34 +281,70 @@ export function registerDiscoverCommand(program: Command): void {
       // Assign 1-based ranks after sort
       scored = scored.slice(0, limit).map((a, i) => ({ ...a, rank: i + 1 }));
 
-      // ── Step 6: Output ─────────────────────────────────────────────────────
+      // ── Step 6: Endpoint health checks ────────────────────────────────────
+
+      type ScoredWithStatus = ScoredAgent & { endpointStatus: "online" | "offline" | "unknown" };
+
+      let withStatus: ScoredWithStatus[];
+
+      if (opts.online || /* always ping for tree display */ true) {
+        const statuses = await Promise.all(
+          scored.map(async (agent) => {
+            if (!agent.endpoint) return "unknown" as const;
+            return pingEndpoint(agent.endpoint);
+          })
+        );
+        withStatus = scored.map((agent, i) => ({ ...agent, endpointStatus: statuses[i] as "online" | "offline" | "unknown" }));
+      } else {
+        withStatus = scored.map((agent) => ({ ...agent, endpointStatus: "unknown" as const }));
+      }
+
+      // Apply --online filter
+      if (opts.online) {
+        withStatus = withStatus.filter((a) => a.endpointStatus === "online");
+        if (withStatus.length === 0) {
+          console.log(`\n  ${c.warning} No agents with responding /health endpoints found.`);
+          return;
+        }
+      }
+
+      // ── Step 7: Output ─────────────────────────────────────────────────────
 
       if (opts.json) {
         return console.log(JSON.stringify(
-          scored,
+          withStatus,
           (_k, value) => typeof value === "bigint" ? value.toString() : value,
           2
         ));
       }
 
-      console.log('\n ' + c.mark + c.white(' Discover Results') + c.dim(` — ${scored.length} agent${scored.length !== 1 ? 's' : ''} found`));
-      printTable(
-        ["RANK", "ADDRESS", "NAME", "SERVICE", "TRUST", "SCORE", "CAPABILITIES"],
-        scored.map((agent) => {
-          const caps = (agent.canonicalCapabilities.length
-            ? agent.canonicalCapabilities
-            : agent.capabilities
-          ).slice(0, 2).join(", ");
-          return [
-            String(agent.rank),
-            truncateAddress(agent.wallet),
-            agent.name,
-            agent.serviceType,
-            `${agent.trustScore} ${getTrustTier(agent.trustScore)}`,
-            agent.compositeScore.toFixed(3),
-            caps,
-          ];
-        })
-      );
+      const onlineCount = withStatus.filter((a) => a.endpointStatus === "online").length;
+      console.log('\n ' + c.mark + c.white(' Discover Results') + c.dim(` — ${withStatus.length} agent${withStatus.length !== 1 ? 's' : ''} found, ${onlineCount} online`));
+
+      // Tree output per agent
+      for (const agent of withStatus) {
+        const caps = (agent.canonicalCapabilities.length
+          ? agent.canonicalCapabilities
+          : agent.capabilities
+        ).slice(0, 3).join(", ") || c.dim("none");
+
+        const statusIcon = agent.endpointStatus === "online"
+          ? c.green("● online")
+          : agent.endpointStatus === "offline"
+          ? c.red("○ offline")
+          : c.dim("? unknown");
+
+        const tierStr = getTrustTier(agent.trustScore);
+
+        console.log(`\n  ${c.dim(`#${agent.rank}`)} ${c.white(agent.name)}  ${c.dim(truncateAddress(agent.wallet))}`);
+        renderTree([
+          { label: "service",  value: agent.serviceType },
+          { label: "trust",    value: `${agent.trustScore} ${tierStr}` },
+          { label: "score",    value: agent.compositeScore.toFixed(3) },
+          { label: "caps",     value: caps },
+          { label: "endpoint", value: statusIcon, last: true },
+        ]);
+      }
+      console.log();
     });
 }

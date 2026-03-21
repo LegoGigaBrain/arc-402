@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { randomUUID } from "crypto";
 
 export interface Arc402Config {
   network: "base-mainnet" | "base-sepolia";
@@ -46,10 +47,13 @@ export interface Arc402Config {
     account: string;   // Phone wallet address
     chainId: number;
   };
+  deviceId?: string;        // UUID identifying the device this config was created on
+  lastCliVersion?: string;  // Last CLI version that wrote this config (for upgrade detection)
 }
 
 const CONFIG_DIR = path.join(os.homedir(), ".arc402");
 const CONFIG_PATH = process.env.ARC402_CONFIG || path.join(CONFIG_DIR, "config.json");
+const DEVICE_ID_PATH = path.join(CONFIG_DIR, "device.id");
 
 // WalletConnect project ID — get your own at cloud.walletconnect.com
 const DEFAULT_WC_PROJECT_ID = "455e9425343b9156fce1428250c9a54a";
@@ -57,7 +61,20 @@ export const getWcProjectId = () => process.env.WC_PROJECT_ID ?? DEFAULT_WC_PROJ
 
 export const getConfigPath = () => CONFIG_PATH;
 
+/** Returns this device's stable UUID, creating it on first call. */
+function getOrCreateDeviceId(): string {
+  if (fs.existsSync(DEVICE_ID_PATH)) {
+    return fs.readFileSync(DEVICE_ID_PATH, "utf-8").trim();
+  }
+  const id = randomUUID();
+  fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(DEVICE_ID_PATH, id, { mode: 0o600 });
+  return id;
+}
+
 export function loadConfig(): Arc402Config {
+  const thisDeviceId = getOrCreateDeviceId();
+
   if (!fs.existsSync(CONFIG_PATH)) {
     // Auto-create with Base Mainnet defaults — zero friction
     const defaults = NETWORK_DEFAULTS["base-mainnet"] ?? {};
@@ -78,13 +95,28 @@ export function loadConfig(): Arc402Config {
       walletFactoryAddress: defaults.walletFactoryAddress,
       sessionChannelsAddress: defaults.sessionChannelsAddress,
       disputeModuleAddress: defaults.disputeModuleAddress,
+      deviceId: thisDeviceId,
     };
     saveConfig(autoConfig);
     console.log(`◈ Config auto-created at ${CONFIG_PATH} (Base Mainnet)`);
     console.log("⚠ Base Mainnet — real funds at risk. Use arc402 config init for testnet.");
     return autoConfig;
   }
-  return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) as Arc402Config;
+
+  const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) as Arc402Config;
+
+  // Multi-device awareness: warn if config was created on a different device
+  if (config.deviceId && config.deviceId !== thisDeviceId) {
+    console.warn("⚠ This config was created on a different device. Some keys may not work.");
+  }
+
+  // Backfill deviceId if missing (older config)
+  if (!config.deviceId) {
+    config.deviceId = thisDeviceId;
+    saveConfig(config);
+  }
+
+  return config;
 }
 
 export function saveConfig(config: Arc402Config): void {

@@ -231,25 +231,11 @@ class TUI {
   private setupScreen(): void {
     this.bannerLines = getBannerLines(this.bannerCfg);
 
-    write(ansi.hideCursor);
-    write(ansi.clearScreen + ansi.home);
-
-    // Banner
+    // Simple setup — print banner once, no scroll regions (breaks on macOS Terminal)
     for (const line of this.bannerLines) {
       write(line + "\n");
     }
-
-    // Separator between banner and output area
-    write(chalk.dim("─".repeat(this.termCols)) + "\n");
-
-    // Set scroll region (output area, leaves last row free for input)
-    if (this.scrollTop <= this.scrollBot) {
-      write(ansi.scrollRegion(this.scrollTop, this.scrollBot));
-    }
-
-    // Position cursor at top of output area
-    write(ansi.move(this.scrollTop, 1));
-    write(ansi.showCursor);
+    write(chalk.dim("─".repeat(Math.min(this.termCols, 60))) + "\n\n");
   }
 
   // ── Banner repaint (in-place, preserves output area) ────────────────────────
@@ -664,10 +650,11 @@ class TUI {
     if (buffer.trim()) flushLine(buffer);
   }
 
-  // ── After each command: repaint banner + input ───────────────────────────────
+  // ── After each command: show prompt ──────────────────────────────────────────
 
   private afterCommand(): void {
-    this.repaintBanner();
+    // Simple prompt — no banner repaint (causes scrollback issues on macOS Terminal)
+    write("\n");
     this.drawInputLine();
   }
 

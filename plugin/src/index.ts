@@ -18,6 +18,15 @@ import { registerComputeTools } from "./tools/compute.js";
 import { registerSubscribeTools } from "./tools/subscribe.js";
 import { registerDiscoverTool } from "./tools/discover.js";
 import { registerWalletTools } from "./tools/wallet.js";
+import { registerNegotiateTools } from "./tools/negotiate.js";
+import { registerDisputeTools } from "./tools/dispute.js";
+import { registerAgentTools } from "./tools/agent.js";
+import { registerEndpointTools } from "./tools/endpoint.js";
+import { registerTrustTools } from "./tools/trust.js";
+import { registerWorkroomTools } from "./tools/workroom.js";
+import { registerArenaTools } from "./tools/arena.js";
+import { registerChannelTools } from "./tools/channel.js";
+import { registerSystemTools } from "./tools/system.js";
 
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerHireRoutes } from "./routes/hire.js";
@@ -51,6 +60,36 @@ export default definePluginEntry({
 
     // arc402_wallet_status, arc402_wallet_deploy
     registerWalletTools(api, getConfig);
+
+    // arc402_negotiate, arc402_agreements
+    registerNegotiateTools(api);
+
+    // arc402_dispute, arc402_dispute_status
+    registerDisputeTools(api);
+
+    // arc402_agent_register, arc402_agent_update, arc402_agent_status
+    registerAgentTools(api);
+
+    // arc402_endpoint_setup, arc402_endpoint_status, arc402_endpoint_doctor
+    registerEndpointTools(api);
+
+    // arc402_trust, arc402_reputation
+    registerTrustTools(api);
+
+    // arc402_workroom_init, arc402_workroom_start, arc402_workroom_stop,
+    // arc402_workroom_status, arc402_workroom_doctor, arc402_workroom_worker_init,
+    // arc402_workroom_worker_status, arc402_workroom_earnings, arc402_workroom_receipts,
+    // arc402_workroom_policy_reload
+    registerWorkroomTools(api);
+
+    // arc402_handshake, arc402_arena_status, arc402_feed
+    registerArenaTools(api);
+
+    // arc402_channel_open, arc402_channel_close, arc402_channel_status
+    registerChannelTools(api);
+
+    // arc402_config, arc402_setup, arc402_doctor
+    registerSystemTools(api);
 
     // ── HTTP Routes (daemon surface — runs inside OpenClaw gateway) ────────────
     // GET /health, /agent, /status, /capabilities

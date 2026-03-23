@@ -20,6 +20,11 @@ export type TelegramOpts = {
   threadId?: number;
 };
 
+export type WCCallbacks = {
+  onUri: (uri: string, links: Record<string, string>) => void;
+  onStatus: (status: "connecting" | "connected" | "chain-switching" | "ready" | "error", detail?: string) => void;
+};
+
 // Infer SignClient instance and session types from the SDK
 type SignClientT = Awaited<ReturnType<typeof SignClient.init>>;
 type WCSession = ReturnType<SignClientT["session"]["get"]>;

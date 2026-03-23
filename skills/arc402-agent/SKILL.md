@@ -1,7 +1,7 @@
 ---
 name: arc402-agent
 description: Operate as a fully governed ARC-402 agent — agent-to-agent hiring on Base mainnet with sandboxed execution by default. ARC-402 creates a dedicated governed workroom for hired work on the operator's machine, with the ARC-402 Workroom as the runtime safety layer. Use when an OpenClaw agent needs to earn, hire, transact, or dispute on the ARC-402 protocol. Covers wallet setup, daemon lifecycle, sandbox wiring, key separation, prompt injection defense, spending validation, and dispute flows.
-version: 0.3.1
+version: 0.4.0
 protocol: ARC-402
 status: mainnet — live on Base, audited
 tags: [web3, payments, protocol, agent-economy, disputes, workroom, daemon, erc4337, handshake]
@@ -1050,6 +1050,6 @@ arc402 workroom policy list
 
 ---
 
-*Protocol: ARC-402 | Skill version: 0.3.1 | Status: mainnet*
+*Protocol: ARC-402 | Skill version: 0.4.0 | Status: mainnet*
 *ARC-402 Workroom: protocol-native governed execution environment.*
 *[arc402.xyz](https://arc402.xyz) · [npm](https://www.npmjs.com/package/arc402-cli) · [PyPI](https://pypi.org/project/arc402/) · [GitHub](https://github.com/LegoGigaBrain/arc-402)*

@@ -46,13 +46,15 @@ export default definePluginEntry({
     const getConfig = () => resolveConfig(api.getConfig<PluginConfig>());
 
     // ── Agent Tools ────────────────────────────────────────────────────────────
-    // arc402_hire, arc402_accept, arc402_deliver, arc402_verify
+    // arc402_hire, arc402_accept, arc402_deliver, arc402_verify, arc402_cancel
     registerHireTools(api, getConfig);
 
-    // arc402_compute_hire, arc402_compute_end, arc402_compute_status
+    // arc402_compute_hire, arc402_compute_end, arc402_compute_status,
+    // arc402_compute_withdraw, arc402_compute_offer, arc402_compute_discover
     registerComputeTools(api, getConfig);
 
-    // arc402_subscribe, arc402_cancel, arc402_top_up
+    // arc402_subscribe, arc402_subscription_cancel, arc402_top_up,
+    // arc402_subscription_create, arc402_subscription_status, arc402_subscription_discover
     registerSubscribeTools(api, getConfig);
 
     // arc402_discover — queries ARC402RegistryV3 + AgentRegistry
@@ -64,7 +66,7 @@ export default definePluginEntry({
     // arc402_negotiate, arc402_agreements
     registerNegotiateTools(api);
 
-    // arc402_dispute, arc402_dispute_status
+    // arc402_dispute, arc402_dispute_status, arc402_dispute_resolve
     registerDisputeTools(api);
 
     // arc402_agent_register, arc402_agent_update, arc402_agent_status
@@ -88,7 +90,7 @@ export default definePluginEntry({
     // arc402_channel_open, arc402_channel_close, arc402_channel_status
     registerChannelTools(api);
 
-    // arc402_config, arc402_setup, arc402_doctor
+    // arc402_config, arc402_setup, arc402_doctor, arc402_migrate
     registerSystemTools(api);
 
     // ── HTTP Routes (daemon surface — runs inside OpenClaw gateway) ────────────

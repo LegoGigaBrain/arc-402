@@ -6,9 +6,11 @@
  * arc402_workroom_worker_init, arc402_workroom_worker_status,
  * arc402_workroom_earnings, arc402_workroom_receipts,
  * arc402_workroom_policy_reload
+ *
+ * PLG-9: Uses execFileSync array form to prevent command injection.
  */
 import { Type } from "@sinclair/typebox";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import type { PluginApi, ToolResult } from "./hire.js";
 
 export function registerWorkroomTools(api: PluginApi) {
@@ -20,8 +22,9 @@ export function registerWorkroomTools(api: PluginApi) {
       compute: Type.Optional(Type.Boolean({ description: "Initialize as a compute (GPU) workroom" })),
     }),
     async execute(_id, params) {
-      const flag = params.compute ? " --compute" : "";
-      return shell(`arc402 workroom init${flag}`, 120_000);
+      const args = ["workroom", "init"];
+      if (params.compute) args.push("--compute");
+      return shell(args, 120_000);
     },
   });
 
@@ -33,8 +36,9 @@ export function registerWorkroomTools(api: PluginApi) {
       compute: Type.Optional(Type.Boolean({ description: "Start in compute (GPU) mode" })),
     }),
     async execute(_id, params) {
-      const flag = params.compute ? " --compute" : "";
-      return shell(`arc402 workroom start${flag}`, 60_000);
+      const args = ["workroom", "start"];
+      if (params.compute) args.push("--compute");
+      return shell(args, 60_000);
     },
   });
 
@@ -43,7 +47,7 @@ export function registerWorkroomTools(api: PluginApi) {
     description: "Gracefully stop the workroom — drains active jobs, settles payments, and shuts down Docker services.",
     parameters: Type.Object({}),
     async execute() {
-      return shell(`arc402 workroom stop`, 60_000);
+      return shell(["workroom", "stop"], 60_000);
     },
   });
 
@@ -52,7 +56,7 @@ export function registerWorkroomTools(api: PluginApi) {
     description: "Show the current workroom status — running containers, active jobs, and payment queue.",
     parameters: Type.Object({}),
     async execute() {
-      return shell(`arc402 workroom status`);
+      return shell(["workroom", "status"]);
     },
   });
 
@@ -62,7 +66,7 @@ export function registerWorkroomTools(api: PluginApi) {
       "Diagnose workroom health — checks Docker, network, on-chain state, and policy configuration.",
     parameters: Type.Object({}),
     async execute() {
-      return shell(`arc402 workroom doctor`, 60_000);
+      return shell(["workroom", "doctor"], 60_000);
     },
   });
 
@@ -73,7 +77,7 @@ export function registerWorkroomTools(api: PluginApi) {
       name: Type.String({ description: "Worker name (alphanumeric, used as Docker service label)" }),
     }),
     async execute(_id, params) {
-      return shell(`arc402 workroom worker init --name ${q(params.name)}`);
+      return shell(["workroom", "worker", "init", "--name", params.name]);
     },
   });
 
@@ -82,7 +86,7 @@ export function registerWorkroomTools(api: PluginApi) {
     description: "Show the status of all workers running in the workroom.",
     parameters: Type.Object({}),
     async execute() {
-      return shell(`arc402 workroom worker status`);
+      return shell(["workroom", "worker", "status"]);
     },
   });
 
@@ -91,7 +95,7 @@ export function registerWorkroomTools(api: PluginApi) {
     description: "Show cumulative earnings for this workroom — settled and pending amounts by token.",
     parameters: Type.Object({}),
     async execute() {
-      return shell(`arc402 workroom earnings`);
+      return shell(["workroom", "earnings"]);
     },
   });
 
@@ -100,7 +104,7 @@ export function registerWorkroomTools(api: PluginApi) {
     description: "List payment receipts for all completed jobs processed by this workroom.",
     parameters: Type.Object({}),
     async execute() {
-      return shell(`arc402 workroom receipts`);
+      return shell(["workroom", "receipts"]);
     },
   });
 
@@ -109,18 +113,14 @@ export function registerWorkroomTools(api: PluginApi) {
     description: "Hot-reload the workroom policy file without restarting — picks up new accept/reject rules immediately.",
     parameters: Type.Object({}),
     async execute() {
-      return shell(`arc402 workroom policy-reload`);
+      return shell(["workroom", "policy-reload"]);
     },
   });
 }
 
-function q(s: string): string {
-  return `"${s.replace(/"/g, '\\"')}"`;
-}
-
-function shell(cmd: string, timeout = 30_000): ToolResult {
+function shell(args: string[], timeout = 30_000): ToolResult {
   try {
-    const text = execSync(cmd, { encoding: "utf-8", timeout });
+    const text = execFileSync("arc402", args, { encoding: "utf-8", timeout });
     return { content: [{ type: "text", text: text.trim() }] };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -1,8 +1,10 @@
 /**
- * Compute tools — arc402_compute_hire, arc402_compute_end, arc402_compute_status
+ * Compute tools — arc402_compute_hire, arc402_compute_end, arc402_compute_status,
+ *                 arc402_compute_withdraw, arc402_compute_offer, arc402_compute_discover
  */
 import { Type } from "@sinclair/typebox";
 import { ethers } from "ethers";
+import { execFileSync } from "child_process";
 import type { PluginApi, ToolResult } from "./hire.js";
 import type { ResolvedConfig } from "../config.js";
 
@@ -113,6 +115,66 @@ export function registerComputeTools(api: PluginApi, getConfig: () => ResolvedCo
       });
     },
   });
+
+  // PLG-2: missing tools
+
+  api.registerTool({
+    name: "arc402_compute_withdraw",
+    description:
+      "Withdraw unused escrow from a cancelled or expired compute session.",
+    parameters: Type.Object({
+      sessionId: Type.String({ description: "Session ID (bytes32 hex)" }),
+    }),
+    async execute(_id, params) {
+      return shell(["compute", "withdraw", params.sessionId]);
+    },
+  });
+
+  api.registerTool({
+    name: "arc402_compute_offer",
+    description:
+      "Publish a GPU compute offer to the registry — advertises your GPU capacity for hire.",
+    parameters: Type.Object({
+      gpuSpec: Type.String({ description: "GPU spec identifier (e.g. nvidia-h100-80gb)" }),
+      ratePerHour: Type.String({ description: "Rate per GPU-hour in ETH (e.g. '0.5')" }),
+      maxHours: Type.Optional(Type.Number({ description: "Maximum hours per session (default: 24)" })),
+    }),
+    async execute(_id, params) {
+      const args = ["compute", "offer", "--gpu-spec", params.gpuSpec, "--rate-per-hour", params.ratePerHour];
+      if (params.maxHours !== undefined) {
+        args.push("--max-hours", String(params.maxHours));
+      }
+      return shell(args);
+    },
+  });
+
+  api.registerTool({
+    name: "arc402_compute_discover",
+    description:
+      "Find available GPU compute providers — queries the registry for active compute offers.",
+    parameters: Type.Object({
+      gpuSpec: Type.Optional(Type.String({ description: "GPU spec filter (e.g. nvidia-h100-80gb)" })),
+      maxRatePerHour: Type.Optional(Type.String({ description: "Max rate per hour in ETH" })),
+      limit: Type.Optional(Type.Number({ description: "Max results (default 20)" })),
+    }),
+    async execute(_id, params) {
+      const args = ["compute", "discover"];
+      if (params.gpuSpec) args.push("--gpu-spec", params.gpuSpec);
+      if (params.maxRatePerHour) args.push("--max-rate", params.maxRatePerHour);
+      if (params.limit !== undefined) args.push("--limit", String(params.limit));
+      return shell(args);
+    },
+  });
+}
+
+function shell(args: string[], timeout = 30_000): ToolResult {
+  try {
+    const text = execFileSync("arc402", args, { encoding: "utf-8", timeout });
+    return { content: [{ type: "text", text: text.trim() }] };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { content: [{ type: "text", text: `Error: ${msg}` }] };
+  }
 }
 
 function ok(data: unknown): ToolResult {

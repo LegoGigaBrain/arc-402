@@ -1,8 +1,10 @@
 /**
  * Trust tools — arc402_trust, arc402_reputation
+ *
+ * PLG-9: Uses execFileSync array form to prevent command injection.
  */
 import { Type } from "@sinclair/typebox";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import type { PluginApi, ToolResult } from "./hire.js";
 
 export function registerTrustTools(api: PluginApi) {
@@ -14,7 +16,7 @@ export function registerTrustTools(api: PluginApi) {
       address: Type.String({ description: "Agent wallet address to trust (0x...)" }),
     }),
     async execute(_id, params) {
-      return shell(`arc402 trust ${q(params.address)}`);
+      return shell(["trust", params.address]);
     },
   });
 
@@ -26,18 +28,14 @@ export function registerTrustTools(api: PluginApi) {
       address: Type.String({ description: "Agent wallet address to look up (0x...)" }),
     }),
     async execute(_id, params) {
-      return shell(`arc402 reputation ${q(params.address)}`);
+      return shell(["reputation", params.address]);
     },
   });
 }
 
-function q(s: string): string {
-  return `"${s.replace(/"/g, '\\"')}"`;
-}
-
-function shell(cmd: string, timeout = 30_000): ToolResult {
+function shell(args: string[], timeout = 30_000): ToolResult {
   try {
-    const text = execSync(cmd, { encoding: "utf-8", timeout });
+    const text = execFileSync("arc402", args, { encoding: "utf-8", timeout });
     return { content: [{ type: "text", text: text.trim() }] };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

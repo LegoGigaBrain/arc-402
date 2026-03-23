@@ -1,8 +1,9 @@
 /**
- * Hire tools — arc402_hire, arc402_accept, arc402_deliver, arc402_verify
+ * Hire tools — arc402_hire, arc402_accept, arc402_deliver, arc402_verify, arc402_cancel
  */
 import { Type } from "@sinclair/typebox";
 import { ethers } from "ethers";
+import { execFileSync } from "child_process";
 import type { ResolvedConfig } from "../config.js";
 
 // Minimal ServiceAgreement ABI for plugin use
@@ -136,6 +137,19 @@ export function registerHireTools(api: PluginApi, getConfig: () => ResolvedConfi
       return ok({ agreementId: params.agreementId, txHash: receipt.hash, status: "verified", payment: "released" });
     },
   });
+
+  // PLG-2: missing tool — cancel a hire agreement
+  api.registerTool({
+    name: "arc402_cancel",
+    description:
+      "Cancel an active hire agreement — forfeits or refunds escrow depending on agreement state.",
+    parameters: Type.Object({
+      agreementId: Type.String({ description: "Agreement ID (bytes32 hex, 0x...)" }),
+    }),
+    async execute(_id, params) {
+      return shell(["hire", "cancel", params.agreementId]);
+    },
+  });
 }
 
 // ── Plugin API type (minimal shape expected from OpenClaw plugin-sdk) ──────────
@@ -189,4 +203,14 @@ function ok(data: unknown): ToolResult {
 
 function err(message: string): ToolResult {
   return { content: [{ type: "text", text: JSON.stringify({ error: message }) }] };
+}
+
+function shell(args: string[], timeout = 30_000): ToolResult {
+  try {
+    const text = execFileSync("arc402", args, { encoding: "utf-8", timeout });
+    return { content: [{ type: "text", text: text.trim() }] };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { content: [{ type: "text", text: `Error: ${msg}` }] };
+  }
 }

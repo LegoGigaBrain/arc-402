@@ -2,7 +2,7 @@
   "id": "arc402",
   "name": "ARC-402 Protocol",
   "description": "Agent-to-agent commerce — hire, deliver, compute, subscribe. Governed execution with cryptographic receipts.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "configSchema": {
     "type": "object",
     "properties": {
@@ -12,8 +12,16 @@
         "default": "base-mainnet"
       },
       "walletContractAddress": { "type": "string" },
-      "privateKey": { "type": "string" },
-      "machineKey": { "type": "string" },
+      "privateKey": {
+        "type": "string",
+        "pattern": "^env:",
+        "description": "MUST use env: prefix (e.g. env:ARC402_PRIVATE_KEY). Raw hex keys are rejected."
+      },
+      "machineKey": {
+        "type": "string",
+        "pattern": "^env:",
+        "description": "MUST use env: prefix (e.g. env:ARC402_MACHINE_KEY). Raw hex keys are rejected."
+      },
       "computeAgreementAddress": { "type": "string" },
       "subscriptionAgreementAddress": { "type": "string" },
       "registryV3Address": { "type": "string" },

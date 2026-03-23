@@ -1,8 +1,10 @@
 /**
  * Negotiate tools — arc402_negotiate, arc402_agreements
+ *
+ * PLG-9: Uses execFileSync array form to prevent command injection.
  */
 import { Type } from "@sinclair/typebox";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import type { PluginApi, ToolResult } from "./hire.js";
 
 export function registerNegotiateTools(api: PluginApi) {
@@ -15,7 +17,7 @@ export function registerNegotiateTools(api: PluginApi) {
       message: Type.String({ description: "Negotiation message content" }),
     }),
     async execute(_id, params) {
-      return shell(`arc402 negotiate send ${q(params.provider)} --message ${q(params.message)}`);
+      return shell(["negotiate", "send", params.provider, "--message", params.message]);
     },
   });
 
@@ -24,18 +26,14 @@ export function registerNegotiateTools(api: PluginApi) {
     description: "List all active and historical agreements (hire + compute + subscription).",
     parameters: Type.Object({}),
     async execute() {
-      return shell(`arc402 agreements list`);
+      return shell(["agreements", "list"]);
     },
   });
 }
 
-function q(s: string): string {
-  return `"${s.replace(/"/g, '\\"')}"`;
-}
-
-function shell(cmd: string, timeout = 30_000): ToolResult {
+function shell(args: string[], timeout = 30_000): ToolResult {
   try {
-    const text = execSync(cmd, { encoding: "utf-8", timeout });
+    const text = execFileSync("arc402", args, { encoding: "utf-8", timeout });
     return { content: [{ type: "text", text: text.trim() }] };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

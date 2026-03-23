@@ -1,8 +1,10 @@
 /**
  * Endpoint tools — arc402_endpoint_setup, arc402_endpoint_status, arc402_endpoint_doctor
+ *
+ * PLG-9: Uses execFileSync array form to prevent command injection.
  */
 import { Type } from "@sinclair/typebox";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import type { PluginApi, ToolResult } from "./hire.js";
 
 export function registerEndpointTools(api: PluginApi) {
@@ -14,7 +16,7 @@ export function registerEndpointTools(api: PluginApi) {
       hostname: Type.String({ description: "Public hostname for the agent endpoint (e.g. agent.example.com)" }),
     }),
     async execute(_id, params) {
-      return shell(`arc402 endpoint setup --hostname ${q(params.hostname)}`);
+      return shell(["endpoint", "setup", "--hostname", params.hostname]);
     },
   });
 
@@ -23,7 +25,7 @@ export function registerEndpointTools(api: PluginApi) {
     description: "Show the current endpoint configuration and reachability status.",
     parameters: Type.Object({}),
     async execute() {
-      return shell(`arc402 endpoint status`);
+      return shell(["endpoint", "status"]);
     },
   });
 
@@ -32,18 +34,14 @@ export function registerEndpointTools(api: PluginApi) {
     description: "Diagnose endpoint connectivity issues — checks DNS, TLS, firewall, and ARC-402 protocol handshake.",
     parameters: Type.Object({}),
     async execute() {
-      return shell(`arc402 endpoint doctor`, 60_000);
+      return shell(["endpoint", "doctor"], 60_000);
     },
   });
 }
 
-function q(s: string): string {
-  return `"${s.replace(/"/g, '\\"')}"`;
-}
-
-function shell(cmd: string, timeout = 30_000): ToolResult {
+function shell(args: string[], timeout = 30_000): ToolResult {
   try {
-    const text = execSync(cmd, { encoding: "utf-8", timeout });
+    const text = execFileSync("arc402", args, { encoding: "utf-8", timeout });
     return { content: [{ type: "text", text: text.trim() }] };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

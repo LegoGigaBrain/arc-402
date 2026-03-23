@@ -27,8 +27,12 @@ export function registerWalletTools(api: PluginApi, getConfig: () => ResolvedCon
     name: "arc402_wallet_status",
     description:
       "Show ARC-402 wallet status — address, ETH balance, trust score, agent registration info.",
-    parameters: Type.Object({}),
-    async execute(_id, _params) {
+    parameters: Type.Object({
+      showMachineAddress: Type.Optional(
+        Type.Boolean({ description: "Include the machine (signing) address in output (default: false)" }),
+      ),
+    }),
+    async execute(_id, params) {
       const cfg = getConfig();
 
       if (!cfg.walletContractAddress && !cfg.resolvedPrivateKey) {
@@ -49,11 +53,12 @@ export function registerWalletTools(api: PluginApi, getConfig: () => ResolvedCon
         machineAddress = wallet.address;
       }
 
+      // PLG-8: redact machineAddress unless explicitly requested
       const result: Record<string, unknown> = {
         network: cfg.network,
         chainId: cfg.chainId,
         walletAddress: address || null,
-        machineAddress: machineAddress || null,
+        machineAddress: params.showMachineAddress ? (machineAddress || null) : "[redacted — pass showMachineAddress:true to reveal]",
       };
 
       if (address) {

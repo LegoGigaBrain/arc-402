@@ -1,8 +1,10 @@
 /**
- * System tools — arc402_config, arc402_setup, arc402_doctor
+ * System tools — arc402_config, arc402_setup, arc402_doctor, arc402_migrate
+ *
+ * PLG-9: Uses execFileSync array form to prevent command injection.
  */
 import { Type } from "@sinclair/typebox";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import type { PluginApi, ToolResult } from "./hire.js";
 
 export function registerSystemTools(api: PluginApi) {
@@ -16,11 +18,11 @@ export function registerSystemTools(api: PluginApi) {
     }),
     async execute(_id, params) {
       if (params.key && params.value) {
-        return shell(`arc402 config set ${q(params.key)} ${q(params.value)}`);
+        return shell(["config", "set", params.key, params.value]);
       } else if (params.key) {
-        return shell(`arc402 config get ${q(params.key)}`);
+        return shell(["config", "get", params.key]);
       }
-      return shell(`arc402 config get`);
+      return shell(["config", "get"]);
     },
   });
 
@@ -30,7 +32,7 @@ export function registerSystemTools(api: PluginApi) {
       "Run the ARC-402 interactive setup wizard — configures wallet, RPC endpoint, and on-chain registration.",
     parameters: Type.Object({}),
     async execute() {
-      return shell(`arc402 setup`, 120_000);
+      return shell(["setup"], 120_000);
     },
   });
 
@@ -40,18 +42,25 @@ export function registerSystemTools(api: PluginApi) {
       "Run the ARC-402 system health check — verifies wallet, RPC connectivity, contract addresses, and on-chain state.",
     parameters: Type.Object({}),
     async execute() {
-      return shell(`arc402 doctor`, 60_000);
+      return shell(["doctor"], 60_000);
+    },
+  });
+
+  // PLG-2: missing tool
+  api.registerTool({
+    name: "arc402_migrate",
+    description:
+      "Run ARC-402 config migration — upgrades ~/.arc402/config.json to the latest schema version.",
+    parameters: Type.Object({}),
+    async execute() {
+      return shell(["migrate"], 60_000);
     },
   });
 }
 
-function q(s: string): string {
-  return `"${s.replace(/"/g, '\\"')}"`;
-}
-
-function shell(cmd: string, timeout = 30_000): ToolResult {
+function shell(args: string[], timeout = 30_000): ToolResult {
   try {
-    const text = execSync(cmd, { encoding: "utf-8", timeout });
+    const text = execFileSync("arc402", args, { encoding: "utf-8", timeout });
     return { content: [{ type: "text", text: text.trim() }] };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

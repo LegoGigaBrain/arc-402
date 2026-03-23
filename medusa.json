@@ -1,0 +1,17 @@
+{
+  "fuzzing": {
+    "workers": 2,
+    "workerResetLimit": 50,
+    "timeout": 120,
+    "testLimit": 10000,
+    "callSequenceLength": 100,
+    "corpusDirectory": "medusa-corpus",
+    "coverageEnabled": true,
+    "targetContracts": ["ComputeAgreementTest"],
+    "targetContractsBalances": [],
+    "constructorArgs": {}
+  },
+  "compilation": {
+    "platform": "foundry"
+  }
+}

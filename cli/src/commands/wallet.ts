@@ -600,11 +600,19 @@ export function registerWalletCommands(program: Command): void {
     const usdcAddress = getUsdcAddress(config);
     const usdc = new ethers.Contract(usdcAddress, ["function balanceOf(address owner) external view returns (uint256)"], provider);
     const trust = new TrustClient(config.trustRegistryAddress, provider);
-    const [ethBalance, usdcBalance, score] = await Promise.all([
-      provider.getBalance(address),
-      usdc.balanceOf(address),
-      trust.getScore(address),
-    ]);
+    const statusSpinner = opts.json ? null : startSpinner("Loading wallet status…");
+    let ethBalance: bigint, usdcBalance: bigint, score: { score: number };
+    try {
+      [ethBalance, usdcBalance, score] = await Promise.all([
+        provider.getBalance(address),
+        usdc.balanceOf(address),
+        trust.getScore(address),
+      ]);
+      statusSpinner?.succeed("Wallet status loaded");
+    } catch (err) {
+      statusSpinner?.fail("Failed to load wallet status");
+      throw err;
+    }
 
     // Query contract wallet for frozen/guardian state if deployed
     let contractFrozen: boolean | null = null;

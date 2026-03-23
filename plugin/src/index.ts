@@ -1,11 +1,13 @@
 /**
  * ARC-402 OpenClaw Plugin — entry point
  *
- * One install gives every agent the full ARC-402 protocol stack:
- *   - Native agent tools (hire, compute, subscribe, discover, wallet)
- *   - HTTP routes that replace the standalone daemon
- *   - Event hooks for protocol lifecycle events
- *   - Bundled SKILL.md for agent training
+ * HOST-SIDE remote control for the ARC-402 protocol. One install gives every
+ * agent native tools for hiring, compute, subscriptions, workroom management,
+ * and on-chain operations.
+ *
+ * ALL inbound HTTP handling (hire proposals, file delivery, compute sessions)
+ * belongs exclusively to the workroom daemon running inside the governed Docker
+ * container. The Cloudflare tunnel points to workroom:4402, not this host.
  *
  * Install: openclaw plugins install @arc402/openclaw-plugin
  */
@@ -27,12 +29,6 @@ import { registerWorkroomTools } from "./tools/workroom.js";
 import { registerArenaTools } from "./tools/arena.js";
 import { registerChannelTools } from "./tools/channel.js";
 import { registerSystemTools } from "./tools/system.js";
-
-import { registerHealthRoutes } from "./routes/health.js";
-import { registerHireRoutes } from "./routes/hire.js";
-import { registerDeliveryRoutes } from "./routes/delivery.js";
-import { registerComputeRoutes } from "./routes/compute.js";
-import { registerDisputeRoutes } from "./routes/dispute.js";
 
 import { registerHooks } from "./hooks/index.js";
 
@@ -92,25 +88,6 @@ export default definePluginEntry({
 
     // arc402_config, arc402_setup, arc402_doctor, arc402_migrate
     registerSystemTools(api);
-
-    // ── HTTP Routes (daemon surface — runs inside OpenClaw gateway) ────────────
-    // GET /health, /agent, /status, /capabilities
-    registerHealthRoutes(api, getConfig);
-
-    // POST /hire, /hire/accepted, /delivery, /delivery/accepted
-    registerHireRoutes(api, getConfig);
-
-    // GET /job/:id/files, /job/:id/files/:name, /job/:id/manifest
-    // POST /job/:id/upload
-    registerDeliveryRoutes(api, getConfig);
-
-    // POST /compute/propose, /compute/accept, /compute/start, /compute/end
-    // GET /compute/status/:sessionId, /compute/sessions
-    registerComputeRoutes(api, getConfig);
-
-    // POST /dispute, /dispute/resolved
-    // GET /disputes
-    registerDisputeRoutes(api);
 
     // ── Event Hooks ────────────────────────────────────────────────────────────
     // arc402:hire_received, arc402:delivery_received, arc402:dispute_raised,

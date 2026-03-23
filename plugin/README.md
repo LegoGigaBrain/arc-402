@@ -8,26 +8,83 @@ ARC-402 protocol as a native OpenClaw plugin. One install gives every agent the 
 openclaw plugins install @arc402/openclaw-plugin
 ```
 
+## Architecture
+
+**The plugin is the HOST-SIDE remote control.** It runs as part of the operator's personal OpenClaw agent (e.g., GigaBrain) on the host machine.
+
+**All hired work executes in the workroom** — a governed Docker container with iptables network policy, process isolation, and GPU passthrough. The workroom daemon handles ALL inbound traffic:
+- Receiving hire proposals (`POST /hire`)
+- File delivery (`GET /job/:id/files/:name`)
+- Compute session signals (`POST /compute/propose`, etc.)
+- Execution receipts
+
+**The Cloudflare tunnel points to `workroom:4402`, not the host gateway.** Inbound work must go through the governed environment. This is non-negotiable.
+
+**The plugin registers ZERO HTTP routes.** It only registers outbound agent tools and event hooks.
+
+```
+Hiring agent  ──→  Cloudflare tunnel  ──→  workroom:4402 (daemon)
+                                                    │
+Host OpenClaw ──→  plugin tools  ──→  contracts / workroom docker mgmt
+```
+
 ## What you get
 
-| Capability | How |
-|-----------|-----|
-| `arc402_hire` — hire an agent | `api.registerTool()` |
-| `arc402_accept` — accept a hire proposal | `api.registerTool()` |
-| `arc402_deliver` — submit deliverable hash | `api.registerTool()` |
-| `arc402_verify` — release payment after delivery | `api.registerTool()` |
-| `arc402_compute_hire` — hire GPU compute | `api.registerTool()` |
-| `arc402_compute_end` — end compute session | `api.registerTool()` |
-| `arc402_compute_status` — check session | `api.registerTool()` |
-| `arc402_subscribe` — subscribe to a service | `api.registerTool()` |
-| `arc402_cancel` — cancel subscription | `api.registerTool()` |
-| `arc402_top_up` — extend subscription | `api.registerTool()` |
-| `arc402_discover` — find agents to hire | `api.registerTool()` |
-| `arc402_wallet_status` — wallet + trust info | `api.registerTool()` |
-| `arc402_wallet_deploy` — deploy smart wallet | `api.registerTool()` |
-| HTTP daemon surface | `api.registerHttpRoute()` |
-| Protocol event hooks | `api.registerHook()` |
-| SKILL.md bundled | auto-discovered by OpenClaw |
+| Tool | What it does |
+|------|-------------|
+| `arc402_hire` | Propose ServiceAgreement with escrow deposit |
+| `arc402_accept` | Accept a hire as provider |
+| `arc402_deliver` | Commit deliverable hash on-chain |
+| `arc402_verify` | Verify delivery hashes and release payment |
+| `arc402_cancel` | Cancel agreement (before delivery) |
+| `arc402_negotiate` | Send off-chain negotiation message |
+| `arc402_agreements` | List agreements by status |
+| `arc402_dispute` | Open dispute on an agreement |
+| `arc402_dispute_status` | Check dispute status |
+| `arc402_dispute_resolve` | Resolve dispute (arbitrator only) |
+| `arc402_discover` | Find agents by capability from AgentRegistry |
+| `arc402_trust` | Check trust score for an address |
+| `arc402_reputation` | Get reputation details |
+| `arc402_compute_hire` | Propose compute session with deposit |
+| `arc402_compute_status` | Check session metrics / list sessions |
+| `arc402_compute_end` | End compute session, trigger settlement |
+| `arc402_compute_withdraw` | Withdraw compute earnings/refunds |
+| `arc402_compute_offer` | Show compute offering config |
+| `arc402_compute_discover` | Find GPU providers |
+| `arc402_subscription_create` | Create subscription offering |
+| `arc402_subscription_subscribe` | Subscribe with deposit |
+| `arc402_subscription_cancel` | Cancel with pro-rata refund |
+| `arc402_subscription_top_up` | Add more deposit |
+| `arc402_subscription_status` | List active subscriptions |
+| `arc402_subscription_discover` | Find subscription offerings |
+| `arc402_wallet_status` | Address, balances, trust score, frozen status |
+| `arc402_wallet_deploy` | Deploy new ARC-402 wallet |
+| `arc402_agent_register` | Register agent on AgentRegistry |
+| `arc402_agent_update` | Update agent registration |
+| `arc402_agent_status` | Show agent registration details |
+| `arc402_endpoint_setup` | Configure endpoint + Cloudflare tunnel |
+| `arc402_endpoint_status` | Check endpoint health |
+| `arc402_endpoint_doctor` | Diagnose endpoint issues |
+| `arc402_workroom_init` | Create workroom (Docker image + policy) |
+| `arc402_workroom_start` | Start workroom container |
+| `arc402_workroom_stop` | Stop workroom |
+| `arc402_workroom_status` | Health, policy, active agreements |
+| `arc402_workroom_doctor` | Diagnose workroom issues |
+| `arc402_workroom_worker_status` | Worker identity, job count, learnings |
+| `arc402_workroom_earnings` | Total earnings from completed jobs |
+| `arc402_workroom_receipts` | Execution receipts |
+| `arc402_handshake` | Send handshake to another agent |
+| `arc402_arena_status` | Arena state, connections, feed |
+| `arc402_feed` | View indexed feed events |
+| `arc402_channel_open` | Open payment channel |
+| `arc402_channel_close` | Close and settle channel |
+| `arc402_channel_status` | Check channel state |
+| `arc402_config` | Get/set config |
+| `arc402_setup` | Interactive first-time setup |
+| `arc402_doctor` | Full system health check |
+| `arc402_migrate` | Migrate wallet to new version |
+
+Plus: protocol event hooks (`arc402:hire_received`, `arc402:delivery_received`, `arc402:dispute_raised`, etc.) and bundled SKILL.md.
 
 ## Configuration
 
@@ -58,34 +115,6 @@ Set your machine key:
 export ARC402_MACHINE_KEY=0x...
 ```
 
-## HTTP endpoints
-
-The plugin registers these routes inside the OpenClaw gateway (no separate daemon process):
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Protocol health check |
-| GET | `/agent` | Agent registration info |
-| GET | `/status` | Full daemon status |
-| GET | `/capabilities` | Agent capabilities |
-| POST | `/hire` | Inbound hire proposal |
-| POST | `/hire/accepted` | Hire acceptance notification |
-| POST | `/delivery` | Delivery notification |
-| POST | `/delivery/accepted` | Delivery acceptance |
-| GET | `/job/:id/files` | List job files |
-| GET | `/job/:id/files/:name` | Download file |
-| GET | `/job/:id/manifest` | Delivery manifest |
-| POST | `/job/:id/upload` | Upload file |
-| POST | `/compute/propose` | Inbound compute proposal |
-| POST | `/compute/accept` | Compute acceptance |
-| POST | `/compute/start` | Session start signal |
-| POST | `/compute/end` | Session end signal |
-| GET | `/compute/status/:sessionId` | Session status |
-| GET | `/compute/sessions` | All sessions |
-| POST | `/dispute` | Dispute notification |
-| POST | `/dispute/resolved` | Resolution notification |
-| GET | `/disputes` | All disputes |
-
 ## Build
 
 ```bash
@@ -100,9 +129,9 @@ npm run typecheck  # tsc --noEmit
 |-|-----------|------------------------|
 | Install | `npm i -g arc402-cli` + `openclaw install arc402-agent` | `openclaw plugins install @arc402/openclaw-plugin` |
 | Agent tools | CLI subprocess | Native `api.registerTool()` |
-| HTTP daemon | Port 4402, separate process | Inside OpenClaw gateway |
+| Inbound HTTP | Port 4402, standalone daemon | Workroom daemon (Docker, port 4402) |
 | Config | `~/.arc402/daemon.toml` | `openclaw.json` plugin config |
-| Lifecycle | `arc402 daemon start` | Starts with gateway |
+| Workroom | `arc402 workroom start` | `arc402_workroom_start` tool |
 
 ---
 

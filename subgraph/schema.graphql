@@ -1,0 +1,367 @@
+# ─── Agents ───────────────────────────────────────────────────────────────────
+
+type Agent @entity(immutable: false) {
+  id: ID!                        # wallet address
+  name: String!
+  serviceType: String!
+  endpoint: String
+  active: Boolean!
+  registeredAt: BigInt!
+  heartbeatCount: BigInt!
+  uptimeScore: BigInt!
+  responseScore: BigInt!
+  lastHeartbeat: BigInt
+  wallet: Wallet
+  trustScore: TrustScore
+  handshakesSent: [Handshake!]! @derivedFrom(field: "from")
+  handshakesReceived: [Handshake!]! @derivedFrom(field: "to")
+  connections: [AgentConnection!]! @derivedFrom(field: "from")
+  vouchesGiven: [Vouch!]! @derivedFrom(field: "voucher")
+  vouchesReceived: [Vouch!]! @derivedFrom(field: "newAgent")
+  capabilities: [AgentCapability!]! @derivedFrom(field: "agent")
+}
+
+# ─── Wallets ──────────────────────────────────────────────────────────────────
+
+type Wallet @entity(immutable: false) {
+  id: ID!                        # wallet contract address
+  owner: Bytes!
+  createdAt: BigInt!
+  policies: [Policy!]! @derivedFrom(field: "wallet")
+}
+
+# ─── Policies ─────────────────────────────────────────────────────────────────
+
+type Policy @entity(immutable: false) {
+  id: ID!                        # wallet + category
+  wallet: Wallet!
+  category: String!
+  limitPerTx: BigInt!
+  updatedAt: BigInt!
+}
+
+# ─── Agreements ───────────────────────────────────────────────────────────────
+
+type Agreement @entity(immutable: false) {
+  id: ID!                        # agreement id
+  client: Bytes!
+  provider: Bytes!
+  serviceType: String!
+  price: BigInt!
+  token: Bytes!
+  deadline: BigInt!
+  state: String!                 # PROPOSED | ACCEPTED | FULFILLED | DISPUTED | CANCELLED | RESOLVED
+  deliverablesHash: Bytes
+  proposedAt: BigInt!
+  updatedAt: BigInt!
+  disputes: [Dispute!]! @derivedFrom(field: "agreement")
+  channels: [Channel!]! @derivedFrom(field: "agreement")
+}
+
+# ─── Disputes ─────────────────────────────────────────────────────────────────
+
+type Dispute @entity(immutable: false) {
+  id: ID!                        # agreement id + index
+  agreement: Agreement!
+  initiator: Bytes!
+  reason: String!
+  outcome: String
+  providerAward: BigInt
+  clientAward: BigInt
+  openedAt: BigInt!
+  resolvedAt: BigInt
+}
+
+# ─── Channels ─────────────────────────────────────────────────────────────────
+
+type Channel @entity(immutable: false) {
+  id: ID!                        # channelId (bytes32)
+  agreement: Agreement
+  client: Bytes!
+  provider: Bytes!
+  token: Bytes!
+  depositAmount: BigInt!
+  deadline: BigInt!
+  state: String!                 # OPEN | CLOSING | SETTLED | EXPIRED
+  settledAmount: BigInt
+  refundAmount: BigInt
+  sequenceNumber: BigInt
+  openedAt: BigInt!
+  updatedAt: BigInt!
+}
+
+# ─── Trust Scores ─────────────────────────────────────────────────────────────
+
+type TrustScore @entity(immutable: false) {
+  id: ID!                        # wallet address
+  wallet: Bytes!
+  globalScore: BigInt!
+  initializedAt: BigInt!
+  updatedAt: BigInt!
+  history: [TrustScoreUpdate!]! @derivedFrom(field: "trustScore")
+}
+
+type TrustScoreUpdate @entity(immutable: false) {
+  id: ID!                        # txHash + logIndex
+  trustScore: TrustScore!
+  capability: String!
+  delta: BigInt!
+  newGlobalScore: BigInt!
+  timestamp: BigInt!
+}
+
+# ─── Reputation Signals ───────────────────────────────────────────────────────
+
+type ReputationSignal @entity(immutable: false) {
+  id: ID!                        # txHash + logIndex
+  publisher: Bytes!
+  subject: Bytes!
+  signalType: Int!
+  capabilityHash: Bytes!
+  publisherTrustAtTime: BigInt!
+  autoPublished: Boolean!
+  timestamp: BigInt!
+}
+
+# ─── Trust Score V1 ──────────────────────────────────────────────────────────
+
+type TrustScoreV1 @entity(immutable: false) {
+  id: ID!                        # wallet address
+  wallet: Bytes!
+  score: BigInt!
+  initializedAt: BigInt!
+  updatedAt: BigInt!
+}
+
+# ─── Intent Attestations ──────────────────────────────────────────────────────
+
+type IntentAttestation @entity(immutable: false) {
+  id: ID!                        # attestationId (bytes32)
+  wallet: Bytes!
+  action: String!
+  recipient: Bytes!
+  amount: BigInt!
+  createdAt: BigInt!
+}
+
+# ─── Settlement Proposals ─────────────────────────────────────────────────────
+
+type SettlementProposal @entity(immutable: false) {
+  id: ID!                        # proposalId (bytes32)
+  from: Bytes!
+  to: Bytes!
+  amount: BigInt!
+  state: String!                 # CREATED | ACCEPTED | EXECUTED | REJECTED | EXPIRED
+  createdAt: BigInt!
+  updatedAt: BigInt!
+}
+
+# ─── Sponsorship Attestations ─────────────────────────────────────────────────
+
+type SponsorshipAttestation @entity(immutable: false) {
+  id: ID!                        # attestationId (bytes32)
+  sponsor: Bytes!
+  agent: Bytes!
+  expiresAt: BigInt!
+  tier: Int!
+  evidenceURI: String!
+  revoked: Boolean!
+  publishedAt: BigInt!
+  revokedAt: BigInt
+}
+
+# ─── Handshakes ───────────────────────────────────────────────────────────────
+
+type Handshake @entity(immutable: false) {
+  id: ID!                    # handshakeId as string
+  from: Agent!
+  fromAddress: Bytes!
+  to: Agent!
+  toAddress: Bytes!
+  hsType: Int!               # 0=Respect 1=Curiosity 2=Endorsement 3=Thanks 4=Collaboration 5=Challenge 6=Referral 7=Hello
+  token: Bytes!              # address(0) = ETH tip, otherwise ERC-20
+  amount: BigInt!
+  note: String!
+  timestamp: BigInt!
+  isNewConnection: Boolean!
+  blockNumber: BigInt!
+  txHash: Bytes!
+}
+
+type AgentConnection @entity(immutable: false) {
+  id: ID!                    # from.toHex() + "-" + to.toHex()
+  from: Agent!
+  fromAddress: Bytes!
+  to: Agent!
+  toAddress: Bytes!
+  isMutual: Boolean!
+  firstHandshakeId: BigInt!
+  createdAt: BigInt!
+  updatedAt: BigInt!
+}
+
+# ─── Vouching ─────────────────────────────────────────────────────────────────
+
+type Vouch @entity(immutable: false) {
+  id: ID!                    # voucher.toHex() + "-" + newAgent.toHex()
+  voucher: Agent!
+  voucherAddress: Bytes!
+  newAgent: Agent!
+  newAgentAddress: Bytes!
+  stakeAmount: BigInt!
+  boost: BigInt!
+  active: Boolean!
+  slashed: Boolean!
+  slashedAmount: BigInt
+  createdAt: BigInt!
+  updatedAt: BigInt!
+}
+
+# ─── Capabilities ─────────────────────────────────────────────────────────────
+
+type CapabilityRoot @entity(immutable: false) {
+  id: ID!                    # rootId.toHex()
+  root: String!
+  active: Boolean!
+  registeredAt: BigInt!
+  updatedAt: BigInt!
+}
+
+type AgentCapability @entity(immutable: false) {
+  id: ID!                    # agent.toHex() + "-" + capabilityId.toHex()
+  agent: Agent!
+  agentAddress: Bytes!
+  capabilityId: Bytes!
+  capability: String!
+  active: Boolean!
+  claimedAt: BigInt!
+  revokedAt: BigInt
+}
+
+# ─── Migrations ───────────────────────────────────────────────────────────────
+
+type WalletMigration @entity(immutable: false) {
+  id: ID!                    # txHash + logIndex
+  oldWallet: Bytes!
+  newWallet: Bytes!
+  owner: Bytes!
+  scoreAtMigration: BigInt!
+  migratedAt: BigInt!
+}
+
+# ─── X402 Payments ────────────────────────────────────────────────────────────
+
+type X402Payment @entity(immutable: false) {
+  id: ID!                    # txHash + "-" + logIndex
+  recipient: Bytes!
+  amount: BigInt!
+  attestationId: Bytes!
+  requestUrl: String!
+  timestamp: BigInt!
+}
+
+# ─── Dispute Arbitration ──────────────────────────────────────────────────────
+
+type ArbitrationEvent @entity(immutable: false) {
+  id: ID!                    # txHash + "-" + logIndex
+  agreementId: BigInt!
+  eventType: String!         # ASSIGNED | BOND_RETURNED | BOND_SLASHED | FEE_PAID | FALLBACK | FEE_OPENED | FEE_RESOLVED | MUTUAL_FUNDED
+  arbitrator: Bytes
+  amount: BigInt
+  reason: String
+  timestamp: BigInt!
+}
+
+# ─── Watchtower Events ────────────────────────────────────────────────────────
+
+type WatchtowerEvent @entity(immutable: false) {
+  id: ID!                    # txHash + "-" + logIndex
+  eventType: String!         # AUTHORIZED | REVOKED | STATE_REGISTERED | CHALLENGE_SUBMITTED
+  channelId: Bytes!
+  watchtower: Bytes
+  timestamp: BigInt!
+}
+
+# ─── Compute Sessions ─────────────────────────────────────────────────────────
+
+type ComputeSession @entity(immutable: false) {
+  id: ID!                          # sessionId (bytes32)
+  client: Bytes!
+  provider: Bytes!
+  ratePerHour: BigInt!
+  maxHours: BigInt!
+  depositAmount: BigInt!
+  token: Bytes!
+  startedAt: BigInt
+  endedAt: BigInt
+  consumedMinutes: BigInt!
+  gpuSpecHash: Bytes!
+  status: String!                  # Proposed, Active, Completed, Disputed, Cancelled
+  proposedAt: BigInt!
+  usageReports: [ComputeUsageReport!]! @derivedFrom(field: "session")
+}
+
+type ComputeUsageReport @entity(immutable: true) {
+  id: ID!                          # sessionId + reportIndex
+  session: ComputeSession!
+  computeMinutes: BigInt!
+  periodEnd: BigInt!
+  timestamp: BigInt!
+}
+
+# ─── Subscription Offerings ───────────────────────────────────────────────────
+
+type SubscriptionOffering @entity(immutable: false) {
+  id: ID!                          # offeringId
+  provider: Bytes!
+  pricePerPeriod: BigInt!
+  periodSeconds: BigInt!
+  token: Bytes!
+  contentHash: Bytes!
+  active: Boolean!
+  maxSubscribers: BigInt!
+  subscriberCount: BigInt!
+  createdAt: BigInt!
+  subscriptions: [Subscription!]! @derivedFrom(field: "offering")
+}
+
+type Subscription @entity(immutable: false) {
+  id: ID!                          # keccak256(subscriber, offeringId)
+  subscriber: Bytes!
+  offering: SubscriptionOffering!
+  startedAt: BigInt!
+  currentPeriodEnd: BigInt!
+  deposited: BigInt!
+  consumed: BigInt!
+  active: Boolean!
+  cancelled: Boolean!
+}
+
+# ─── ARC402 Registry V3 ───────────────────────────────────────────────────────
+
+type RegistryV3State @entity(immutable: false) {
+  id: ID!                          # singleton: "global"
+  version: String!
+  policyEngine: Bytes!
+  trustRegistry: Bytes!
+  intentAttestation: Bytes!
+  settlementCoordinator: Bytes!
+  updatedAt: BigInt!
+}
+
+# ─── Protocol Stats ───────────────────────────────────────────────────────────
+
+type ProtocolStats @entity(immutable: false) {
+  id: ID!                        # singleton: "global"
+  totalAgents: BigInt!
+  totalWallets: BigInt!
+  totalAgreements: BigInt!
+  totalChannels: BigInt!
+  totalDisputes: BigInt!
+  totalHandshakes: BigInt!
+  totalConnections: BigInt!
+  totalVouches: BigInt!
+  totalCapabilityClaims: BigInt!
+  totalMigrations: BigInt!
+  totalX402Payments: BigInt!
+}

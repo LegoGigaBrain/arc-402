@@ -1,0 +1,623 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: AgentRegistry
+    network: base
+    source:
+      address: "0xD5c2851B00090c92Ba7F4723FB548bb30C9B6865"
+      abi: AgentRegistry
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Agent
+        - ProtocolStats
+      abis:
+        - name: AgentRegistry
+          file: ./abis/AgentRegistry.json
+      eventHandlers:
+        - event: AgentRegistered(indexed address,string,string,uint256)
+          handler: handleAgentRegistered
+        - event: AgentUpdated(indexed address,string,string)
+          handler: handleAgentUpdated
+        - event: AgentDeactivated(indexed address)
+          handler: handleAgentDeactivated
+        - event: AgentReactivated(indexed address)
+          handler: handleAgentReactivated
+        - event: EndpointChanged(indexed address,string,string,uint256)
+          handler: handleEndpointChanged
+        - event: HeartbeatSubmitted(indexed address,uint256,uint256,uint256,uint256,uint256)
+          handler: handleHeartbeatSubmitted
+      file: ./src/agentRegistry.ts
+
+  - kind: ethereum
+    name: WalletFactory
+    network: base
+    source:
+      address: "0xcB52B5d746eEc05e141039E92e3dBefeAe496051"
+      abi: WalletFactory
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Wallet
+        - ProtocolStats
+      abis:
+        - name: WalletFactory
+          file: ./abis/WalletFactory.json
+      eventHandlers:
+        - event: WalletCreated(indexed address,indexed address)
+          handler: handleWalletCreated
+      file: ./src/walletFactory.ts
+
+  - kind: ethereum
+    name: PolicyEngine
+    network: base
+    source:
+      address: "0xAA5Ef3489C929bFB3BFf5D5FE15aa62d3763c847"
+      abi: PolicyEngine
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Policy
+        - Wallet
+      abis:
+        - name: PolicyEngine
+          file: ./abis/PolicyEngine.json
+      eventHandlers:
+        - event: CategoryLimitSet(indexed address,string,uint256)
+          handler: handleCategoryLimitSet
+      file: ./src/policyEngine.ts
+
+  - kind: ethereum
+    name: ServiceAgreement
+    network: base
+    source:
+      address: "0xC98B402CAB9156da68A87a69E3B4bf167A3CCcF6"
+      abi: ServiceAgreement
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Agreement
+        - Dispute
+        - ProtocolStats
+      abis:
+        - name: ServiceAgreement
+          file: ./abis/ServiceAgreement.json
+      eventHandlers:
+        - event: AgreementProposed(indexed uint256,indexed address,indexed address,string,uint256,address,uint256)
+          handler: handleAgreementProposed
+        - event: AgreementAccepted(indexed uint256,indexed address)
+          handler: handleAgreementAccepted
+        - event: AgreementFulfilled(indexed uint256,indexed address,bytes32)
+          handler: handleAgreementFulfilled
+        - event: AgreementDisputed(indexed uint256,indexed address,string)
+          handler: handleAgreementDisputed
+        - event: AgreementCancelled(indexed uint256,indexed address)
+          handler: handleAgreementCancelled
+        - event: DetailedDisputeResolved(indexed uint256,uint8,uint256,uint256)
+          handler: handleDisputeResolved
+      file: ./src/serviceAgreement.ts
+
+  - kind: ethereum
+    name: SessionChannels
+    network: base
+    source:
+      address: "0x578f8d1bd82E8D6268E329d664d663B4d985BE61"
+      abi: SessionChannels
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Channel
+        - ProtocolStats
+      abis:
+        - name: SessionChannels
+          file: ./abis/SessionChannels.json
+      eventHandlers:
+        - event: ChannelOpened(indexed bytes32,indexed address,indexed address,address,uint256,uint256)
+          handler: handleChannelOpened
+        - event: ChannelClosing(indexed bytes32,uint256,uint256,uint256)
+          handler: handleChannelClosing
+        - event: ChannelSettled(indexed bytes32,indexed address,uint256,uint256)
+          handler: handleChannelSettled
+        - event: ChannelChallenged(indexed bytes32,indexed address,uint256,uint256)
+          handler: handleChannelChallenged
+        - event: ChallengeFinalised(indexed bytes32,indexed address,uint256)
+          handler: handleChallengeFinalised
+        - event: ChannelExpiredReclaimed(indexed bytes32,indexed address,uint256)
+          handler: handleChannelExpired
+      file: ./src/sessionChannels.ts
+
+  - kind: ethereum
+    name: TrustRegistryV2
+    network: base
+    source:
+      address: "0xdA1D377991B2E580991B0DD381CdD635dd71aC39"
+      abi: TrustRegistryV2
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - TrustScore
+        - TrustScoreUpdate
+      abis:
+        - name: TrustRegistryV2
+          file: ./abis/TrustRegistryV2.json
+        - name: TrustRegistryV3
+          file: ./abis/TrustRegistryV3.json
+      eventHandlers:
+        - event: WalletInitialized(indexed address,uint256)
+          handler: handleWalletInitialized
+        - event: ScoreUpdated(indexed address,uint256,string,int256)
+          handler: handleScoreUpdated
+      file: ./src/trustRegistry.ts
+
+  - kind: ethereum
+    name: TrustRegistryV3
+    network: base
+    source:
+      address: "0x22366D6dabb03062Bc0a5E893EfDff15D8E329b1"
+      abi: TrustRegistryV3
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - TrustScore
+        - TrustScoreUpdate
+      abis:
+        - name: TrustRegistryV3
+          file: ./abis/TrustRegistryV3.json
+      eventHandlers:
+        - event: WalletInitialized(indexed address,uint256)
+          handler: handleWalletInitialized
+        - event: ScoreUpdated(indexed address,uint256,string,int256)
+          handler: handleScoreUpdated
+      file: ./src/trustRegistry.ts
+
+  - kind: ethereum
+    name: ReputationOracle
+    network: base
+    source:
+      address: "0x359F76a54F9A345546E430e4d6665A7dC9DaECd4"
+      abi: ReputationOracle
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - ReputationSignal
+      abis:
+        - name: ReputationOracle
+          file: ./abis/ReputationOracle.json
+      eventHandlers:
+        - event: SignalPublished(indexed address,indexed address,uint8,bytes32,uint256,bool)
+          handler: handleSignalPublished
+      file: ./src/reputationOracle.ts
+
+  - kind: ethereum
+    name: TrustRegistry
+    network: base
+    source:
+      address: "0x6B89621c94a7105c3D8e0BD8Fb06814931CA2CB2"
+      abi: TrustRegistry
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - TrustScoreV1
+      abis:
+        - name: TrustRegistry
+          file: ./abis/TrustRegistry.json
+      eventHandlers:
+        - event: WalletInitialized(indexed address,uint256)
+          handler: handleTrustV1WalletInitialized
+        - event: ScoreUpdated(indexed address,uint256,uint256,string)
+          handler: handleTrustV1ScoreUpdated
+      file: ./src/trustRegistryV1.ts
+
+  - kind: ethereum
+    name: TrustRegistrySA
+    network: base
+    source:
+      address: "0xbB5E1809D4a94D08Bf1143131312858143D018f1"
+      abi: TrustRegistry
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - TrustScoreV1
+      abis:
+        - name: TrustRegistry
+          file: ./abis/TrustRegistry.json
+      eventHandlers:
+        - event: WalletInitialized(indexed address,uint256)
+          handler: handleTrustV1WalletInitialized
+        - event: ScoreUpdated(indexed address,uint256,uint256,string)
+          handler: handleTrustV1ScoreUpdated
+      file: ./src/trustRegistryV1.ts
+
+  - kind: ethereum
+    name: IntentAttestation
+    network: base
+    source:
+      address: "0x7ad8db6C5f394542E8e9658F86C85cC99Cf6D460"
+      abi: IntentAttestation
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - IntentAttestation
+      abis:
+        - name: IntentAttestation
+          file: ./abis/IntentAttestation.json
+      eventHandlers:
+        - event: AttestationCreated(indexed bytes32,indexed address,string,address,uint256)
+          handler: handleAttestationCreated
+      file: ./src/intentAttestation.ts
+
+  - kind: ethereum
+    name: SettlementCoordinator
+    network: base
+    source:
+      address: "0x6653F385F98752575db3180b9306e2d9644f9Eb1"
+      abi: SettlementCoordinator
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - SettlementProposal
+      abis:
+        - name: SettlementCoordinator
+          file: ./abis/SettlementCoordinator.json
+      eventHandlers:
+        - event: ProposalCreated(indexed bytes32,indexed address,indexed address,uint256)
+          handler: handleProposalCreated
+        - event: ProposalAccepted(indexed bytes32)
+          handler: handleProposalAccepted
+        - event: ProposalExecuted(indexed bytes32,uint256)
+          handler: handleProposalExecuted
+        - event: ProposalRejected(indexed bytes32,string)
+          handler: handleProposalRejected
+        - event: ProposalExpired(indexed bytes32)
+          handler: handleProposalExpired
+      file: ./src/settlementCoordinator.ts
+
+  - kind: ethereum
+    name: SponsorshipAttestation
+    network: base
+    source:
+      address: "0xD6c2edE89Ea71aE19Db2Be848e172b444Ed38f22"
+      abi: SponsorshipAttestation
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - SponsorshipAttestation
+      abis:
+        - name: SponsorshipAttestation
+          file: ./abis/SponsorshipAttestation.json
+      eventHandlers:
+        - event: AttestationPublished(indexed bytes32,indexed address,indexed address,uint256,uint8,string)
+          handler: handleSponsorshipPublished
+        - event: AttestationRevoked(indexed bytes32,indexed address,indexed address)
+          handler: handleSponsorshipRevoked
+      file: ./src/sponsorshipAttestation.ts
+
+  - kind: ethereum
+    name: DisputeArbitration
+    network: base
+    source:
+      address: "0xF61b75E4903fbC81169FeF8b7787C13cB7750601"
+      abi: DisputeArbitration
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - ArbitrationEvent
+      abis:
+        - name: DisputeArbitration
+          file: ./abis/DisputeArbitration.json
+      eventHandlers:
+        - event: DisputeFeeOpened(indexed uint256,uint8,uint8,uint256,address)
+          handler: handleDisputeFeeOpened
+        - event: MutualDisputeFunded(indexed uint256,address,uint256)
+          handler: handleMutualDisputeFunded
+        - event: DisputeFeeResolved(indexed uint256,uint8,uint256)
+          handler: handleDisputeFeeResolved
+        - event: ArbitratorAssigned(indexed uint256,indexed address,uint256)
+          handler: handleArbitratorAssigned
+        - event: ArbitratorBondReturned(indexed uint256,indexed address,uint256)
+          handler: handleArbitratorBondReturned
+        - event: ArbitratorBondSlashed(indexed uint256,indexed address,uint256,string)
+          handler: handleArbitratorBondSlashed
+        - event: ArbitratorFeePaid(indexed uint256,indexed address,uint256)
+          handler: handleArbitratorFeePaid
+        - event: DisputeFallbackTriggered(indexed uint256,string)
+          handler: handleDisputeFallbackTriggered
+      file: ./src/disputeArbitration.ts
+
+  - kind: ethereum
+    name: Handshake
+    network: base
+    source:
+      address: "0x4F5A38Bb746d7E5d49d8fd26CA6beD141Ec2DDb3"
+      abi: Handshake
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Handshake
+        - AgentConnection
+        - ProtocolStats
+      abis:
+        - name: Handshake
+          file: ./abis/Handshake.json
+      eventHandlers:
+        - event: HandshakeSent(indexed uint256,indexed address,indexed address,uint8,address,uint256,string,uint256)
+          handler: handleHandshakeSent
+        - event: NewConnection(indexed address,indexed address,uint256)
+          handler: handleNewConnection
+      file: ./src/handshake.ts
+
+  - kind: ethereum
+    name: VouchingRegistry
+    network: base
+    source:
+      address: "0x94519194Bf17865770faD59eF581feC512Ae99c9"
+      abi: VouchingRegistry
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Vouch
+        - ProtocolStats
+      abis:
+        - name: VouchingRegistry
+          file: ./abis/VouchingRegistry.json
+      eventHandlers:
+        - event: VouchCreated(indexed address,indexed address,uint256,uint256)
+          handler: handleVouchCreated
+        - event: VouchRevoked(indexed address,indexed address,uint256)
+          handler: handleVouchRevoked
+        - event: VouchSlashed(indexed address,indexed address,uint256)
+          handler: handleVouchSlashed
+        - event: AnomalyReported(indexed address)
+          handler: handleAnomalyReported
+      file: ./src/vouchingRegistry.ts
+
+  - kind: ethereum
+    name: CapabilityRegistry
+    network: base
+    source:
+      address: "0x7becb642668B80502dD957A594E1dD0aC414c1a3"
+      abi: CapabilityRegistry
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - CapabilityRoot
+        - AgentCapability
+        - ProtocolStats
+      abis:
+        - name: CapabilityRegistry
+          file: ./abis/CapabilityRegistry.json
+      eventHandlers:
+        - event: RootRegistered(indexed bytes32,string)
+          handler: handleRootRegistered
+        - event: RootStatusUpdated(indexed bytes32,string,bool)
+          handler: handleRootStatusUpdated
+        - event: CapabilityClaimed(indexed address,indexed bytes32,string)
+          handler: handleCapabilityClaimed
+        - event: CapabilityRevoked(indexed address,indexed bytes32,string)
+          handler: handleCapabilityRevoked
+      file: ./src/capabilityRegistry.ts
+
+  - kind: ethereum
+    name: MigrationRegistry
+    network: base
+    source:
+      address: "0xb60B62357b90F254f555f03B162a30E22890e3B5"
+      abi: MigrationRegistry
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - WalletMigration
+        - ProtocolStats
+      abis:
+        - name: MigrationRegistry
+          file: ./abis/MigrationRegistry.json
+      eventHandlers:
+        - event: MigrationRegistered(indexed address,indexed address,indexed address,uint256,uint256,uint256)
+          handler: handleMigrationRegistered
+        - event: TargetApproved(indexed address)
+          handler: handleTargetApproved
+        - event: TargetRevoked(indexed address)
+          handler: handleTargetRevoked
+      file: ./src/migrationRegistry.ts
+
+  - kind: ethereum
+    name: X402Interceptor
+    network: base
+    source:
+      address: "0x47aEbD1d42623e78248f8A44623051bF7B941d8B"
+      abi: X402Interceptor
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - X402Payment
+        - ProtocolStats
+      abis:
+        - name: X402Interceptor
+          file: ./abis/X402Interceptor.json
+      eventHandlers:
+        - event: X402PaymentExecuted(indexed address,uint256,bytes32,string)
+          handler: handleX402PaymentExecuted
+      file: ./src/x402Interceptor.ts
+
+  - kind: ethereum
+    name: WatchtowerRegistry
+    network: base
+    source:
+      address: "0xbC811d1e3c5C5b67CA57df1DFb08847b1c8c458A"
+      abi: WatchtowerRegistry
+      startBlock: 27500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - WatchtowerEvent
+      abis:
+        - name: WatchtowerRegistry
+          file: ./abis/WatchtowerRegistry.json
+      eventHandlers:
+        - event: WatchtowerAuthorized(indexed bytes32,indexed address,indexed address)
+          handler: handleWatchtowerAuthorized
+        - event: WatchtowerRevoked(indexed bytes32)
+          handler: handleWatchtowerRevoked
+        - event: StateRegistered(indexed bytes32,bytes32)
+          handler: handleStateRegistered
+        - event: WatchtowerChallengeSubmitted(indexed bytes32,indexed address)
+          handler: handleWatchtowerChallengeSubmitted
+      file: ./src/watchtowerRegistry.ts
+
+  - kind: ethereum
+    name: ComputeAgreement
+    network: base
+    source:
+      address: "0x0e06afE90aAD3e0D91e217C46d98F049C2528AF7"
+      abi: ComputeAgreement
+      startBlock: 43744860
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - ComputeSession
+        - ComputeUsageReport
+      abis:
+        - name: ComputeAgreement
+          file: ./abis/ComputeAgreement.json
+      eventHandlers:
+        - event: SessionProposed(indexed bytes32,indexed address,indexed address,uint256,uint256,address)
+          handler: handleSessionProposed
+        - event: SessionAccepted(indexed bytes32)
+          handler: handleSessionAccepted
+        - event: SessionStarted(indexed bytes32,uint256)
+          handler: handleSessionStarted
+        - event: UsageReported(indexed bytes32,uint256,uint256)
+          handler: handleUsageReported
+        - event: SessionCompleted(indexed bytes32,uint256,uint256,uint256)
+          handler: handleSessionCompleted
+        - event: SessionDisputed(indexed bytes32,address)
+          handler: handleSessionDisputed
+        - event: SessionCancelled(indexed bytes32)
+          handler: handleSessionCancelled
+        - event: DetailedDisputeResolved(indexed bytes32,uint8,uint256,uint256)
+          handler: handleDisputeResolved
+      file: ./src/computeAgreement.ts
+
+  - kind: ethereum
+    name: SubscriptionAgreement
+    network: base
+    source:
+      address: "0xe1b6D3d0890E09582166EB450a78F6bff038CE5A"
+      abi: SubscriptionAgreement
+      startBlock: 43744860
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - SubscriptionOffering
+        - Subscription
+      abis:
+        - name: SubscriptionAgreement
+          file: ./abis/SubscriptionAgreement.json
+      eventHandlers:
+        - event: OfferingCreated(indexed uint256,indexed address,uint256,uint256,address,bytes32,uint256)
+          handler: handleOfferingCreated
+        - event: OfferingDeactivated(indexed uint256)
+          handler: handleOfferingDeactivated
+        - event: Subscribed(indexed bytes32,indexed uint256,indexed address,uint256,uint256)
+          handler: handleSubscribed
+        - event: Renewed(indexed bytes32,uint256)
+          handler: handleRenewed
+        - event: Expired(indexed bytes32)
+          handler: handleExpired
+        - event: SubscriptionCancelled(indexed bytes32,uint256)
+          handler: handleSubscriptionCancelled
+        - event: ToppedUp(indexed bytes32,uint256,uint256)
+          handler: handleToppedUp
+        - event: SubscriptionDisputed(indexed bytes32,indexed address)
+          handler: handleSubscriptionDisputed
+        - event: DetailedDisputeResolved(indexed bytes32,uint8,uint256,uint256)
+          handler: handleSubscriptionDisputeResolved
+      file: ./src/subscriptionAgreement.ts
+
+  - kind: ethereum
+    name: ARC402RegistryV3
+    network: base
+    source:
+      address: "0x6EafeD4FA103D2De04DDee157e35A8e8df91B6A6"
+      abi: ARC402RegistryV3
+      startBlock: 43744860
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - RegistryV3State
+      abis:
+        - name: ARC402RegistryV3
+          file: ./abis/ARC402RegistryV3.json
+      eventHandlers:
+        - event: ContractsUpdated(string,indexed address,indexed address,indexed address,address)
+          handler: handleContractsUpdated
+        - event: ExtensionSet(indexed bytes32,indexed address)
+          handler: handleExtensionSet
+      file: ./src/registryV3.ts

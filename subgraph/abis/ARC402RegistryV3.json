@@ -1,0 +1,678 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "_policyEngine",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_trustRegistry",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_intentAttestation",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_settlementCoordinator",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_serviceAgreement",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_sessionChannels",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_agentRegistry",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_reputationOracle",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_vouchingRegistry",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_migrationRegistry",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_computeAgreement",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_subscriptionAgreement",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_disputeArbitration",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_disputeModule",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_version",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "acceptOwnership",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "agentRegistry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "computeAgreement",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "disputeArbitration",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "disputeModule",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "extensions",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getContracts",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct ARC402RegistryV3.ProtocolContracts",
+        "components": [
+          {
+            "name": "policyEngine",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "trustRegistry",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "intentAttestation",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "serviceAgreement",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "sessionChannels",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "agentRegistry",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "reputationOracle",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "settlementCoordinator",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "vouchingRegistry",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "migrationRegistry",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "computeAgreement",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "subscriptionAgreement",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "disputeArbitration",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "disputeModule",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getExtension",
+    "inputs": [
+      {
+        "name": "key",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "intentAttestation",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "migrationRegistry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pendingOwner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "policyEngine",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "renounceOwnership",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "reputationOracle",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "serviceAgreement",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "sessionChannels",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setExtension",
+    "inputs": [
+      {
+        "name": "key",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "addr",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "settlementCoordinator",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "subscriptionAgreement",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "transferOwnership",
+    "inputs": [
+      {
+        "name": "newOwner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "trustRegistry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "update",
+    "inputs": [
+      {
+        "name": "contracts",
+        "type": "tuple",
+        "internalType": "struct ARC402RegistryV3.ProtocolContracts",
+        "components": [
+          {
+            "name": "policyEngine",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "trustRegistry",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "intentAttestation",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "serviceAgreement",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "sessionChannels",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "agentRegistry",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "reputationOracle",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "settlementCoordinator",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "vouchingRegistry",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "migrationRegistry",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "computeAgreement",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "subscriptionAgreement",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "disputeArbitration",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "disputeModule",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "_version",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "version",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "vouchingRegistry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "ContractsUpdated",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "policyEngine",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "trustRegistry",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "intentAttestation",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "settlementCoordinator",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ExtensionSet",
+    "inputs": [
+      {
+        "name": "key",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "addr",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OwnershipTransferStarted",
+    "inputs": [
+      {
+        "name": "previousOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OwnershipTransferred",
+    "inputs": [
+      {
+        "name": "previousOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "OwnableInvalidOwner",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "OwnableUnauthorizedAccount",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  }
+]

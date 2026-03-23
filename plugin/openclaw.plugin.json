@@ -1,0 +1,39 @@
+{
+  "id": "arc402",
+  "name": "ARC-402 Protocol",
+  "description": "Agent-to-agent commerce — hire, deliver, compute, subscribe. Governed execution with cryptographic receipts.",
+  "version": "1.0.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "network": {
+        "type": "string",
+        "enum": ["base-mainnet", "base-sepolia"],
+        "default": "base-mainnet"
+      },
+      "walletContractAddress": { "type": "string" },
+      "privateKey": { "type": "string" },
+      "machineKey": { "type": "string" },
+      "computeAgreementAddress": { "type": "string" },
+      "subscriptionAgreementAddress": { "type": "string" },
+      "registryV3Address": { "type": "string" },
+      "endpointHostname": { "type": "string" },
+      "workroom": {
+        "type": "object",
+        "properties": {
+          "enabled": { "type": "boolean", "default": false },
+          "compute": { "type": "boolean", "default": false },
+          "policyFile": { "type": "string" }
+        }
+      },
+      "daemon": {
+        "type": "object",
+        "properties": {
+          "autoAcceptHire": { "type": "boolean", "default": false },
+          "autoAcceptCompute": { "type": "boolean", "default": false },
+          "maxConcurrentJobs": { "type": "number", "default": 3 }
+        }
+      }
+    }
+  }
+}

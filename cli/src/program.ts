@@ -34,6 +34,7 @@ import { registerArenaCommands } from "./commands/arena";
 import { registerWatchCommand } from "./commands/watch";
 import { registerBackupCommand } from "./commands/backup";
 import { registerComputeCommands } from "./commands/compute";
+import { registerTunnelCommands } from "./commands/tunnel";
 import reputation from "./commands/reputation.js";
 import policy from "./commands/policy.js";
 
@@ -82,6 +83,7 @@ export function createProgram(): Command {
   registerWatchCommand(program);
   registerBackupCommand(program);
   registerComputeCommands(program);
+  registerTunnelCommands(program);
   program.addCommand(reputation);
   program.addCommand(policy);
 

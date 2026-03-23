@@ -58,6 +58,7 @@ export interface Arc402Config {
   };
   deviceId?: string;        // UUID identifying the device this config was created on
   lastCliVersion?: string;  // Last CLI version that wrote this config (for upgrade detection)
+  endpoint?: string;        // Agent's public endpoint URL (e.g. https://myagent.arc402.xyz)
 }
 
 const CONFIG_DIR = path.join(os.homedir(), ".arc402");

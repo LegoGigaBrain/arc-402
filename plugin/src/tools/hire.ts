@@ -168,7 +168,6 @@ export interface ToolResult {
 export interface PluginApi {
   registerTool(def: ToolDefinition): void;
   registerHttpRoute(def: HttpRouteDefinition): void;
-  registerHook(def: HookDefinition): void;
   getConfig<T = Record<string, unknown>>(): T;
 }
 
@@ -176,11 +175,6 @@ export interface HttpRouteDefinition {
   method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
   path: string;
   handler: (req: HttpRequest, res: HttpResponse) => Promise<void> | void;
-}
-
-export interface HookDefinition {
-  event: string;
-  handler: (payload: unknown) => Promise<void> | void;
 }
 
 export interface HttpRequest {

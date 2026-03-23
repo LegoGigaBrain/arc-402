@@ -9,9 +9,23 @@
  * belongs exclusively to the workroom daemon running inside the governed Docker
  * container. The Cloudflare tunnel points to workroom:4402, not this host.
  *
- * Install: openclaw plugins install @arc402/openclaw-plugin
+ * Install: openclaw plugins install @arc402/arc402
  */
-import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+// Inlined from openclaw/plugin-sdk/plugin-entry to avoid runtime peer dependency issues.
+// OpenClaw is not on npm — inlining the single function used avoids "Cannot find module" on install.
+type PluginKind = "tool" | "provider" | "memory" | "channel" | "command" | "service";
+function definePluginEntry(def: {
+  id: string;
+  name: string;
+  description?: string;
+  kind?: PluginKind;
+  configSchema?: unknown;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  register: (api: any) => void;
+}) {
+  const { id, name, description, kind, configSchema, register } = def;
+  return { id, name, description, ...(kind ? { kind } : {}), configSchema, register };
+}
 import { resolveConfig } from "./config.js";
 import type { PluginConfig } from "./config.js";
 
@@ -30,7 +44,8 @@ import { registerArenaTools } from "./tools/arena.js";
 import { registerChannelTools } from "./tools/channel.js";
 import { registerSystemTools } from "./tools/system.js";
 
-import { registerHooks } from "./hooks/index.js";
+// Hooks disabled: OpenClaw plugin API does not support registerHook()
+// import { registerHooks } from "./hooks/index.js";
 
 export default definePluginEntry({
   id: "arc402",
@@ -39,7 +54,7 @@ export default definePluginEntry({
 
   register(api) {
     // Lazy config resolution — reads from openclaw.plugin.json configSchema at runtime
-    const getConfig = () => resolveConfig(api.getConfig<PluginConfig>());
+    const getConfig = () => resolveConfig((api.getConfig as <T>() => T)<PluginConfig>());
 
     // ── Agent Tools ────────────────────────────────────────────────────────────
     // arc402_hire, arc402_accept, arc402_deliver, arc402_verify, arc402_cancel
@@ -92,7 +107,7 @@ export default definePluginEntry({
     // ── Event Hooks ────────────────────────────────────────────────────────────
     // arc402:hire_received, arc402:delivery_received, arc402:dispute_raised,
     // arc402:compute_event, arc402:hire_accepted, arc402:payment_released
-    registerHooks(api, getConfig);
+    // registerHooks(api, getConfig); // Disabled: registerHook not in OpenClaw plugin API
 
     // ── SKILL.md is bundled in skill/ and auto-discovered by OpenClaw ──────────
   },

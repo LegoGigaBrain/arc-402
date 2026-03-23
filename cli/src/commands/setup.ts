@@ -517,22 +517,85 @@ export function registerSetupCommands(program: Command): void {
       }
 
       if (!tunnelAlreadyRunning) {
-        const cfStartSpin = startSpinner("Starting cloudflared tunnel in background…");
         const token = fs.readFileSync(TUNNEL_TOKEN_PATH, "utf-8").trim();
-        const cfChild = spawn("cloudflared", ["tunnel", "run", "--token", token], {
-          detached: true,
-          stdio: "ignore",
-        });
-        cfChild.unref();
-        fs.writeFileSync(TUNNEL_PID_PATH, String(cfChild.pid));
-        cfStartSpin.update("Waiting 5s for tunnel to connect…");
-        await sleep(5000);
-        try {
-          process.kill(cfChild.pid!, 0);
-          cfStartSpin.succeed(`Tunnel running (PID ${cfChild.pid})`);
-        } catch {
-          cfStartSpin.fail("Tunnel process died — run 'arc402 tunnel start --foreground' to see logs");
-          process.exit(1);
+        const cfStartSpin = startSpinner("Installing tunnel as a persistent service…");
+
+        // Install as system service so it survives gateway restarts and reboots
+        const platform = os.platform();
+        let serviceInstalled = false;
+
+        if (platform === "linux") {
+          try {
+            const cloudflaredPath = execSync("which cloudflared", { stdio: "pipe" }).toString().trim();
+            const serviceDir = path.join(os.homedir(), ".config", "systemd", "user");
+            const servicePath = path.join(serviceDir, "arc402-tunnel.service");
+            fs.mkdirSync(serviceDir, { recursive: true });
+            fs.writeFileSync(servicePath, [
+              "[Unit]",
+              "Description=ARC-402 Cloudflare Tunnel",
+              "After=network-online.target",
+              "Wants=network-online.target",
+              "",
+              "[Service]",
+              "Type=simple",
+              `ExecStart=${cloudflaredPath} tunnel run --token ${token}`,
+              "Restart=on-failure",
+              "RestartSec=5s",
+              "",
+              "[Install]",
+              "WantedBy=default.target",
+            ].join("\n"));
+            execSync("systemctl --user daemon-reload", { stdio: "pipe" });
+            execSync("systemctl --user enable arc402-tunnel.service", { stdio: "pipe" });
+            execSync("systemctl --user start arc402-tunnel.service", { stdio: "pipe" });
+            serviceInstalled = true;
+          } catch { /* fall through to background */ }
+        } else if (platform === "darwin") {
+          try {
+            const cloudflaredPath = execSync("which cloudflared", { stdio: "pipe" }).toString().trim();
+            const plistDir = path.join(os.homedir(), "Library", "LaunchAgents");
+            const plistPath = path.join(plistDir, "xyz.arc402.tunnel.plist");
+            fs.mkdirSync(plistDir, { recursive: true });
+            fs.writeFileSync(plistPath, [
+              '<?xml version="1.0" encoding="UTF-8"?>',
+              '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+              '<plist version="1.0"><dict>',
+              "  <key>Label</key><string>xyz.arc402.tunnel</string>",
+              "  <key>ProgramArguments</key>",
+              "  <array>",
+              `    <string>${cloudflaredPath}</string>`,
+              "    <string>tunnel</string><string>run</string><string>--token</string>",
+              `    <string>${token}</string>`,
+              "  </array>",
+              "  <key>RunAtLoad</key><true/>",
+              "  <key>KeepAlive</key><true/>",
+              "</dict></plist>",
+            ].join("\n"));
+            execSync(`launchctl load -w "${plistPath}"`, { stdio: "pipe" });
+            serviceInstalled = true;
+          } catch { /* fall through to background */ }
+        }
+
+        if (serviceInstalled) {
+          await sleep(3000);
+          cfStartSpin.succeed("Tunnel installed as a persistent service — survives reboots and gateway restarts");
+        } else {
+          // Fallback: plain background process
+          cfStartSpin.update("Starting cloudflared in background (service install failed)…");
+          const cfChild = spawn("cloudflared", ["tunnel", "run", "--token", token], {
+            detached: true,
+            stdio: "ignore",
+          });
+          cfChild.unref();
+          fs.writeFileSync(TUNNEL_PID_PATH, String(cfChild.pid));
+          await sleep(5000);
+          try {
+            process.kill(cfChild.pid!, 0);
+            cfStartSpin.succeed(`Tunnel running (PID ${cfChild.pid}) — run 'arc402 tunnel start --service' to make it persistent`);
+          } catch {
+            cfStartSpin.fail("Tunnel process died — run 'arc402 tunnel start --foreground' to see logs");
+            process.exit(1);
+          }
         }
       }
 

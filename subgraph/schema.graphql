@@ -322,10 +322,10 @@ type SubscriptionOffering @entity(immutable: false) {
   maxSubscribers: BigInt!
   subscriberCount: BigInt!
   createdAt: BigInt!
-  subscriptions: [Subscription!]! @derivedFrom(field: "offering")
+  subscriptions: [AgentSubscription!]! @derivedFrom(field: "offering")
 }
 
-type Subscription @entity(immutable: false) {
+type AgentSubscription @entity(immutable: false) {
   id: ID!                          # keccak256(subscriber, offeringId)
   subscriber: Bytes!
   offering: SubscriptionOffering!

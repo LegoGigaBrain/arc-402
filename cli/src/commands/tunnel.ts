@@ -143,7 +143,8 @@ export function registerTunnelCommands(program: Command): void {
     .command("start")
     .description("Start the Cloudflare Tunnel (runs cloudflared in background)")
     .option("--foreground", "Run in foreground instead of background")
-    .action(async (opts: { foreground?: boolean }) => {
+    .option("--service", "Install as a persistent system service (survives reboots and gateway restarts)")
+    .action(async (opts: { foreground?: boolean; service?: boolean }) => {
       if (!fs.existsSync(TUNNEL_TOKEN_PATH)) {
         console.error(c.red("✗ No tunnel token found. Run 'arc402 tunnel setup' first."));
         process.exit(1);
@@ -156,6 +157,20 @@ export function registerTunnelCommands(program: Command): void {
       } catch {
         console.error(c.red("✗ cloudflared not installed. Install it and try again."));
         process.exit(1);
+      }
+
+      if (opts.service) {
+        // Install as system service
+        const platform = os.platform();
+        if (platform === "linux") {
+          await installSystemdService(token);
+        } else if (platform === "darwin") {
+          await installLaunchdService(token);
+        } else {
+          console.error(c.red(`✗ Service install not supported on ${platform}. Use --foreground or default background mode.`));
+          process.exit(1);
+        }
+        return;
       }
 
       if (opts.foreground) {
@@ -179,12 +194,105 @@ export function registerTunnelCommands(program: Command): void {
         try {
           process.kill(child.pid!, 0);
           console.log(c.green(`✓ Tunnel running (PID ${child.pid})`));
+          console.log(c.dim("  Note: tunnel stops when the shell exits. Run with --service to make it persistent."));
         } catch {
           console.error(c.red("✗ Tunnel process died — run with --foreground to see logs"));
           process.exit(1);
         }
       }
     });
+
+  // ── Internal: install systemd service (Linux) ─────────────────────────
+  async function installSystemdService(token: string): Promise<void> {
+    const cloudflaredPath = execSync("which cloudflared", { stdio: "pipe" }).toString().trim();
+    const serviceDir = path.join(os.homedir(), ".config", "systemd", "user");
+    const servicePath = path.join(serviceDir, "arc402-tunnel.service");
+
+    const unit = `[Unit]
+Description=ARC-402 Cloudflare Tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${cloudflaredPath} tunnel run --token ${token}
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+`;
+
+    fs.mkdirSync(serviceDir, { recursive: true });
+    fs.writeFileSync(servicePath, unit);
+    console.log(c.green(`✓ Service file written: ${servicePath}`));
+
+    try {
+      execSync("systemctl --user daemon-reload", { stdio: "pipe" });
+      execSync("systemctl --user enable arc402-tunnel.service", { stdio: "pipe" });
+      execSync("systemctl --user start arc402-tunnel.service", { stdio: "pipe" });
+      console.log(c.green("✓ arc402-tunnel.service enabled and started"));
+      console.log(c.green("✓ Tunnel will auto-start on login and survive gateway restarts"));
+
+      // Verify
+      await new Promise((r) => setTimeout(r, 2000));
+      const status = execSync("systemctl --user is-active arc402-tunnel.service", { stdio: "pipe" }).toString().trim();
+      if (status === "active") {
+        console.log(c.green("✓ Service is active"));
+      } else {
+        console.log(c.yellow(`⚠ Service status: ${status}. Check: journalctl --user -u arc402-tunnel.service`));
+      }
+    } catch (e) {
+      console.error(c.red("✗ Failed to enable service. You may need to run: loginctl enable-linger " + os.userInfo().username));
+      console.error(c.dim("  Then retry: arc402 tunnel start --service"));
+    }
+  }
+
+  // ── Internal: install launchd plist (macOS) ───────────────────────────
+  async function installLaunchdService(token: string): Promise<void> {
+    const cloudflaredPath = execSync("which cloudflared", { stdio: "pipe" }).toString().trim();
+    const plistDir = path.join(os.homedir(), "Library", "LaunchAgents");
+    const plistPath = path.join(plistDir, "xyz.arc402.tunnel.plist");
+
+    const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>xyz.arc402.tunnel</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${cloudflaredPath}</string>
+    <string>tunnel</string>
+    <string>run</string>
+    <string>--token</string>
+    <string>${token}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${path.join(ARC402_DIR, "tunnel.log")}</string>
+  <key>StandardErrorPath</key>
+  <string>${path.join(ARC402_DIR, "tunnel.log")}</string>
+</dict>
+</plist>`;
+
+    fs.mkdirSync(plistDir, { recursive: true });
+    fs.writeFileSync(plistPath, plist);
+    console.log(c.green(`✓ Plist written: ${plistPath}`));
+
+    try {
+      execSync(`launchctl load -w "${plistPath}"`, { stdio: "pipe" });
+      console.log(c.green("✓ xyz.arc402.tunnel loaded and enabled"));
+      console.log(c.green("✓ Tunnel will auto-start on login and survive restarts"));
+    } catch (e) {
+      console.error(c.red("✗ Failed to load plist. Try: launchctl load -w " + plistPath));
+    }
+  }
 
   // ── arc402 tunnel stop ───────────────────────────────────────────────
   tunnel

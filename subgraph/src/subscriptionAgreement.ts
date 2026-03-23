@@ -10,7 +10,7 @@ import {
   SubscriptionDisputed,
   DetailedDisputeResolved,
 } from "../generated/SubscriptionAgreement/SubscriptionAgreement"
-import { SubscriptionOffering, Subscription } from "../generated/schema"
+import { SubscriptionOffering, AgentSubscription } from "../generated/schema"
 
 export function handleOfferingCreated(event: OfferingCreated): void {
   const id = event.params.offeringId.toString()
@@ -44,7 +44,7 @@ export function handleSubscribed(event: Subscribed): void {
   offering.save()
 
   const id = event.params.subscriptionId.toHex()
-  let sub = new Subscription(id)
+  let sub = new AgentSubscription(id)
   sub.subscriber = event.params.subscriber
   sub.offering = offeringId
   sub.startedAt = event.block.timestamp
@@ -58,7 +58,7 @@ export function handleSubscribed(event: Subscribed): void {
 
 export function handleRenewed(event: Renewed): void {
   const id = event.params.subscriptionId.toHex()
-  let sub = Subscription.load(id)
+  let sub = AgentSubscription.load(id)
   if (!sub) return
   sub.currentPeriodEnd = event.params.newPeriodEnd
 
@@ -71,7 +71,7 @@ export function handleRenewed(event: Renewed): void {
 
 export function handleExpired(event: Expired): void {
   const id = event.params.subscriptionId.toHex()
-  let sub = Subscription.load(id)
+  let sub = AgentSubscription.load(id)
   if (!sub) return
   sub.active = false
   sub.save()
@@ -85,7 +85,7 @@ export function handleExpired(event: Expired): void {
 
 export function handleSubscriptionCancelled(event: SubscriptionCancelled): void {
   const id = event.params.subscriptionId.toHex()
-  let sub = Subscription.load(id)
+  let sub = AgentSubscription.load(id)
   if (!sub) return
   sub.active = false
   sub.cancelled = true
@@ -100,7 +100,7 @@ export function handleSubscriptionCancelled(event: SubscriptionCancelled): void 
 
 export function handleToppedUp(event: ToppedUp): void {
   const id = event.params.subscriptionId.toHex()
-  let sub = Subscription.load(id)
+  let sub = AgentSubscription.load(id)
   if (!sub) return
   sub.deposited = event.params.newDeposited
   sub.save()
@@ -113,7 +113,7 @@ export function handleSubscriptionDisputed(event: SubscriptionDisputed): void {
 
 export function handleSubscriptionDisputeResolved(event: DetailedDisputeResolved): void {
   const id = event.params.subscriptionId.toHex()
-  let sub = Subscription.load(id)
+  let sub = AgentSubscription.load(id)
   if (!sub) return
   // outcome 3 = HUMAN_REVIEW_REQUIRED — stay as-is
   if (event.params.outcome != 3) {

@@ -124,6 +124,13 @@ contract SubscriptionAgreement is ReentrancyGuard {
     /// @notice DisputeArbitration contract (optional). address(0) = owner-only disputes.
     address public disputeArbitration;
 
+    /// @notice Protocol fee in basis points (max 100 = 1%). Default: 20.
+    uint256 public protocolFeeBps = 20;
+    /// @notice MAX_PROTOCOL_FEE_BPS Protocol fee ceiling.
+    uint256 public constant MAX_PROTOCOL_FEE_BPS = 100;
+    /// @notice Protocol treasury — receives protocol fees. address(0) = fees burned.
+    address public protocolTreasury;
+
     /// @notice Arbitrators approved for disputes.
     mapping(address => bool) public approvedArbitrators;
 
@@ -168,6 +175,8 @@ contract SubscriptionAgreement is ReentrancyGuard {
         uint256 subscriberAmount
     );
     event Withdrawn(address indexed recipient, address indexed token, uint256 amount);
+    event ProtocolFeeUpdated(uint256 newFeeBps);
+    event ProtocolTreasuryUpdated(address newTreasury);
     event OwnershipTransferStarted(address indexed currentOwner, address indexed newOwner);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     event DisputeArbitrationUpdated(address indexed da);
@@ -238,6 +247,17 @@ contract SubscriptionAgreement is ReentrancyGuard {
     function setDisputeArbitration(address da) external onlyOwner {
         disputeArbitration = da;
         emit DisputeArbitrationUpdated(da);
+    }
+
+    function setProtocolFee(uint256 feeBps) external onlyOwner {
+        require(feeBps <= MAX_PROTOCOL_FEE_BPS, 'Fee exceeds ceiling');
+        protocolFeeBps = feeBps;
+        emit ProtocolFeeUpdated(feeBps);
+    }
+
+    function setProtocolTreasury(address treasury) external onlyOwner {
+        protocolTreasury = treasury;
+        emit ProtocolTreasuryUpdated(treasury);
     }
 
     /// @notice Approve or revoke an arbitrator.
@@ -368,7 +388,12 @@ contract SubscriptionAgreement is ReentrancyGuard {
         s.disputeOpenedAt = 0;
 
         // Credit first period to provider (pull-payment)
-        pendingWithdrawals[o.provider][o.token] += price;
+        {
+            uint256 fee = protocolFeeBps > 0 && protocolTreasury != address(0)
+                ? (price * protocolFeeBps) / 10_000 : 0;
+            if (fee > 0) pendingWithdrawals[protocolTreasury][o.token] += fee;
+            pendingWithdrawals[o.provider][o.token] += price - fee;
+        }
 
         o.subscriberCount += 1;
 
@@ -401,7 +426,12 @@ contract SubscriptionAgreement is ReentrancyGuard {
             s.currentPeriodEnd = (block.timestamp > s.currentPeriodEnd
                 ? block.timestamp
                 : s.currentPeriodEnd) + period;
-            pendingWithdrawals[o.provider][o.token] += price;
+            {
+                uint256 fee = protocolFeeBps > 0 && protocolTreasury != address(0)
+                    ? (price * protocolFeeBps) / 10_000 : 0;
+                if (fee > 0) pendingWithdrawals[protocolTreasury][o.token] += fee;
+                pendingWithdrawals[o.provider][o.token] += price - fee;
+            }
             emit Renewed(subscriptionId, s.currentPeriodEnd);
         } else {
             // Deposit exhausted — expire subscription

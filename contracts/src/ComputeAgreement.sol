@@ -122,6 +122,13 @@ contract ComputeAgreement {
     ///         Updatable by owner. If address(0), disputes resolved by owner only.
     address public disputeArbitration;
 
+    /// @notice Protocol fee in basis points (max 100 = 1%). Default: 15.
+    uint256 public protocolFeeBps = 15;
+    /// @notice MAX_PROTOCOL_FEE_BPS Protocol fee ceiling.
+    uint256 public constant MAX_PROTOCOL_FEE_BPS = 100;
+    /// @notice Protocol treasury — receives protocol fees. address(0) = fees burned.
+    address public protocolTreasury;
+
     /// @notice Arbitrators approved for nomination in disputed sessions.
     mapping(address => bool) public approvedArbitrators;
 
@@ -170,6 +177,8 @@ contract ComputeAgreement {
         uint256 clientAmount
     );
     event Withdrawn(address indexed recipient, address indexed token, uint256 amount);
+    event ProtocolFeeUpdated(uint256 newFeeBps);
+    event ProtocolTreasuryUpdated(address newTreasury);
     event OwnershipTransferStarted(address indexed currentOwner, address indexed newOwner);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     event DisputeArbitrationUpdated(address indexed da);
@@ -239,6 +248,17 @@ contract ComputeAgreement {
     function setDisputeArbitration(address da) external onlyOwner {
         disputeArbitration = da;
         emit DisputeArbitrationUpdated(da);
+    }
+
+    function setProtocolFee(uint256 feeBps) external onlyOwner {
+        require(feeBps <= MAX_PROTOCOL_FEE_BPS, 'Fee exceeds ceiling');
+        protocolFeeBps = feeBps;
+        emit ProtocolFeeUpdated(feeBps);
+    }
+
+    function setProtocolTreasury(address treasury) external onlyOwner {
+        protocolTreasury = treasury;
+        emit ProtocolTreasuryUpdated(treasury);
     }
 
     /// @notice Approve or revoke an arbitrator for nomination.
@@ -409,8 +429,13 @@ contract ComputeAgreement {
         uint256 refund = deposit - cost;
 
         // CA-1: credit balances instead of push-transfers
-        if (cost > 0)   pendingWithdrawals[s.provider][tok] += cost;
-        if (refund > 0) pendingWithdrawals[s.client][tok]   += refund;
+        if (cost > 0) {
+            uint256 fee = protocolFeeBps > 0 && protocolTreasury != address(0)
+                ? (cost * protocolFeeBps) / 10_000 : 0;
+            if (fee > 0) pendingWithdrawals[protocolTreasury][tok] += fee;
+            pendingWithdrawals[s.provider][tok] += cost - fee;
+        }
+        if (refund > 0) pendingWithdrawals[s.client][tok] += refund;
 
         emit SessionCompleted(sessionId, s.consumedMinutes, cost, refund);
     }
@@ -500,7 +525,12 @@ contract ComputeAgreement {
         s.endedAt = block.timestamp;
 
         address tok = s.token;
-        if (providerAward > 0) pendingWithdrawals[s.provider][tok] += providerAward;
+        if (providerAward > 0) {
+            uint256 fee = protocolFeeBps > 0 && protocolTreasury != address(0)
+                ? (providerAward * protocolFeeBps) / 10_000 : 0;
+            if (fee > 0) pendingWithdrawals[protocolTreasury][tok] += fee;
+            pendingWithdrawals[s.provider][tok] += providerAward - fee;
+        }
         if (clientAward   > 0) pendingWithdrawals[s.client][tok]   += clientAward;
 
         // Remainder (from SPLIT under-allocation) goes to client

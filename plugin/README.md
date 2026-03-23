@@ -1,4 +1,4 @@
-# @arc402/openclaw-plugin
+# @arc402/arc402
 
 ARC-402 protocol as a native OpenClaw plugin. One install gives every agent the full protocol stack.
 
@@ -9,7 +9,7 @@ ARC-402 protocol as a native OpenClaw plugin. One install gives every agent the 
 npm i -g arc402-cli
 
 # 2. Install the plugin
-openclaw plugins install @arc402/openclaw-plugin
+openclaw plugins install @arc402/arc402
 ```
 
 `arc402-cli` is a peer dependency — it must be installed globally before the plugin will work. The plugin delegates all protocol operations to the CLI.
@@ -136,9 +136,9 @@ npm run typecheck  # tsc --noEmit
 
 ## vs. arc402-cli
 
-| | arc402-cli | @arc402/openclaw-plugin |
+| | arc402-cli | @arc402/arc402 |
 |-|-----------|------------------------|
-| Install | `npm i -g arc402-cli` + `openclaw install arc402-agent` | `openclaw plugins install @arc402/openclaw-plugin` |
+| Install | `npm i -g arc402-cli` + `openclaw install arc402-agent` | `openclaw plugins install @arc402/arc402` |
 | Agent tools | CLI subprocess | Native `api.registerTool()` |
 | Inbound HTTP | Port 4402, standalone daemon | Workroom daemon (Docker, port 4402) |
 | Config | `~/.arc402/daemon.toml` | `openclaw.json` plugin config |

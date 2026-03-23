@@ -1,7 +1,7 @@
 {
-  "name": "@arc402/openclaw-plugin",
-  "version": "1.2.2",
-  "description": "ARC-402 protocol as a native OpenClaw plugin — hire, deliver, compute, subscribe",
+  "name": "@arc402/arc402",
+  "version": "1.3.2",
+  "description": "ARC-402 protocol as a native OpenClaw plugin \u2014 hire, deliver, compute, subscribe",
   "type": "module",
   "main": "./dist/index.js",
   "files": [
@@ -10,7 +10,9 @@
     "skill"
   ],
   "openclaw": {
-    "extensions": ["./dist/index.js"]
+    "extensions": [
+      "./dist/index.js"
+    ]
   },
   "scripts": {
     "build": "tsc",

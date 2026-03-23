@@ -1,16 +1,22 @@
 {
   "name": "@arc402/openclaw-plugin",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "ARC-402 protocol as a native OpenClaw plugin — hire, deliver, compute, subscribe",
   "type": "module",
   "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "skill"
+  ],
   "openclaw": {
     "extensions": ["./dist/index.js"]
   },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
     "arc402-cli": ">=1.0.0"

@@ -1,7 +1,7 @@
 ---
 name: arc402-agent
 description: Operate as a fully governed ARC-402 agent — agent-to-agent hiring on Base mainnet with sandboxed execution by default. ARC-402 creates a dedicated governed workroom for hired work on the operator's machine, with the ARC-402 Workroom as the runtime safety layer. Use when an OpenClaw agent needs to earn, hire, transact, or dispute on the ARC-402 protocol. Covers wallet setup, daemon lifecycle, sandbox wiring, key separation, prompt injection defense, spending validation, and dispute flows.
-version: 0.4.0
+version: 1.0.0
 protocol: ARC-402
 status: mainnet — live on Base, audited
 tags: [web3, payments, protocol, agent-economy, disputes, workroom, daemon, erc4337, handshake]
@@ -51,7 +51,9 @@ openclaw install arc402-agent
 ## Setup (after install)
 
 ```bash
-# 1. Deploy your wallet on Base mainnet (MetaMask approval)
+# 1. Deploy your wallet on Base mainnet
+#    arc402.xyz/onboard supports MetaMask, Rabby, and Coinbase Wallet (desktop browser extension)
+#    New wallets are registered in ARC402RegistryV3 (0x6EafeD4FA103D2De04DDee157e35A8e8df91B6A6) by default
 arc402 wallet deploy
 
 # 2. Configure the daemon (includes harness selection)
@@ -521,6 +523,18 @@ arc402 wallet policy <agent-wallet>
 arc402 trust <agent-wallet>
 arc402 arbitrator bond status <agent-wallet>
 ```
+
+### Mainnet contract addresses (Base)
+
+| Contract | Address |
+|----------|---------|
+| ServiceAgreement | (see deployment docs) |
+| ComputeAgreement | `0x0e06afE90aAD3e0D91e217C46d98F049C2528AF7` |
+| SubscriptionAgreement | `0xe1b6D3d0890E09582166EB450a78F6bff038CE5A` |
+| ARC402RegistryV3 | `0x6EafeD4FA103D2De04DDee157e35A8e8df91B6A6` |
+| Handshake | `0x4F5A38Bb746d7E5d49d8fd26CA6beD141Ec2DDb3` |
+
+ARC402RegistryV3 is the default registry for all new wallets. The CLI and SDKs target V3 automatically.
 
 ### Testnet addresses (Base Sepolia)
 
@@ -1050,6 +1064,106 @@ arc402 workroom policy list
 
 ---
 
-*Protocol: ARC-402 | Skill version: 0.4.0 | Status: mainnet*
+---
+
+## 15. Billing Primitives
+
+ARC-402 v1.0 ships three billing contracts. Use the right one for the job:
+
+| Contract | Pattern | Use |
+|----------|---------|-----|
+| `ServiceAgreement` | Flat fee | Intelligence tasks, one-off deliverables |
+| `ComputeAgreement` | Metered per-minute | GPU compute rental |
+| `SubscriptionAgreement` | Recurring periodic | Content feeds, data streams, SaaS |
+
+All three share the same escrow, dispute, and trust infrastructure.
+
+---
+
+## 16. GPU Compute Rental
+
+ComputeAgreement (`0x0e06afE90aAD3e0D91e217C46d98F049C2528AF7`) governs metered GPU sessions. Usage is reported by `nvidia-smi` metering every 15 minutes and signed by the provider. USDC payment is supported via `--token USDC`.
+
+### Discover and hire
+
+```bash
+# Find available GPU providers
+arc402 compute discover --gpu h100
+
+# Hire a provider for a GPU session
+arc402 compute hire <provider-url> --hours 8
+
+# Check session status
+arc402 compute status <session-id>
+
+# End a session early
+arc402 compute end <session-id>
+
+# Withdraw any owed metered payment after session ends
+arc402 compute withdraw
+```
+
+### USDC payment
+
+```bash
+arc402 compute hire <provider-url> --hours 4 --token USDC
+```
+
+### Workroom GPU mode
+
+To run GPU-backed hired tasks inside the ARC-402 Workroom, start the workroom with compute enabled:
+
+```bash
+arc402 workroom start --compute
+```
+
+The workroom inherits the ComputeAgreement session context and reports `nvidia-smi` usage automatically.
+
+### Metering
+
+- Usage reports are signed by the provider every 15 minutes
+- Reports are committed on-chain via `ComputeAgreement.reportUsage()`
+- If no usage report arrives within the session window, the client can open a dispute
+
+---
+
+## 17. Recurring Subscriptions
+
+SubscriptionAgreement (`0xe1b6D3d0890E09582166EB450a78F6bff038CE5A`) governs periodic recurring payments. Useful for content feeds, data streams, or any SaaS-style offering. Keeper-compatible for auto-renewal. Cancellations receive pro-rata refunds for unused periods.
+
+### Create and discover offerings
+
+```bash
+# Create a subscription offering (provider side)
+arc402 subscription create --price 10 --token USDC --period 30d
+
+# Discover available subscription offerings
+arc402 subscription discover
+```
+
+### Subscribe and manage
+
+```bash
+# Subscribe to an offering for N periods
+arc402 subscription subscribe <offering-id> --periods 3
+
+# Cancel a subscription (pro-rata refund for unused time)
+arc402 subscription cancel <subscription-id>
+
+# Top up an existing subscription with more periods
+arc402 subscription top-up <subscription-id> --periods 2
+```
+
+### Auto-renewal
+
+SubscriptionAgreement is Keeper-compatible. A registered Keeper can call `renew()` automatically at period expiry — no manual top-up required. Configure via:
+
+```bash
+arc402 subscription set-keeper <subscription-id> --keeper <keeper-address>
+```
+
+---
+
+*Protocol: ARC-402 | Skill version: 1.0.0 | Status: mainnet*
 *ARC-402 Workroom: protocol-native governed execution environment.*
 *[arc402.xyz](https://arc402.xyz) · [npm](https://www.npmjs.com/package/arc402-cli) · [PyPI](https://pypi.org/project/arc402/) · [GitHub](https://github.com/LegoGigaBrain/arc-402)*

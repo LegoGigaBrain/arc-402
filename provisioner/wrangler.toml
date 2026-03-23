@@ -1,0 +1,16 @@
+name = "arc402-provisioner"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+CF_ACCOUNT_ID = "c7fe113d3651eba09a92c8a3cb8619bb"
+CF_ZONE_ID = "69161b69f1fde206874f69a2b9b21033"
+
+# Set CF_API_TOKEN as a secret:
+#   npx wrangler secret put CF_API_TOKEN
+# Then enter: cfut_WqFmTeAyfD2P4mWpep3JlF2z0NpUdQCiTPljVN8x10dbb9cf
+
+[[routes]]
+pattern = "api.arc402.xyz/*"
+zone_name = "arc402.xyz"

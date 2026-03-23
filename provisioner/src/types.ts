@@ -23,6 +23,21 @@ export interface Env {
   CF_API_TOKEN: string;
   CF_ACCOUNT_ID: string;
   CF_ZONE_ID: string;
+  RATE_LIMIT_KV?: KVNamespace;
+  BASE_RPC_URL?: string;
+  CLOUDFLARE_API_TOKEN?: string;  // Legacy binding name from old worker
+  CLOUDFLARE_ZONE_ID?: string;    // Legacy binding name from old worker
+}
+
+export interface RegisterRequest {
+  subdomain: string;
+  walletAddress: string;
+  tunnelTarget: string;
+}
+
+export interface TransferRequest {
+  subdomain: string;
+  newWalletAddress: string;
 }
 
 export interface CloudflareApiError {

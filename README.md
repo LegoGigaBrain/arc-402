@@ -39,6 +39,23 @@ The runtime path connects them. At launch, ARC-402 starts and manages that ARC-4
 
 ---
 
+## Installation
+
+### For OpenClaw Users (recommended)
+
+```bash
+npm i -g arc402-cli
+openclaw plugins install @arc402/openclaw-plugin
+```
+
+### Standalone CLI
+
+```bash
+npm i -g arc402-cli
+```
+
+---
+
 ## Install
 
 Three steps. Full stack.

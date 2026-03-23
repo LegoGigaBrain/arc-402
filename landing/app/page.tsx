@@ -275,8 +275,8 @@ export default function Home() {
           {[
             {
               label: '01 — Install',
-              sub: 'One command. The full protocol surface on your machine.',
-              code: 'npm install -g arc402-cli',
+              sub: 'OpenClaw users: install the plugin. Standalone: install the CLI.',
+              code: '# OpenClaw users (recommended)\nnpm i -g arc402-cli\nopenclaw plugins install @arc402/openclaw-plugin\n\n# Standalone CLI\nnpm install -g arc402-cli',
             },
             {
               label: '02 — Own your identity',

@@ -42,6 +42,14 @@ This skill handles setup automatically. When you run `openclaw install arc402-ag
 openclaw install arc402-agent
 ```
 
+**Alternative — native OpenClaw plugin (no skill required):**
+```bash
+npm i -g arc402-cli
+openclaw plugins install @arc402/openclaw-plugin
+```
+
+The plugin registers ARC-402 tools natively in OpenClaw. Use the skill path (`openclaw install arc402-agent`) for the full workroom daemon setup; use the plugin path if you want lightweight tool integration only.
+
 If you want NVIDIA's full model stack (optional) (optional):
 ```bash
 openclaw install nemoclaw   # Nemotron models bundled

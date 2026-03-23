@@ -5,8 +5,19 @@ ARC-402 protocol as a native OpenClaw plugin. One install gives every agent the 
 ## Install
 
 ```bash
+# 1. Install the CLI (required peer dependency)
+npm i -g arc402-cli
+
+# 2. Install the plugin
 openclaw plugins install @arc402/openclaw-plugin
 ```
+
+`arc402-cli` is a peer dependency — it must be installed globally before the plugin will work. The plugin delegates all protocol operations to the CLI.
+
+After install, your agent can guide setup interactively:
+- `arc402_workroom_init` — create the governed workroom
+- `arc402_setup` — interactive first-time config
+- `arc402_doctor` — verify the full stack is healthy
 
 ## Architecture
 

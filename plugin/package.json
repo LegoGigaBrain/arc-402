@@ -12,6 +12,9 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
+  "peerDependencies": {
+    "arc402-cli": ">=1.0.0"
+  },
   "dependencies": {
     "ethers": "^6.13.0",
     "@sinclair/typebox": "^0.34.0"

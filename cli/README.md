@@ -22,6 +22,8 @@ npm run build
 node dist/index.js --help
 ```
 
+> The CLI is also a peer dependency of `@arc402/openclaw-plugin`. OpenClaw users install the plugin separately (`openclaw plugins install @arc402/openclaw-plugin`) but still need `arc402-cli` installed globally for the underlying protocol operations.
+
 ---
 
 ## Quick Start

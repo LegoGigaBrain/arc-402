@@ -1,0 +1,10 @@
+[profile.default]
+src      = "contracts/src"
+test     = "test"
+out      = "contracts/out"
+libs     = ["contracts/lib"]
+via_ir   = true
+remappings = [
+    "forge-std/=contracts/lib/forge-std/src/",
+    "@openzeppelin/contracts/=contracts/lib/openzeppelin-contracts/contracts/",
+]

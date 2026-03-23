@@ -5,6 +5,53 @@ import "forge-std/Test.sol";
 import "../contracts/src/ComputeAgreement.sol";
 
 /**
+ * @title MockERC20
+ * @notice Minimal ERC-20 for testing. Supports mint, approve, transfer.
+ */
+contract MockERC20 {
+    string  public name     = "MockUSDC";
+    string  public symbol   = "mUSDC";
+    uint8   public decimals = 6;
+    uint256 public totalSupply;
+
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+        totalSupply    += amount;
+        emit Transfer(address(0), to, amount);
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        emit Approval(msg.sender, spender, amount);
+        return true;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        require(balanceOf[msg.sender] >= amount, "insufficient");
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to]         += amount;
+        emit Transfer(msg.sender, to, amount);
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        require(balanceOf[from] >= amount, "insufficient");
+        require(allowance[from][msg.sender] >= amount, "allowance");
+        allowance[from][msg.sender] -= amount;
+        balanceOf[from]             -= amount;
+        balanceOf[to]               += amount;
+        emit Transfer(from, to, amount);
+        return true;
+    }
+}
+
+/**
  * @title MaliciousProvider
  * @notice Reentrancy attack contract — reverts on first receive, then succeeds.
  *         Used to test CA-1 (pull-payment) fix.
@@ -27,12 +74,12 @@ contract MaliciousProvider {
         if (!attacked) {
             attacked = true;
             // Try to withdraw again (reentrance attempt)
-            try ca.withdraw() {} catch {}
+            try ca.withdraw(address(0)) {} catch {}
         }
     }
 
     function doWithdraw() external {
-        ca.withdraw();
+        ca.withdraw(address(0));
     }
 
     function getBalance() external view returns (uint256) {
@@ -73,10 +120,11 @@ contract RevertingProvider {
 /**
  * @title ComputeAgreementTest
  * @notice Foundry tests for the full ComputeAgreement session lifecycle.
- *         Includes all original tests plus extended security/edge-case tests.
+ *         Includes all original ETH tests plus ERC-20 tests.
  */
 contract ComputeAgreementTest is Test {
     ComputeAgreement internal ca;
+    MockERC20        internal token;
 
     // Test accounts
     address internal client   = address(0xC1);
@@ -89,13 +137,18 @@ contract ComputeAgreementTest is Test {
     uint256 internal constant DEPOSIT       = RATE_PER_HOUR * MAX_HOURS; // 4 ETH
     bytes32 internal constant GPU_SPEC_HASH = keccak256("nvidia-h100-80gb");
 
+    // ERC-20 session params (USDC-like: 6 decimals, 10 USDC/hr)
+    uint256 internal constant TOKEN_RATE    = 10e6;       // 10 USDC/hr
+    uint256 internal constant TOKEN_DEPOSIT = TOKEN_RATE * MAX_HOURS; // 40 USDC
+
     // Provider private key (deterministic for signature tests)
     uint256 internal providerKey = 0xBEEF;
 
     bytes32 internal sid;
 
     function setUp() public {
-        ca = new ComputeAgreement(arbitrator);
+        ca    = new ComputeAgreement(arbitrator);
+        token = new MockERC20();
 
         // Use provider derived from key
         provider = vm.addr(providerKey);
@@ -104,18 +157,22 @@ contract ComputeAgreementTest is Test {
         vm.deal(client,   100 ether);
         vm.deal(provider, 10 ether);
 
+        // Mint ERC-20 to client
+        token.mint(client, 1_000e6);
+
         sid = keccak256(abi.encodePacked(client, uint256(1)));
     }
 
-    // ─── proposeSession ───────────────────────────────────────────────────────
+    // ─── proposeSession (ETH) ─────────────────────────────────────────────────
 
     function test_proposeSession() public {
         vm.prank(client);
-        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH);
+        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH, address(0));
 
         ComputeAgreement.ComputeSession memory s = ca.getSession(sid);
         assertEq(s.client,        client);
         assertEq(s.provider,      provider);
+        assertEq(s.token,         address(0));
         assertEq(s.ratePerHour,   RATE_PER_HOUR);
         assertEq(s.maxHours,      MAX_HOURS);
         assertEq(s.depositAmount, DEPOSIT);
@@ -127,16 +184,48 @@ contract ComputeAgreementTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(ComputeAgreement.InsufficientDeposit.selector, DEPOSIT, DEPOSIT - 1)
         );
-        ca.proposeSession{value: DEPOSIT - 1}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH);
+        ca.proposeSession{value: DEPOSIT - 1}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH, address(0));
     }
 
     function test_proposeSession_duplicate() public {
         vm.prank(client);
-        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH);
+        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH, address(0));
 
         vm.prank(client);
         vm.expectRevert(ComputeAgreement.SessionAlreadyExists.selector);
-        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH);
+        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH, address(0));
+    }
+
+    // ─── proposeSession (ERC-20) ──────────────────────────────────────────────
+
+    function test_proposeSession_erc20() public {
+        vm.startPrank(client);
+        token.approve(address(ca), TOKEN_DEPOSIT);
+        ca.proposeSession(sid, provider, TOKEN_RATE, MAX_HOURS, GPU_SPEC_HASH, address(token));
+        vm.stopPrank();
+
+        ComputeAgreement.ComputeSession memory s = ca.getSession(sid);
+        assertEq(s.token,         address(token));
+        assertEq(s.ratePerHour,   TOKEN_RATE);
+        assertEq(s.depositAmount, TOKEN_DEPOSIT);
+        assertEq(token.balanceOf(address(ca)), TOKEN_DEPOSIT);
+    }
+
+    function test_proposeSession_erc20_insufficientAllowance() public {
+        vm.startPrank(client);
+        // Approve less than required
+        token.approve(address(ca), TOKEN_DEPOSIT - 1);
+        vm.expectRevert();  // SafeERC20 will revert on failed transferFrom
+        ca.proposeSession(sid, provider, TOKEN_RATE, MAX_HOURS, GPU_SPEC_HASH, address(token));
+        vm.stopPrank();
+    }
+
+    function test_proposeSession_erc20_msgValueRejected() public {
+        vm.startPrank(client);
+        token.approve(address(ca), TOKEN_DEPOSIT);
+        vm.expectRevert(ComputeAgreement.MsgValueWithToken.selector);
+        ca.proposeSession{value: 1 ether}(sid, provider, TOKEN_RATE, MAX_HOURS, GPU_SPEC_HASH, address(token));
+        vm.stopPrank();
     }
 
     // ─── acceptSession ────────────────────────────────────────────────────────
@@ -230,7 +319,7 @@ contract ComputeAgreementTest is Test {
         ca.submitUsageReport(sid, periodStart, periodEnd, computeMinutes, avgUtil, badSig, metricsHash);
     }
 
-    // ─── endSession + settlement math ─────────────────────────────────────────
+    // ─── endSession + settlement math (ETH) ───────────────────────────────────
 
     function test_endSession_fullUsage() public {
         _start();
@@ -245,13 +334,13 @@ contract ComputeAgreementTest is Test {
         ca.endSession(sid);
 
         // cost = 240 * 1e18 / 60 = 4 ETH (full deposit) -> credited to provider
-        assertEq(ca.pendingWithdrawals(provider), 4 ether);
-        assertEq(ca.pendingWithdrawals(client),   0);
+        assertEq(ca.pendingWithdrawals(provider, address(0)), 4 ether);
+        assertEq(ca.pendingWithdrawals(client,   address(0)), 0);
 
         // Pull the payment
         uint256 providerBefore = provider.balance;
         vm.prank(provider);
-        ca.withdraw();
+        ca.withdraw(address(0));
         assertEq(provider.balance - providerBefore, 4 ether);
         assertEq(address(ca).balance, 0);
     }
@@ -266,17 +355,17 @@ contract ComputeAgreementTest is Test {
         ca.endSession(sid);
 
         // cost = 60 * 1e18 / 60 = 1 ETH; refund = 3 ETH
-        assertEq(ca.pendingWithdrawals(provider), 1 ether);
-        assertEq(ca.pendingWithdrawals(client),   3 ether);
+        assertEq(ca.pendingWithdrawals(provider, address(0)), 1 ether);
+        assertEq(ca.pendingWithdrawals(client,   address(0)), 3 ether);
 
         // Both parties withdraw
         uint256 providerBefore = provider.balance;
         uint256 clientBefore   = client.balance;
 
         vm.prank(provider);
-        ca.withdraw();
+        ca.withdraw(address(0));
         vm.prank(client);
-        ca.withdraw();
+        ca.withdraw(address(0));
 
         assertEq(provider.balance - providerBefore, 1 ether);
         assertEq(client.balance  - clientBefore,    3 ether);
@@ -291,11 +380,11 @@ contract ComputeAgreementTest is Test {
         ca.endSession(sid);
 
         // cost = 0; full refund credited to client
-        assertEq(ca.pendingWithdrawals(client), DEPOSIT);
+        assertEq(ca.pendingWithdrawals(client, address(0)), DEPOSIT);
 
         uint256 clientBefore = client.balance;
         vm.prank(client);
-        ca.withdraw();
+        ca.withdraw(address(0));
         assertEq(client.balance - clientBefore, DEPOSIT);
         assertEq(address(ca).balance, 0);
     }
@@ -318,6 +407,111 @@ contract ComputeAgreementTest is Test {
         vm.prank(address(0xBAD));
         vm.expectRevert(ComputeAgreement.NotParty.selector);
         ca.endSession(sid);
+    }
+
+    // ─── endSession + settlement (ERC-20) ─────────────────────────────────────
+
+    function test_erc20_endSession_partialUsage() public {
+        bytes32 eSid = _proposeErc20();
+        vm.prank(provider); ca.acceptSession(eSid);
+        vm.prank(provider); ca.startSession(eSid);
+
+        // Submit 60 minutes (1 hour) → cost = TOKEN_RATE = 10 USDC; refund = 30 USDC
+        _submitReportFor(eSid, 60, 75);
+
+        vm.prank(client);
+        ca.endSession(eSid);
+
+        assertEq(ca.pendingWithdrawals(provider, address(token)), TOKEN_RATE);
+        assertEq(ca.pendingWithdrawals(client,   address(token)), TOKEN_RATE * 3);
+
+        // Provider withdraws tokens
+        uint256 providerBefore = token.balanceOf(provider);
+        vm.prank(provider);
+        ca.withdraw(address(token));
+        assertEq(token.balanceOf(provider) - providerBefore, TOKEN_RATE);
+
+        // Client withdraws tokens
+        uint256 clientBefore = token.balanceOf(client);
+        vm.prank(client);
+        ca.withdraw(address(token));
+        assertEq(token.balanceOf(client) - clientBefore, TOKEN_RATE * 3);
+
+        // Contract balance zeroed
+        assertEq(token.balanceOf(address(ca)), 0);
+    }
+
+    function test_erc20_cancelSession_returnsTokens() public {
+        bytes32 eSid = _proposeErc20();
+
+        uint256 clientBefore = token.balanceOf(client);
+
+        // Advance past TTL
+        vm.warp(block.timestamp + ca.PROPOSAL_TTL() + 1);
+
+        vm.prank(client);
+        ca.cancelSession(eSid);
+
+        // Tokens credited to client
+        assertEq(ca.pendingWithdrawals(client, address(token)), TOKEN_DEPOSIT);
+
+        vm.prank(client);
+        ca.withdraw(address(token));
+        assertEq(token.balanceOf(client) - clientBefore, TOKEN_DEPOSIT);
+        assertEq(token.balanceOf(address(ca)), 0);
+    }
+
+    function test_erc20_disputeResolution() public {
+        bytes32 eSid = _proposeErc20();
+        vm.prank(provider); ca.acceptSession(eSid);
+        vm.prank(provider); ca.startSession(eSid);
+        _submitReportFor(eSid, 60, 80);
+
+        vm.prank(client);
+        ca.disputeSession(eSid);
+
+        // Arbitrator splits: 8 USDC to provider, 32 USDC to client
+        uint256 pAmt = 8e6;
+        uint256 cAmt = 32e6;
+        vm.prank(arbitrator);
+        ca.resolveDispute(eSid, pAmt, cAmt);
+
+        assertEq(ca.pendingWithdrawals(provider, address(token)), pAmt);
+        assertEq(ca.pendingWithdrawals(client,   address(token)), cAmt);
+
+        vm.prank(provider); ca.withdraw(address(token));
+        vm.prank(client);   ca.withdraw(address(token));
+        assertEq(token.balanceOf(address(ca)), 0);
+    }
+
+    function test_erc20_withdrawSpecificToken() public {
+        // Client has ETH pendingWithdrawals AND token pendingWithdrawals from two sessions
+        // ETH session
+        vm.prank(client);
+        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH, address(0));
+        vm.prank(provider); ca.acceptSession(sid);
+        vm.prank(provider); ca.startSession(sid);
+        vm.prank(client);   ca.endSession(sid);  // zero usage → full refund to client
+
+        // ERC-20 session
+        bytes32 eSid = _proposeErc20();
+        vm.prank(provider); ca.acceptSession(eSid);
+        vm.prank(provider); ca.startSession(eSid);
+        vm.prank(client);   ca.endSession(eSid);  // zero usage → full refund
+
+        // Withdraw ETH only
+        uint256 ethBefore = client.balance;
+        vm.prank(client);
+        ca.withdraw(address(0));
+        assertEq(client.balance - ethBefore, DEPOSIT);
+        assertEq(ca.pendingWithdrawals(client, address(token)), TOKEN_DEPOSIT); // token still pending
+
+        // Withdraw token only
+        uint256 tokBefore = token.balanceOf(client);
+        vm.prank(client);
+        ca.withdraw(address(token));
+        assertEq(token.balanceOf(client) - tokBefore, TOKEN_DEPOSIT);
+        assertEq(ca.pendingWithdrawals(client, address(0)), 0);
     }
 
     // ─── disputeSession ───────────────────────────────────────────────────────
@@ -388,7 +582,7 @@ contract ComputeAgreementTest is Test {
         // Create session with reverting provider
         bytes32 sid2 = keccak256(abi.encodePacked(client, uint256(99)));
         vm.prank(client);
-        ca.proposeSession{value: DEPOSIT}(sid2, rpAddr, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH);
+        ca.proposeSession{value: DEPOSIT}(sid2, rpAddr, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH, address(0));
 
         rp.acceptSession(sid2);
         rp.startSession(sid2);
@@ -397,18 +591,18 @@ contract ComputeAgreementTest is Test {
         rp.endSession(sid2);
 
         // Client's refund should be credited
-        assertEq(ca.pendingWithdrawals(client), DEPOSIT);
+        assertEq(ca.pendingWithdrawals(client, address(0)), DEPOSIT);
 
         // Client can withdraw even though provider can't receive ETH
         uint256 clientBefore = client.balance;
         vm.prank(client);
-        ca.withdraw();
+        ca.withdraw(address(0));
         assertEq(client.balance - clientBefore, DEPOSIT);
 
         // Provider's pending is 0 (no usage), attempting withdraw fails gracefully
         vm.expectRevert(ComputeAgreement.NothingToWithdraw.selector);
         vm.prank(rpAddr);
-        ca.withdraw();
+        ca.withdraw(address(0));
     }
 
     /**
@@ -422,12 +616,9 @@ contract ComputeAgreementTest is Test {
         vm.deal(mpAddr, 1 ether);
 
         // Build a session where the malicious provider earns some ETH
-        // The real test is that withdraw() zeros balance before transferring (check-effects)
-
-        // Create session with mpAddr as provider
         bytes32 sid3 = keccak256(abi.encodePacked(client, uint256(77)));
         vm.prank(client);
-        ca.proposeSession{value: 1 ether}(sid3, mpAddr, 1 ether, 1, GPU_SPEC_HASH);
+        ca.proposeSession{value: 1 ether}(sid3, mpAddr, 1 ether, 1, GPU_SPEC_HASH, address(0));
 
         // Provider accepts and starts
         vm.prank(mpAddr);
@@ -440,18 +631,16 @@ contract ComputeAgreementTest is Test {
         ca.endSession(sid3);
 
         // Client gets deposit back
-        assertEq(ca.pendingWithdrawals(client), 1 ether);
+        assertEq(ca.pendingWithdrawals(client, address(0)), 1 ether);
         // Provider gets 0
-        assertEq(ca.pendingWithdrawals(mpAddr), 0);
+        assertEq(ca.pendingWithdrawals(mpAddr, address(0)), 0);
 
         // Verify withdraw zeros before sending (reentrancy guard via check-effects)
-        // Credit mpAddr manually to simulate provider earning something
-        // This is tested indirectly: if reentrancy occurred, balance would exceed credited amount
         uint256 clientBefore = client.balance;
         vm.prank(client);
-        ca.withdraw();
+        ca.withdraw(address(0));
         assertEq(client.balance - clientBefore, 1 ether);
-        assertEq(ca.pendingWithdrawals(client), 0);
+        assertEq(ca.pendingWithdrawals(client, address(0)), 0);
     }
 
     // ─── CA-2: Signature replay ───────────────────────────────────────────────
@@ -575,7 +764,7 @@ contract ComputeAgreementTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(ComputeAgreement.InsufficientDeposit.selector, DEPOSIT, sent)
         );
-        ca.proposeSession{value: sent}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH);
+        ca.proposeSession{value: sent}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH, address(0));
     }
 
     // ─── CA-3: Session expiry / cancellation ─────────────────────────────────
@@ -599,7 +788,7 @@ contract ComputeAgreementTest is Test {
 
         // Client must withdraw
         vm.prank(client);
-        ca.withdraw();
+        ca.withdraw(address(0));
         assertEq(client.balance - clientBefore, DEPOSIT);
     }
 
@@ -631,7 +820,7 @@ contract ComputeAgreementTest is Test {
         assertEq(uint256(s.status), uint256(ComputeAgreement.SessionStatus.Cancelled));
 
         vm.prank(client);
-        ca.withdraw();
+        ca.withdraw(address(0));
         assertEq(client.balance - clientBefore, DEPOSIT);
     }
 
@@ -651,8 +840,8 @@ contract ComputeAgreementTest is Test {
         vm.prank(arbitrator);
         ca.resolveDispute(sid, 0.8 ether, 3.2 ether);
 
-        assertEq(ca.pendingWithdrawals(provider), 0.8 ether);
-        assertEq(ca.pendingWithdrawals(client),   3.2 ether);
+        assertEq(ca.pendingWithdrawals(provider, address(0)), 0.8 ether);
+        assertEq(ca.pendingWithdrawals(client,   address(0)), 3.2 ether);
 
         ComputeAgreement.ComputeSession memory s = ca.getSession(sid);
         assertEq(uint256(s.status), uint256(ComputeAgreement.SessionStatus.Completed));
@@ -690,9 +879,12 @@ contract ComputeAgreementTest is Test {
         ca.claimDisputeTimeout(sid);
 
         // Provider gets 1 ETH for proven work; client gets 3 ETH remainder
-        assertEq(ca.pendingWithdrawals(provider), 1 ether);
-        assertEq(ca.pendingWithdrawals(client),   3 ether);
-        assertEq(ca.pendingWithdrawals(provider) + ca.pendingWithdrawals(client), DEPOSIT);
+        assertEq(ca.pendingWithdrawals(provider, address(0)), 1 ether);
+        assertEq(ca.pendingWithdrawals(client,   address(0)), 3 ether);
+        assertEq(
+            ca.pendingWithdrawals(provider, address(0)) + ca.pendingWithdrawals(client, address(0)),
+            DEPOSIT
+        );
     }
 
     /**
@@ -743,7 +935,7 @@ contract ComputeAgreementTest is Test {
     function test_selfDealing_reverts() public {
         vm.prank(client);
         vm.expectRevert(ComputeAgreement.SelfDealing.selector);
-        ca.proposeSession{value: DEPOSIT}(sid, client, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH);
+        ca.proposeSession{value: DEPOSIT}(sid, client, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH, address(0));
     }
 
     // ─── Double start ─────────────────────────────────────────────────────────
@@ -769,7 +961,7 @@ contract ComputeAgreementTest is Test {
         bytes32 sid0 = keccak256(abi.encodePacked(client, uint256(100)));
         vm.prank(client);
         // required = 0, send 0
-        ca.proposeSession{value: 0}(sid0, provider, RATE_PER_HOUR, 0, GPU_SPEC_HASH);
+        ca.proposeSession{value: 0}(sid0, provider, RATE_PER_HOUR, 0, GPU_SPEC_HASH, address(0));
 
         vm.prank(provider);
         ca.acceptSession(sid0);
@@ -782,8 +974,8 @@ contract ComputeAgreementTest is Test {
         assertEq(uint256(s.status), uint256(ComputeAgreement.SessionStatus.Completed));
         assertEq(ca.calculateCost(sid0), 0);
         // Nothing to withdraw for either party
-        assertEq(ca.pendingWithdrawals(provider), 0);
-        assertEq(ca.pendingWithdrawals(client),   0);
+        assertEq(ca.pendingWithdrawals(provider, address(0)), 0);
+        assertEq(ca.pendingWithdrawals(client,   address(0)), 0);
     }
 
     // ─── Fuzz: random computeMinutes / ratePerHour ────────────────────────────
@@ -809,7 +1001,7 @@ contract ComputeAgreementTest is Test {
 
         bytes32 fSid = keccak256(abi.encodePacked("fuzz", computeMinutes_, ratePerHour_));
         vm.prank(client);
-        ca.proposeSession{value: required}(fSid, provider, rate, maxHrs, GPU_SPEC_HASH);
+        ca.proposeSession{value: required}(fSid, provider, rate, maxHrs, GPU_SPEC_HASH, address(0));
 
         vm.prank(provider);
         ca.acceptSession(fSid);
@@ -833,8 +1025,8 @@ contract ComputeAgreementTest is Test {
         vm.prank(provider);
         ca.endSession(fSid);
 
-        uint256 providerCredit = ca.pendingWithdrawals(provider);
-        uint256 clientCredit   = ca.pendingWithdrawals(client);
+        uint256 providerCredit = ca.pendingWithdrawals(provider, address(0));
+        uint256 clientCredit   = ca.pendingWithdrawals(client,   address(0));
 
         // Invariant: total credited == deposit
         assertEq(providerCredit + clientCredit, required);
@@ -893,7 +1085,7 @@ contract ComputeAgreementTest is Test {
     function test_withdraw_nothingToWithdraw() public {
         vm.expectRevert(ComputeAgreement.NothingToWithdraw.selector);
         vm.prank(client);
-        ca.withdraw();
+        ca.withdraw(address(0));
     }
 
     // ─── CA-IND-1: Cross-chain / cross-contract replay prevention ────────────
@@ -998,7 +1190,7 @@ contract ComputeAgreementTest is Test {
      */
     function test_exactDeposit_succeeds() public {
         vm.prank(client);
-        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH);
+        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH, address(0));
         assertEq(ca.getSession(sid).depositAmount, DEPOSIT);
         assertEq(address(ca).balance, DEPOSIT);
     }
@@ -1007,7 +1199,7 @@ contract ComputeAgreementTest is Test {
 
     function _propose() internal {
         vm.prank(client);
-        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH);
+        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE_PER_HOUR, MAX_HOURS, GPU_SPEC_HASH, address(0));
     }
 
     function _proposeAndAccept() internal {
@@ -1022,15 +1214,27 @@ contract ComputeAgreementTest is Test {
         ca.startSession(sid);
     }
 
+    function _proposeErc20() internal returns (bytes32 eSid) {
+        eSid = keccak256(abi.encodePacked(client, uint256(200)));
+        vm.startPrank(client);
+        token.approve(address(ca), TOKEN_DEPOSIT);
+        ca.proposeSession(eSid, provider, TOKEN_RATE, MAX_HOURS, GPU_SPEC_HASH, address(token));
+        vm.stopPrank();
+    }
+
     function _submitReport(uint256 computeMinutes, uint256 avgUtil) internal {
+        _submitReportFor(sid, computeMinutes, avgUtil);
+    }
+
+    function _submitReportFor(bytes32 _sid, uint256 computeMinutes, uint256 avgUtil) internal {
         uint256 periodStart = block.timestamp;
         uint256 periodEnd   = periodStart + computeMinutes * 60;
-        bytes32 mHash       = keccak256(abi.encodePacked("metrics", computeMinutes));
-        bytes memory sig    = _signReport(sid, periodStart, periodEnd, computeMinutes, avgUtil, mHash);
+        bytes32 mHash       = keccak256(abi.encodePacked("metrics", computeMinutes, _sid));
+        bytes memory sig    = _signReport(_sid, periodStart, periodEnd, computeMinutes, avgUtil, mHash);
 
         vm.warp(periodEnd);
         vm.prank(provider);
-        ca.submitUsageReport(sid, periodStart, periodEnd, computeMinutes, avgUtil, sig, mHash);
+        ca.submitUsageReport(_sid, periodStart, periodEnd, computeMinutes, avgUtil, sig, mHash);
     }
 
     function _signReport(

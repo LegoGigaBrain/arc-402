@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 /**
  * @title ComputeAgreement
  * @notice Session-based GPU compute rental — client deposits upfront, provider
  *         submits signed metered usage reports, settlement is per-minute.
  *
  *  Lifecycle:
- *    proposeSession  (client, with deposit)
+ *    proposeSession  (client, with deposit — ETH or ERC-20)
  *    acceptSession   (provider)
  *    startSession    (provider, records block.timestamp)
  *    submitUsageReport* (provider, every 15 min)
@@ -16,6 +19,11 @@ pragma solidity 0.8.28;
  *  Dispute: client calls disputeSession to freeze settlement.
  *           Arbitrator (set at construction) resolves via resolveDispute.
  *           If no resolution within DISPUTE_TIMEOUT, client can force-refund.
+ *
+ *  Payment tokens:
+ *    address(0) = native ETH
+ *    otherwise  = ERC-20 (e.g. USDC on Base: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
+ *    Fee-on-transfer and rebasing tokens are NOT supported.
  *
  *  Security fixes applied (2026-03-23 audit):
  *    CA-1: Pull-payment pattern — no sequential ETH pushes in endSession
@@ -31,6 +39,8 @@ pragma solidity 0.8.28;
  *    CA-14: Period timestamps validated
  */
 contract ComputeAgreement {
+    using SafeERC20 for IERC20;
+
     // ─── Constants ────────────────────────────────────────────────────────────
 
     /// @notice Time after proposal that provider must accept before client can cancel.
@@ -47,7 +57,8 @@ contract ComputeAgreement {
     struct ComputeSession {
         address client;
         address provider;
-        uint256 ratePerHour;        // Wei per GPU-hour
+        address token;              // address(0) = ETH, otherwise ERC-20
+        uint256 ratePerHour;        // Token units per GPU-hour
         uint256 maxHours;
         uint256 depositAmount;      // Total deposited by client (ratePerHour * maxHours)
         uint256 startedAt;          // block.timestamp when startSession called
@@ -79,8 +90,9 @@ contract ComputeAgreement {
     /// @dev CA-2: tracks consumed report digests to prevent signature replay.
     mapping(bytes32 => bool) public reportDigestUsed;
 
-    /// @dev CA-1: pull-payment balances; party => claimable ETH.
-    mapping(address => uint256) public pendingWithdrawals;
+    /// @dev CA-1: pull-payment balances; user => token => claimable amount.
+    ///      token == address(0) for ETH.
+    mapping(address => mapping(address => uint256)) public pendingWithdrawals;
 
     // ─── Events ───────────────────────────────────────────────────────────────
 
@@ -89,7 +101,8 @@ contract ComputeAgreement {
         address indexed client,
         address indexed provider,
         uint256 ratePerHour,
-        uint256 maxHours
+        uint256 maxHours,
+        address token
     );
     event SessionAccepted(bytes32 indexed sessionId);
     event SessionStarted(bytes32 indexed sessionId, uint256 startedAt);
@@ -107,7 +120,7 @@ contract ComputeAgreement {
     event SessionDisputed(bytes32 indexed sessionId, address disputant);
     event SessionCancelled(bytes32 indexed sessionId);
     event DisputeResolved(bytes32 indexed sessionId, uint256 providerAmount, uint256 clientAmount);
-    event Withdrawn(address indexed recipient, uint256 amount);
+    event Withdrawn(address indexed recipient, address indexed token, uint256 amount);
 
     // ─── Errors ───────────────────────────────────────────────────────────────
 
@@ -130,6 +143,7 @@ contract ComputeAgreement {
     error ReportAlreadySubmitted();
     error NothingToWithdraw();
     error InvalidSplit();
+    error MsgValueWithToken();
 
     // ─── Constructor ──────────────────────────────────────────────────────────
 
@@ -142,44 +156,55 @@ contract ComputeAgreement {
 
     /**
      * @notice Client proposes a compute session and deposits exactly the maximum cost.
-     *         CA-IND-3: exact msg.value required — no overpayment accepted.
+     *         CA-IND-3: exact deposit required — no overpayment accepted.
      *         CA-9: self-dealing prevention.
+     *         ERC-20: pass token != address(0) and pre-approve this contract.
+     *         ETH: pass token == address(0) and send msg.value == required.
+     *         NOTE: fee-on-transfer and rebasing tokens are not supported.
      * @param sessionId   Unique identifier (keccak256 of client + nonce).
      * @param provider    GPU provider's address.
-     * @param ratePerHour Wei per GPU-hour.
+     * @param ratePerHour Token units per GPU-hour.
      * @param maxHours    Maximum session length in hours.
      * @param gpuSpecHash keccak256 of the agreed GPU spec JSON.
+     * @param token       Payment token (address(0) = ETH).
      */
     function proposeSession(
         bytes32 sessionId,
         address provider,
         uint256 ratePerHour,
         uint256 maxHours,
-        bytes32 gpuSpecHash
+        bytes32 gpuSpecHash,
+        address token
     ) external payable {
         // CA-9: prevent self-dealing
         if (provider == msg.sender) revert SelfDealing();
         if (sessions[sessionId].client != address(0)) revert SessionAlreadyExists();
 
         uint256 required = ratePerHour * maxHours;
-        if (msg.value != required) revert InsufficientDeposit(required, msg.value);
 
-        sessions[sessionId] = ComputeSession({
-            client:          msg.sender,
-            provider:        provider,
-            ratePerHour:     ratePerHour,
-            maxHours:        maxHours,
-            depositAmount:   required,
-            startedAt:       0,
-            endedAt:         0,
-            consumedMinutes: 0,
-            proposedAt:      block.timestamp,
-            disputedAt:      0,
-            gpuSpecHash:     gpuSpecHash,
-            status:          SessionStatus.Proposed
-        });
+        if (token == address(0)) {
+            // ETH path: exact msg.value required
+            if (msg.value != required) revert InsufficientDeposit(required, msg.value);
+        } else {
+            // ERC-20 path: no ETH should be sent
+            if (msg.value != 0) revert MsgValueWithToken();
+            IERC20(token).safeTransferFrom(msg.sender, address(this), required);
+        }
 
-        emit SessionProposed(sessionId, msg.sender, provider, ratePerHour, maxHours);
+        // Direct field assignment to avoid stack-too-deep with struct literal (13 fields).
+        ComputeSession storage s = sessions[sessionId];
+        s.client          = msg.sender;
+        s.provider        = provider;
+        s.token           = token;
+        s.ratePerHour     = ratePerHour;
+        s.maxHours        = maxHours;
+        s.depositAmount   = required;
+        s.proposedAt      = block.timestamp;
+        s.gpuSpecHash     = gpuSpecHash;
+        s.status          = SessionStatus.Proposed;
+        // startedAt, endedAt, consumedMinutes, disputedAt remain 0 (default)
+
+        emit SessionProposed(sessionId, msg.sender, provider, ratePerHour, maxHours, token);
     }
 
     /**
@@ -270,7 +295,7 @@ contract ComputeAgreement {
     /**
      * @notice Either party ends the session. Calculates cost from consumedMinutes,
      *         credits provider and client balances for independent withdrawal.
-     *         CA-1: pull-payment pattern — no sequential ETH pushes.
+     *         CA-1: pull-payment pattern — no sequential pushes.
      */
     function endSession(bytes32 sessionId) external {
         ComputeSession storage s = _getSession(sessionId);
@@ -282,14 +307,15 @@ contract ComputeAgreement {
 
         uint256 cost    = calculateCost(sessionId);
         uint256 deposit = s.depositAmount;
+        address tok     = s.token;
 
         // Clamp to deposit (can't exceed what was deposited)
         if (cost > deposit) cost = deposit;
         uint256 refund = deposit - cost;
 
         // CA-1: credit balances instead of push-transfers
-        if (cost > 0)   pendingWithdrawals[s.provider] += cost;
-        if (refund > 0) pendingWithdrawals[s.client]   += refund;
+        if (cost > 0)   pendingWithdrawals[s.provider][tok] += cost;
+        if (refund > 0) pendingWithdrawals[s.client][tok]   += refund;
 
         emit SessionCompleted(sessionId, s.consumedMinutes, cost, refund);
     }
@@ -310,8 +336,8 @@ contract ComputeAgreement {
     /**
      * @notice Arbitrator resolves a disputed session by specifying split.
      *         CA-4: provides an actual resolution path.
-     * @param providerAmount ETH to credit to provider.
-     * @param clientAmount   ETH to credit to client.
+     * @param providerAmount Token units to credit to provider.
+     * @param clientAmount   Token units to credit to client.
      */
     function resolveDispute(
         bytes32 sessionId,
@@ -327,12 +353,13 @@ contract ComputeAgreement {
         s.status  = SessionStatus.Completed;
         s.endedAt = block.timestamp;
 
-        if (providerAmount > 0) pendingWithdrawals[s.provider] += providerAmount;
-        if (clientAmount   > 0) pendingWithdrawals[s.client]   += clientAmount;
+        address tok = s.token;
+        if (providerAmount > 0) pendingWithdrawals[s.provider][tok] += providerAmount;
+        if (clientAmount   > 0) pendingWithdrawals[s.client][tok]   += clientAmount;
 
         // Any remainder goes back to client (rounding safety)
         uint256 remainder = s.depositAmount - providerAmount - clientAmount;
-        if (remainder > 0) pendingWithdrawals[s.client] += remainder;
+        if (remainder > 0) pendingWithdrawals[s.client][tok] += remainder;
 
         emit DisputeResolved(sessionId, providerAmount, clientAmount);
     }
@@ -353,11 +380,12 @@ contract ComputeAgreement {
 
         uint256 cost    = calculateCost(sessionId);
         uint256 deposit = s.depositAmount;
+        address tok     = s.token;
         if (cost > deposit) cost = deposit;
         uint256 refund = deposit - cost;
 
-        if (cost   > 0) pendingWithdrawals[s.provider] += cost;
-        if (refund > 0) pendingWithdrawals[s.client]   += refund;
+        if (cost   > 0) pendingWithdrawals[s.provider][tok] += cost;
+        if (refund > 0) pendingWithdrawals[s.client][tok]   += refund;
 
         emit DisputeResolved(sessionId, cost, refund);
     }
@@ -374,36 +402,40 @@ contract ComputeAgreement {
         bool canCancel = false;
 
         if (s.status == SessionStatus.Proposed) {
-            // Allow immediate cancel if past proposal TTL, OR immediately if provider hasn't acted
             if (block.timestamp >= s.proposedAt + PROPOSAL_TTL) {
                 canCancel = true;
             }
         } else if (s.status == SessionStatus.Active && s.startedAt == 0) {
-            // Accepted but never started — client can cancel at any time
             canCancel = true;
         }
 
         if (!canCancel) revert ProposalNotExpired();
 
         s.status = SessionStatus.Cancelled;
-        pendingWithdrawals[s.client] += s.depositAmount;
+        pendingWithdrawals[s.client][s.token] += s.depositAmount;
 
         emit SessionCancelled(sessionId);
     }
 
     /**
-     * @notice Pull-payment: any party withdraws their credited balance.
-     *         CA-1: pull pattern eliminates provider-griefs-client vector.
+     * @notice Pull-payment: withdraw credited balance for a specific token.
+     *         CA-1: pull pattern eliminates push-payment griefing vector.
+     * @param token Payment token to withdraw (address(0) = ETH).
      */
-    function withdraw() external {
-        uint256 amount = pendingWithdrawals[msg.sender];
+    function withdraw(address token) external {
+        uint256 amount = pendingWithdrawals[msg.sender][token];
         if (amount == 0) revert NothingToWithdraw();
 
-        pendingWithdrawals[msg.sender] = 0;
-        (bool ok,) = msg.sender.call{value: amount}("");
-        if (!ok) revert TransferFailed();
+        pendingWithdrawals[msg.sender][token] = 0;
 
-        emit Withdrawn(msg.sender, amount);
+        if (token == address(0)) {
+            (bool ok,) = msg.sender.call{value: amount}("");
+            if (!ok) revert TransferFailed();
+        } else {
+            IERC20(token).safeTransfer(msg.sender, amount);
+        }
+
+        emit Withdrawn(msg.sender, token, amount);
     }
 
     // ─── View functions ───────────────────────────────────────────────────────

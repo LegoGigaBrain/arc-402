@@ -23,9 +23,9 @@ contract ReentrantProvider {
 
     receive() external payable {
         // Try to re-enter on every ETH receipt
-        if (ca.pendingWithdrawals(address(this)) > 0) {
+        if (ca.pendingWithdrawals(address(this), address(0)) > 0) {
             reentryCount++;
-            ca.withdraw();
+            ca.withdraw(address(0));
         }
     }
 
@@ -35,7 +35,7 @@ contract ReentrantProvider {
 
     function doWithdraw() external {
         uint256 before = address(this).balance;
-        ca.withdraw();
+        ca.withdraw(address(0));
         stolenAmount = address(this).balance - before;
     }
 }
@@ -82,10 +82,10 @@ contract FlashLoanAttacker {
     // Called with "flash loan" ETH — tries to propose + immediately withdraw
     function attack(bytes32 sid) external payable {
         // Step 1: deposit into contract
-        ca.proposeSession{value: msg.value}(sid, provider, msg.value, 1, keccak256("spec"));
+        ca.proposeSession{value: msg.value}(sid, provider, msg.value, 1, keccak256("spec"), address(0));
         // Step 2: try to withdraw immediately (session not ended — should fail)
         // (This will revert with NothingToWithdraw)
-        ca.withdraw();
+        ca.withdraw(address(0));
     }
 
     receive() external payable {}
@@ -106,7 +106,7 @@ contract SessionGriefSpammer {
         uint256 perDeposit = msg.value / count;
         for (uint256 i = 0; i < count; i++) {
             bytes32 sid = keccak256(abi.encodePacked(address(this), i));
-            ca.proposeSession{value: perDeposit}(sid, victim, perDeposit, 1, keccak256("grief"));
+            ca.proposeSession{value: perDeposit}(sid, victim, perDeposit, 1, keccak256("grief"), address(0));
         }
     }
 }
@@ -157,7 +157,7 @@ contract ComputeAgreementAttackerTest is Test {
 
     function _propose() internal {
         vm.prank(client);
-        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE, HOURS, GPU_SPEC);
+        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE, HOURS, GPU_SPEC, address(0));
     }
 
     function _proposeAndAccept() internal {
@@ -232,7 +232,7 @@ contract ComputeAgreementAttackerTest is Test {
         // Setup session with malicious provider
         bytes32 sid2 = keccak256(abi.encodePacked(client, uint256(2)));
         vm.prank(client);
-        ca.proposeSession{value: 1 ether}(sid2, rpAddr, 1 ether, 1, GPU_SPEC);
+        ca.proposeSession{value: 1 ether}(sid2, rpAddr, 1 ether, 1, GPU_SPEC, address(0));
 
         // Malicious provider accepts and starts
         rp.acceptSession(sid2);
@@ -255,8 +255,8 @@ contract ComputeAgreementAttackerTest is Test {
         ca.endSession(sid2);
 
         // Client has 1 ETH pending — client is a contract? No, client=0xC1 (EOA).
-        assertEq(ca.pendingWithdrawals(client), 1 ether);
-        assertEq(ca.pendingWithdrawals(rpAddr),  0);
+        assertEq(ca.pendingWithdrawals(client, address(0)), 1 ether);
+        assertEq(ca.pendingWithdrawals(rpAddr, address(0)),  0);
 
         // To test reentrancy meaningfully we need rpAddr to have a pending balance.
         // Manually credit rp with ETH via a second session where it earns payment.
@@ -274,7 +274,7 @@ contract ComputeAgreementAttackerTest is Test {
         // Client can withdraw safely
         uint256 clientBefore = client.balance;
         vm.prank(client);
-        ca.withdraw();
+        ca.withdraw(address(0));
         assertEq(client.balance - clientBefore, 1 ether);
         assertEq(address(ca).balance, 0);
     }
@@ -295,7 +295,7 @@ contract ComputeAgreementAttackerTest is Test {
         // Propose session with rpAddr as provider, 1 ETH deposit
         bytes32 sid3 = keccak256(abi.encodePacked(client, uint256(3)));
         vm.prank(client);
-        ca.proposeSession{value: 1 ether}(sid3, rpAddr, 1 ether, 1, GPU_SPEC);
+        ca.proposeSession{value: 1 ether}(sid3, rpAddr, 1 ether, 1, GPU_SPEC, address(0));
 
         // rpAddr accepts and starts
         vm.prank(rpAddr);
@@ -309,13 +309,16 @@ contract ComputeAgreementAttackerTest is Test {
         vm.prank(client);
         ca.endSession(sid3);
 
-        // Simulate provider earning something in a future session by manually crediting:
-        // Use vm.store to write pendingWithdrawals[rpAddr] = 0.5 ether
-        // Slot: keccak256(abi.encode(rpAddr, 3)) — pendingWithdrawals is slot 3
-        bytes32 slot = keccak256(abi.encode(rpAddr, uint256(3)));
+        // Simulate provider earning something by manually crediting via vm.store.
+        // pendingWithdrawals is slot 3 (nested: mapping(address => mapping(address => uint256))).
+        // Slot for pendingWithdrawals[rpAddr][address(0)]:
+        //   innerSlot = keccak256(abi.encode(rpAddr, 3))
+        //   finalSlot = keccak256(abi.encode(address(0), innerSlot))
+        bytes32 innerSlot = keccak256(abi.encode(rpAddr, uint256(3)));
+        bytes32 slot = keccak256(abi.encode(address(0), innerSlot));
         vm.store(address(ca), slot, bytes32(uint256(0.5 ether)));
 
-        assertEq(ca.pendingWithdrawals(rpAddr), 0.5 ether);
+        assertEq(ca.pendingWithdrawals(rpAddr, address(0)), 0.5 ether);
         uint256 contractBalance = address(ca).balance + 0.5 ether;
         // Fund contract to match the injected balance
         vm.deal(address(ca), address(ca).balance + 0.5 ether);
@@ -328,7 +331,7 @@ contract ComputeAgreementAttackerTest is Test {
         // Re-entry was attempted but had nothing to withdraw
         // (pendingWithdrawals zeroed before transfer → second call gets NothingToWithdraw)
         // The reentryCount MAY be > 0 but stolenAmount must be exactly 0.5 ETH
-        assertEq(ca.pendingWithdrawals(rpAddr), 0);
+        assertEq(ca.pendingWithdrawals(rpAddr, address(0)), 0);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -344,7 +347,7 @@ contract ComputeAgreementAttackerTest is Test {
         // Attacker snatches the sessionId first (same sid, different provider chosen by attacker)
         address attackerProvider = address(0xDEAD);
         vm.prank(attacker);
-        ca.proposeSession{value: DEPOSIT}(sid, attackerProvider, RATE, HOURS, GPU_SPEC);
+        ca.proposeSession{value: DEPOSIT}(sid, attackerProvider, RATE, HOURS, GPU_SPEC, address(0));
 
         // Attacker now owns the session as client
         ComputeAgreement.ComputeSession memory s = ca.getSession(sid);
@@ -354,7 +357,7 @@ contract ComputeAgreementAttackerTest is Test {
         uint256 clientBalanceBefore = client.balance;
         vm.prank(client);
         vm.expectRevert(ComputeAgreement.SessionAlreadyExists.selector);
-        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE, HOURS, GPU_SPEC);
+        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE, HOURS, GPU_SPEC, address(0));
 
         // Client's ETH is untouched (revert refunds the call value)
         assertEq(client.balance, clientBalanceBefore);
@@ -401,9 +404,9 @@ contract ComputeAgreementAttackerTest is Test {
         ca.endSession(sid);
 
         // Provider earns exactly deposit — no more
-        uint256 earned = ca.pendingWithdrawals(provider);
+        uint256 earned = ca.pendingWithdrawals(provider, address(0));
         assertEq(earned, DEPOSIT);
-        assertEq(ca.pendingWithdrawals(client), 0);
+        assertEq(ca.pendingWithdrawals(client, address(0)), 0);
 
         // Settlement never exceeds deposit
         assertLe(earned, DEPOSIT);
@@ -428,14 +431,14 @@ contract ComputeAgreementAttackerTest is Test {
         // Provider's ETH balance is untouched — they didn't deposit anything
         assertEq(provider.balance, 10 ether);
         // Provider's pending withdrawals = 0
-        assertEq(ca.pendingWithdrawals(provider), 0);
+        assertEq(ca.pendingWithdrawals(provider, address(0)), 0);
 
         // The legitimate session still works normally
         _start();
         _submitReport(60, 80);
         vm.prank(provider);
         ca.endSession(sid);
-        assertEq(ca.pendingWithdrawals(provider), 1 ether); // 60 min * 1 ETH/hr / 60 = 1 ETH
+        assertEq(ca.pendingWithdrawals(provider, address(0)), 1 ether); // 60 min * 1 ETH/hr / 60 = 1 ETH
 
         // Spammer's ETH is locked (they own the sessions as client), provider can ignore them
         // Verify one spam session belongs to spammer as client, provider unrelated
@@ -492,7 +495,7 @@ contract ComputeAgreementAttackerTest is Test {
         // Setup session B with same provider
         bytes32 sidB = keccak256(abi.encodePacked(client, uint256(99)));
         vm.prank(client);
-        ca.proposeSession{value: DEPOSIT}(sidB, provider, RATE, HOURS, GPU_SPEC);
+        ca.proposeSession{value: DEPOSIT}(sidB, provider, RATE, HOURS, GPU_SPEC, address(0));
         vm.prank(provider);
         ca.acceptSession(sidB);
         vm.prank(provider);
@@ -546,8 +549,8 @@ contract ComputeAgreementAttackerTest is Test {
         vm.prank(arbitrator);
         ca.resolveDispute(sid, 2 ether, 2 ether);
 
-        assertEq(ca.pendingWithdrawals(provider), 2 ether);
-        assertEq(ca.pendingWithdrawals(client),   2 ether);
+        assertEq(ca.pendingWithdrawals(provider, address(0)), 2 ether);
+        assertEq(ca.pendingWithdrawals(client, address(0)),   2 ether);
     }
 
     function test_attack07b_disputeAbuse_timeoutWorksAfterDelay() public {
@@ -568,7 +571,7 @@ contract ComputeAgreementAttackerTest is Test {
         vm.prank(client);
         ca.claimDisputeTimeout(sid);
 
-        assertEq(ca.pendingWithdrawals(client), DEPOSIT);
+        assertEq(ca.pendingWithdrawals(client, address(0)), DEPOSIT);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -603,9 +606,9 @@ contract ComputeAgreementAttackerTest is Test {
         ca.resolveDispute(sid, DEPOSIT, 0);
 
         // Arbitrator's own balance is unchanged
-        assertEq(ca.pendingWithdrawals(arbitrator), 0);
+        assertEq(ca.pendingWithdrawals(arbitrator, address(0)), 0);
         // Funds went to provider, not arbitrator
-        assertEq(ca.pendingWithdrawals(provider), DEPOSIT);
+        assertEq(ca.pendingWithdrawals(provider, address(0)), DEPOSIT);
     }
 
     function test_attack08b_arbitratorCannotOverpay() public {
@@ -624,12 +627,12 @@ contract ComputeAgreementAttackerTest is Test {
         ca.resolveDispute(sid, 1 ether, 0); // only 1 ETH to provider
 
         // Client gets remainder: 4 - 1 = 3 ETH
-        assertEq(ca.pendingWithdrawals(provider), 1 ether);
-        assertEq(ca.pendingWithdrawals(client),   3 ether);
+        assertEq(ca.pendingWithdrawals(provider, address(0)), 1 ether);
+        assertEq(ca.pendingWithdrawals(client, address(0)),   3 ether);
 
         // Total must equal deposit
         assertEq(
-            ca.pendingWithdrawals(provider) + ca.pendingWithdrawals(client),
+            ca.pendingWithdrawals(provider, address(0)) + ca.pendingWithdrawals(client, address(0)),
             DEPOSIT
         );
     }
@@ -672,8 +675,8 @@ contract ComputeAgreementAttackerTest is Test {
         ca.submitUsageReport(sid, ps, pe, 30, 80, sig, mh);
 
         // Settlement was locked at endSession: 60 min = 1 ETH to provider
-        assertEq(ca.pendingWithdrawals(provider), 1 ether);
-        assertEq(ca.pendingWithdrawals(client),   3 ether);
+        assertEq(ca.pendingWithdrawals(provider, address(0)), 1 ether);
+        assertEq(ca.pendingWithdrawals(client, address(0)),   3 ether);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -701,7 +704,7 @@ contract ComputeAgreementAttackerTest is Test {
 
         // Deposit remains locked in the contract
         // (the revert unwinds the whole call — deposit never entered the contract)
-        assertEq(ca.pendingWithdrawals(address(fla)), 0);
+        assertEq(ca.pendingWithdrawals(address(fla), address(0)), 0);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -721,7 +724,7 @@ contract ComputeAgreementAttackerTest is Test {
         // Attacker proposes a session — attacker pays, attacker is client
         bytes32 attackSid = keccak256(abi.encodePacked(attacker, uint256(42)));
         vm.prank(attacker);
-        ca.proposeSession{value: DEPOSIT}(attackSid, provider, RATE, HOURS, GPU_SPEC);
+        ca.proposeSession{value: DEPOSIT}(attackSid, provider, RATE, HOURS, GPU_SPEC, address(0));
 
         ComputeAgreement.ComputeSession memory s = ca.getSession(attackSid);
         assertEq(s.client, attacker);    // attacker is client, not victim
@@ -817,10 +820,10 @@ contract ComputeAgreementAttackerTest is Test {
 
         assertEq(uint256(ca.getSession(sid).status),
             uint256(ComputeAgreement.SessionStatus.Cancelled));
-        assertEq(ca.pendingWithdrawals(client), DEPOSIT);
+        assertEq(ca.pendingWithdrawals(client, address(0)), DEPOSIT);
 
         vm.prank(client);
-        ca.withdraw();
+        ca.withdraw(address(0));
         assertEq(client.balance - clientBefore, DEPOSIT);
         assertEq(address(ca).balance, 0);
     }
@@ -839,7 +842,7 @@ contract ComputeAgreementAttackerTest is Test {
         vm.prank(client);
         ca.cancelSession(sid);
         vm.prank(client);
-        ca.withdraw();
+        ca.withdraw(address(0));
         assertEq(client.balance - clientBefore, DEPOSIT);
     }
 
@@ -889,8 +892,8 @@ contract ComputeAgreementAttackerTest is Test {
         ca.endSession(sid);
 
         // Settlement is frozen: exactly 1 ETH to provider, 3 ETH to client
-        assertEq(ca.pendingWithdrawals(provider), 1 ether);
-        assertEq(ca.pendingWithdrawals(client),   3 ether);
+        assertEq(ca.pendingWithdrawals(provider, address(0)), 1 ether);
+        assertEq(ca.pendingWithdrawals(client, address(0)),   3 ether);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -931,11 +934,11 @@ contract ComputeAgreementAttackerTest is Test {
     function test_attack16_selfDealing() public {
         vm.prank(provider);
         vm.expectRevert(ComputeAgreement.SelfDealing.selector);
-        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE, HOURS, GPU_SPEC);
+        ca.proposeSession{value: DEPOSIT}(sid, provider, RATE, HOURS, GPU_SPEC, address(0));
 
         vm.prank(client);
         vm.expectRevert(ComputeAgreement.SelfDealing.selector);
-        ca.proposeSession{value: DEPOSIT}(sid, client, RATE, HOURS, GPU_SPEC);
+        ca.proposeSession{value: DEPOSIT}(sid, client, RATE, HOURS, GPU_SPEC, address(0));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -949,7 +952,7 @@ contract ComputeAgreementAttackerTest is Test {
         // Scenario A: dispute a Proposed session (never accepted)
         bytes32 sidA = keccak256(abi.encodePacked(client, uint256(17)));
         vm.prank(client);
-        ca.proposeSession{value: DEPOSIT}(sidA, provider, RATE, HOURS, GPU_SPEC);
+        ca.proposeSession{value: DEPOSIT}(sidA, provider, RATE, HOURS, GPU_SPEC, address(0));
 
         vm.prank(client);
         vm.expectRevert(
@@ -964,7 +967,7 @@ contract ComputeAgreementAttackerTest is Test {
         // Scenario B: dispute a Completed session
         bytes32 sidB = keccak256(abi.encodePacked(client, uint256(18)));
         vm.prank(client);
-        ca.proposeSession{value: DEPOSIT}(sidB, provider, RATE, HOURS, GPU_SPEC);
+        ca.proposeSession{value: DEPOSIT}(sidB, provider, RATE, HOURS, GPU_SPEC, address(0));
         vm.prank(provider);
         ca.acceptSession(sidB);
         vm.prank(provider);
@@ -1002,10 +1005,10 @@ contract ComputeAgreementAttackerTest is Test {
         ca.endSession(sid);
 
         // 90 * 1e18 / 60 = 1.5 ETH to provider; 2.5 ETH refund to client
-        assertEq(ca.pendingWithdrawals(provider), 1.5 ether);
-        assertEq(ca.pendingWithdrawals(client),   2.5 ether);
+        assertEq(ca.pendingWithdrawals(provider, address(0)), 1.5 ether);
+        assertEq(ca.pendingWithdrawals(client, address(0)),   2.5 ether);
         assertEq(
-            ca.pendingWithdrawals(provider) + ca.pendingWithdrawals(client),
+            ca.pendingWithdrawals(provider, address(0)) + ca.pendingWithdrawals(client, address(0)),
             DEPOSIT
         );
 
@@ -1013,9 +1016,9 @@ contract ComputeAgreementAttackerTest is Test {
         uint256 clientBefore   = client.balance;
 
         vm.prank(provider);
-        ca.withdraw();
+        ca.withdraw(address(0));
         vm.prank(client);
-        ca.withdraw();
+        ca.withdraw(address(0));
 
         assertEq(provider.balance - providerBefore, 1.5 ether);
         assertEq(client.balance  - clientBefore,    2.5 ether);

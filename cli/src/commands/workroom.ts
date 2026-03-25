@@ -433,6 +433,11 @@ network_policies:
         "-v", `${path.join(ARC402_DIR, "worker")}:/workroom/worker:rw`,
         // Mount Arena data directory (feed index, profile cache, state, queue)
         "-v", `${ARENA_DATA_DIR}:/workroom/arena:rw`,
+        // Mount Claude auth file if present — required for claude-code agent_type worker execution.
+        // Without this the worker spawns claude but auth fails immediately.
+        ...(fs.existsSync(path.join(os.homedir(), ".claude.json"))
+          ? ["-v", `${path.join(os.homedir(), ".claude.json")}:/home/workroom/.claude.json:ro`]
+          : []),
         // Inject secrets as env vars
         "-e", `ARC402_MACHINE_KEY=${machineKey}`,
         "-e", `TELEGRAM_BOT_TOKEN=${telegramBot}`,

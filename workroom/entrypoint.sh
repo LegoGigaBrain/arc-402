@@ -13,37 +13,47 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
+# ─── log() must be defined first — used throughout ────────────────────────────
+log() { echo "[workroom] $*"; }
+
 readonly POLICY_FILE="/workroom/.arc402/openshell-policy.yaml"
 readonly RULES_LOG="/workroom/.arc402/iptables-rules.log"
-# Locate the globally installed arc402-cli inside the container (Linux-compiled native addons live here).
-# This is ALWAYS set — native binaries must come from the image, not the host mount.
-GLOBAL_NPM_ROOT=$(npm root -g 2>/dev/null || echo "")
-GLOBAL_CLI_ROOT="${GLOBAL_NPM_ROOT}/arc402-cli"
-GLOBAL_DAEMON="${GLOBAL_CLI_ROOT}/dist/daemon/index.js"
-
-# NODE_PATH: ensures that require() calls from the mounted dist/ (dev override)
-# resolve native addons (better-sqlite3 etc.) from the Linux-compiled global install,
-# NOT from any host-mounted node_modules (which would have macOS/Windows ELF binaries).
-if [ -n "$GLOBAL_NPM_ROOT" ] && [ -d "$GLOBAL_CLI_ROOT/node_modules" ]; then
-  export NODE_PATH="${GLOBAL_CLI_ROOT}/node_modules${NODE_PATH:+:$NODE_PATH}"
-  log "NODE_PATH → ${GLOBAL_CLI_ROOT}/node_modules (Linux-compiled native addons)"
-fi
-
-# Prefer host-mounted dist/ (for dev/JS-only override).
-# IMPORTANT: only dist/ is mounted, never node_modules — so native addons always
-# come from the image's global install resolved via NODE_PATH above.
-DAEMON_ENTRY="/workroom/runtime/dist/daemon/index.js"
-if [ ! -f "$DAEMON_ENTRY" ]; then
-  # Production path: use globally installed arc402-cli entirely
-  if [ -f "$GLOBAL_DAEMON" ]; then
-    DAEMON_ENTRY="$GLOBAL_DAEMON"
-  fi
-fi
-readonly DAEMON_ENTRY
 readonly ARENA_POLICY="/workroom/.arc402/arena-policy.yaml"
 readonly ARENA_DEFAULT="/workroom/defaults/arena-policy.yaml"
 
-log() { echo "[workroom] $*"; }
+# ─── Locate globally installed arc402-cli (Linux-native binaries) ─────────────
+# The image runs npm install -g arc402-cli --build-from-source at build time.
+# We must always use this global install for native addons (better-sqlite3 etc.),
+# never the host mount which carries macOS/Windows binaries.
+GLOBAL_NPM_ROOT=$(npm root -g 2>/dev/null || echo "")
+GLOBAL_CLI_ROOT="${GLOBAL_NPM_ROOT}/arc402-cli"
+GLOBAL_DAEMON="${GLOBAL_CLI_ROOT}/dist/daemon/index.js"
+log "Global npm root: ${GLOBAL_NPM_ROOT:-not found}"
+log "Global cli root: ${GLOBAL_CLI_ROOT}"
+
+# NODE_PATH: if a host dist/ is mounted (--dev mode), require() calls from it
+# must still resolve native addons from the Linux global install.
+# Set unconditionally — harmless if the mount doesn't exist.
+if [ -d "${GLOBAL_CLI_ROOT}/node_modules" ]; then
+  export NODE_PATH="${GLOBAL_CLI_ROOT}/node_modules${NODE_PATH:+:$NODE_PATH}"
+  log "NODE_PATH → ${GLOBAL_CLI_ROOT}/node_modules (Linux-native addons)"
+fi
+
+# ─── Resolve daemon entry point ───────────────────────────────────────────────
+# Production (no --dev mount): /workroom/runtime/dist/daemon/index.js won't exist.
+#   → use global install directly.
+# Dev (--dev mount): mounted dist/ exists, global node_modules via NODE_PATH.
+#   → use mounted dist so JS changes propagate without rebuild.
+if [ -f "/workroom/runtime/dist/daemon/index.js" ]; then
+  DAEMON_ENTRY="/workroom/runtime/dist/daemon/index.js"
+  log "Daemon: host dist/ mount (dev mode)"
+elif [ -f "${GLOBAL_DAEMON}" ]; then
+  DAEMON_ENTRY="${GLOBAL_DAEMON}"
+  log "Daemon: global install (production)"
+else
+  DAEMON_ENTRY=""
+fi
+readonly DAEMON_ENTRY
 
 # ─── Validate prerequisites ────────────────────────────────────────────────
 
@@ -159,9 +169,9 @@ log "DNS refresh daemon started (PID: $local_dns_pid, interval: ${ARC402_DNS_REF
 
 # ─── Phase 5: Validate daemon entry point ──────────────────────────────────
 
-if [ ! -f "$DAEMON_ENTRY" ]; then
+if [ -z "$DAEMON_ENTRY" ] || [ ! -f "$DAEMON_ENTRY" ]; then
   log "ERROR: Daemon entry point not found."
-  log "Tried: /workroom/runtime/dist/daemon/index.js (host dist/ mount)"
+  log "Tried: /workroom/runtime/dist/daemon/index.js (host --dev mount)"
   log "Tried: ${GLOBAL_DAEMON} (global npm install inside image)"
   log "Rebuild the workroom image: arc402 workroom init"
   exit 1

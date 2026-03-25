@@ -433,10 +433,16 @@ network_policies:
         "-v", `${path.join(ARC402_DIR, "worker")}:/workroom/worker:rw`,
         // Mount Arena data directory (feed index, profile cache, state, queue)
         "-v", `${ARENA_DATA_DIR}:/workroom/arena:rw`,
-        // Mount Claude auth file if present — required for claude-code agent_type worker execution.
-        // Without this the worker spawns claude but auth fails immediately.
+        // Mount Claude auth file if present (only needed when agent_type = "claude-code").
+        // Default agent_type is "openclaw" which handles auth internally.
+        // Kept as a convenience mount so claude-code fallback works without manual steps.
         ...(fs.existsSync(path.join(os.homedir(), ".claude.json"))
           ? ["-v", `${path.join(os.homedir(), ".claude.json")}:/home/workroom/.claude.json:ro`]
+          : []),
+        // Mount OpenClaw config + data so the openclaw runtime inside the workroom
+        // has access to its auth, models, and gateway config.
+        ...(fs.existsSync(path.join(os.homedir(), ".openclaw"))
+          ? ["-v", `${path.join(os.homedir(), ".openclaw")}:/home/workroom/.openclaw:ro`]
           : []),
         // Inject secrets as env vars
         "-e", `ARC402_MACHINE_KEY=${machineKey}`,

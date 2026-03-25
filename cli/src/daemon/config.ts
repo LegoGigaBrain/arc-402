@@ -240,7 +240,7 @@ function withDefaults(raw: Record<string, unknown>): DaemonConfig {
       serve_files:      bool(delivery.serve_files, true),
     },
     worker: {
-      agent_type:            str(worker.agent_type, "claude-code"),
+      agent_type:            str(worker.agent_type, "openclaw"),
       max_concurrent_jobs:   num(worker.max_concurrent_jobs, 2),
       job_timeout_seconds:   num(worker.job_timeout_seconds, 3600),
       auto_execute:          bool(worker.auto_execute, true),
@@ -410,7 +410,8 @@ auto_download = true             # Auto-download and verify files on delivery no
 serve_files = true               # Serve file endpoints (/job/:id/files, /job/:id/manifest)
 
 [worker]
-agent_type = "claude-code"       # Runtime to execute hired work: openclaw | claude-code | codex | shell
+agent_type = "openclaw"          # Runtime to execute hired work: openclaw (default) | claude-code | codex | shell
+                                 # openclaw is preferred — has auth built in, can spawn any ACP (Claude, Codex, etc.)
 max_concurrent_jobs = 2          # Maximum jobs running simultaneously
 job_timeout_seconds = 3600       # Kill job after this many seconds (default: 1h)
 auto_execute = true              # true: spawn agent automatically after accept. false: accept on-chain, await manual trigger.

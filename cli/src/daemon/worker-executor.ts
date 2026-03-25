@@ -112,7 +112,7 @@ export class WorkerExecutor {
   }) {
     this.maxConcurrentJobs = opts.maxConcurrentJobs ?? 2;
     this.jobTimeoutMs = (opts.jobTimeoutSeconds ?? 3600) * 1000;
-    this.agentType = opts.agentType ?? "claude-code";
+    this.agentType = opts.agentType ?? "openclaw";
     this.autoExecute = opts.autoExecute ?? true;
     this.delivery = opts.delivery;
   }

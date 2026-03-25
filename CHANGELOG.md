@@ -4,6 +4,89 @@ All notable changes to the ARC-402 protocol, CLI, SDKs, and infrastructure.
 
 ---
 
+## [1.4.25] — 2026-03-25
+
+### Fixed
+- **Workroom directory missing from npm package** — Dockerfile, entrypoint.sh, policy-parser.sh,
+  dns-refresh.sh, derive-policy.sh, arena-policy.yaml were never included. `workroom init`
+  would fail with "Dockerfile not found" on any fresh install.
+  Fix: `prepublishOnly` copies `../workroom/` into the package before publish.
+- **Protocol POST endpoints gated behind daemon bearer token** — `/hire`, `/handshake`,
+  `/message`, `/delivery`, `/delivery/accepted`, `/dispute`, `/dispute/resolved` all returned
+  401 to external agents. External agents have no way to obtain the daemon token (local secret).
+  Fix: `PUBLIC_POST_PATHS` whitelist — protocol endpoints open, operator endpoints still gated.
+
+---
+
+## [1.4.24] — 2026-03-25
+
+### Fixed
+- **Daemon HTTP auth** — same fix as 1.4.25 (superseded by workroom package fix).
+
+---
+
+## [1.4.23] — 2026-03-25
+
+### Fixed
+- **`log()` called before defined in entrypoint.sh** — bash `set -euo pipefail` kills script
+  on undefined function. `GLOBAL_NPM_ROOT` resolution used `log` at line 30, but `log()` was
+  defined at line 44. Container appeared to start but entrypoint died silently before policy
+  phase, leaving only 4 iptables rules (loopback + DNS). Base RPC unreachable → daemon dead.
+  Fix: `log()` moved to top of entrypoint, before all other code.
+- **Production daemon path resolution** — simplified and clarified. Now emits which path was
+  chosen (mounted dev dist vs global install) for observability.
+- **Missing policy file = dead workroom** — if `openshell-policy.yaml` didn't exist, init
+  deferred to `policy preset core-launch`. Container started with 4 iptables rules only,
+  Base RPC blocked, daemon timed out.
+  Fix: `workroom init` auto-generates bootstrap policy with Base RPC + bundler +
+  ARC-402 infra + LLM APIs. Full preset via `arc402 workroom policy preset core-launch`.
+
+---
+
+## [1.4.22] — 2026-03-25
+
+### Added
+- **Full autonomous job cycle wired** — `WorkerExecutor` instantiated and connected in daemon:
+  - `hire → policy eval → auto-accept → accept UserOp → enqueue job`
+  - `→ spawn agent (claude-code/openclaw/codex/shell)`
+  - `→ collect deliverables → root hash`
+  - `→ fulfill UserOp on-chain → receipt → learnings → DB complete`
+  - `onJobFailed`: updates DB, notifies operator via configured channel
+  - IPC: `worker-status` (list all jobs), `worker-logs --id <agreementId>` (tail job.log)
+- **`[worker]` config section** — `agent_type`, `max_concurrent_jobs`, `job_timeout_seconds`,
+  `auto_execute`. Documented in daemon.toml template.
+
+### Fixed
+- Missing `buildFulfillCalldata` import in daemon index.
+
+---
+
+## [1.4.21] — 2026-03-25
+
+### Fixed
+- **Production runtime mount removed** — `workroom start` no longer mounts any CLI files
+  by default. The image is self-contained with Linux-native binaries. The previous
+  `-v $cliRoot:/workroom/runtime:ro` mount shadowed `node_modules` with host-compiled
+  binaries (macOS/Windows ELF) causing `better-sqlite3` crash on every non-Linux host.
+- **`workroom start --dev`** — explicit opt-in for dev JS overrides. Mounts only `dist/`
+  (never `node_modules`). `NODE_PATH` in entrypoint ensures native addons still resolve
+  from Linux global install.
+- **`workroom init` output** — "✓ CLI runtime available" message replaced with actual
+  version baked into the image.
+
+---
+
+## [1.4.20] — 2026-03-25
+
+### Fixed
+- **`workroom init` always rebuilds** — previously skipped build if image existed.
+  CLI upgrade (e.g. 1.4.19 → 1.4.20) would keep old image with stale native binaries.
+- **Version label on image** — `buildImage()` stamps `arc402.cli.version` label.
+  `imageVersionMatches()` reads label; `workroom start` rebuilds on mismatch with
+  clear log message.
+
+---
+
 ## [0.6.0] — 2026-03-21 (next tag)
 
 ### Added

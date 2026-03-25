@@ -15,19 +15,28 @@ set -euo pipefail
 
 readonly POLICY_FILE="/workroom/.arc402/openshell-policy.yaml"
 readonly RULES_LOG="/workroom/.arc402/iptables-rules.log"
-# Prefer host-mounted runtime (for dev/override) — fall back to globally installed arc402-cli
+# Locate the globally installed arc402-cli inside the container (Linux-compiled native addons live here).
+# This is ALWAYS set — native binaries must come from the image, not the host mount.
+GLOBAL_NPM_ROOT=$(npm root -g 2>/dev/null || echo "")
+GLOBAL_CLI_ROOT="${GLOBAL_NPM_ROOT}/arc402-cli"
+GLOBAL_DAEMON="${GLOBAL_CLI_ROOT}/dist/daemon/index.js"
+
+# NODE_PATH: ensures that require() calls from the mounted dist/ (dev override)
+# resolve native addons (better-sqlite3 etc.) from the Linux-compiled global install,
+# NOT from any host-mounted node_modules (which would have macOS/Windows ELF binaries).
+if [ -n "$GLOBAL_NPM_ROOT" ] && [ -d "$GLOBAL_CLI_ROOT/node_modules" ]; then
+  export NODE_PATH="${GLOBAL_CLI_ROOT}/node_modules${NODE_PATH:+:$NODE_PATH}"
+  log "NODE_PATH → ${GLOBAL_CLI_ROOT}/node_modules (Linux-compiled native addons)"
+fi
+
+# Prefer host-mounted dist/ (for dev/JS-only override).
+# IMPORTANT: only dist/ is mounted, never node_modules — so native addons always
+# come from the image's global install resolved via NODE_PATH above.
 DAEMON_ENTRY="/workroom/runtime/dist/daemon/index.js"
 if [ ! -f "$DAEMON_ENTRY" ]; then
-  # Global npm install path (Linux container default)
-  GLOBAL_DAEMON=$(node -e "try{require.resolve('arc402-cli/dist/daemon/index.js')}catch(e){}" 2>/dev/null || true)
-  if [ -n "$GLOBAL_DAEMON" ]; then
+  # Production path: use globally installed arc402-cli entirely
+  if [ -f "$GLOBAL_DAEMON" ]; then
     DAEMON_ENTRY="$GLOBAL_DAEMON"
-  else
-    # Fallback: locate via npm root
-    NPM_ROOT=$(npm root -g 2>/dev/null || echo "")
-    if [ -n "$NPM_ROOT" ] && [ -f "$NPM_ROOT/arc402-cli/dist/daemon/index.js" ]; then
-      DAEMON_ENTRY="$NPM_ROOT/arc402-cli/dist/daemon/index.js"
-    fi
   fi
 fi
 readonly DAEMON_ENTRY
@@ -152,8 +161,8 @@ log "DNS refresh daemon started (PID: $local_dns_pid, interval: ${ARC402_DNS_REF
 
 if [ ! -f "$DAEMON_ENTRY" ]; then
   log "ERROR: Daemon entry point not found."
-  log "Tried: /workroom/runtime/dist/daemon/index.js (host mount)"
-  log "Tried: globally installed arc402-cli (npm install -g arc402-cli)"
+  log "Tried: /workroom/runtime/dist/daemon/index.js (host dist/ mount)"
+  log "Tried: ${GLOBAL_DAEMON} (global npm install inside image)"
   log "Rebuild the workroom image: arc402 workroom init"
   exit 1
 fi

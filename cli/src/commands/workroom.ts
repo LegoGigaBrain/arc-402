@@ -373,10 +373,14 @@ export function registerWorkroomCommands(program: Command): void {
         ...(useGpu ? ["--gpus", "all", "--runtime", "nvidia"] : []),
         // Mount config (read-write for daemon state/logs)
         "-v", `${ARC402_DIR}:/workroom/.arc402:rw`,
-        // Mount CLI runtime as optional dev override (read-only).
-        // In production (global npm install), the image has arc402-cli pre-installed.
-        // Mounting here lets dev builds override the image's installed version.
-        "-v", `${cliRoot}:/workroom/runtime:ro`,
+        // Mount CLI dist/ as optional dev override (read-only, JS files only — no node_modules).
+        // Mounting only dist/ means the container's Linux-compiled native addons (better-sqlite3, etc.)
+        // are always used. The host's macOS/Windows node_modules are never visible inside the container.
+        // The entrypoint sets NODE_PATH to the container's global arc402-cli node_modules so that
+        // requires from the mounted dist/ resolve against Linux-compiled binaries.
+        // In production (global npm install), the image has arc402-cli pre-installed; this mount
+        // is a no-op if dist/ doesn't exist on the host.
+        "-v", `${path.join(cliRoot, "dist")}:/workroom/runtime/dist:ro`,
         // Mount jobs directory
         "-v", `${path.join(ARC402_DIR, "jobs")}:/workroom/jobs:rw`,
         // Mount worker directory (identity, memory, skills, knowledge)

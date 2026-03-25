@@ -13,6 +13,10 @@ RUN npm install -g arc402-cli@${ARC402_CLI_VERSION} --build-from-source 2>&1 | t
 # Stamp the CLI version as an image label so workroom start can detect stale images.
 LABEL arc402.cli.version=${ARC402_CLI_VERSION}
 
+# Install Claude Code CLI — required for agent_type = "claude-code" worker execution.
+# Installed globally with Linux-native binaries at image build time.
+RUN npm install -g @anthropic-ai/claude-code 2>&1 | tail -3 || true
+
 # Create workroom user with the same UID/GID as the host user (default: 1000).
 # This ensures bind-mounted volumes are readable/writable without permission fights.
 # Override at build time: docker build --build-arg HOST_UID=1001 --build-arg HOST_GID=1001

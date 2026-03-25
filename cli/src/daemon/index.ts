@@ -990,6 +990,40 @@ export async function runDaemon(foreground = false): Promise<void> {
             await notifier.notifyHireRequest(proposal.messageId, proposal.hirerAddress, proposal.priceEth, proposal.capability);
           }
 
+          // If auto-accepted, enqueue job for execution immediately, then try to
+          // submit accept UserOp on-chain (best-effort — may already be accepted).
+          if (status === "accepted" && proposal.agreementId) {
+            // Enqueue first — job execution is independent of whether the on-chain
+            // accept succeeds (it may already be accepted from a prior call).
+            workerExecutor.enqueue({
+              agreementId: proposal.agreementId,
+              capability: proposal.capability,
+              specHash: proposal.specHash,
+            });
+            log({ event: "http_job_enqueued", id: proposal.messageId, agreement_id: proposal.agreementId });
+
+            // Try to submit accept UserOp (non-blocking, best-effort)
+            if (config.serviceAgreementAddress) {
+              void (async () => {
+                try {
+                  const callData = buildAcceptCalldata(
+                    config.serviceAgreementAddress!,
+                    proposal.agreementId!,
+                    config.wallet.contract_address
+                  );
+                  const hash = await userOps.submit(callData, config.wallet.contract_address);
+                  log({ event: "http_hire_auto_accepted", id: proposal.messageId, userop_hash: hash });
+                  if (config.notifications.notify_on_hire_accepted) {
+                    await notifier.notifyHireAccepted(proposal.messageId, proposal.agreementId!);
+                  }
+                } catch (err) {
+                  // Non-fatal — agreement may already be accepted on-chain
+                  log({ event: "http_accept_userop_skipped", id: proposal.messageId, reason: String(err).slice(0, 100) });
+                }
+              })();
+            }
+          }
+
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ status, id: proposal.messageId }));
         } catch (err) {

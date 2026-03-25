@@ -87,9 +87,15 @@ export const ERC20_ABI = [
 ] as const;
 
 export const WALLET_FACTORY_ABI = [
+  // V6 (WalletFactoryV6) — msg.sender becomes owner
+  "function deployWallet() external returns (address)",
+  // V6 explicit owner override
+  "function deployWallet(address owner) external returns (address)",
+  // V3/V4/V5 legacy — kept for backward compat with older factory addresses
   "function createWallet(address _entryPoint) external returns (address)",
   "function getWallets(address owner) external view returns (address[] memory)",
   "function totalWallets() external view returns (uint256)",
+  "event WalletDeployed(address indexed wallet, address indexed owner)",
   "event WalletCreated(address indexed owner, address indexed walletAddress)",
 ] as const;
 
@@ -111,6 +117,9 @@ export const POLICY_ENGINE_GOVERNANCE_ABI = [
   // isRegistered check helper
   "function walletOwners(address wallet) external view returns (address)",
   "function defiAccessEnabled(address wallet) external view returns (bool)",
+  // Whitelist management
+  "function whitelistContract(address wallet, address target) external",
+  "function isContractWhitelisted(address wallet, address target) external view returns (bool)",
 ] as const;
 
 export const ARC402_WALLET_EXECUTE_ABI = [

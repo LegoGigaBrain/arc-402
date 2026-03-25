@@ -387,6 +387,39 @@ export function registerSetupCommands(program: Command): void {
       }
       balSpin.succeed(`Wallet balance: ${ethers.formatEther(walletBalance)} ETH`);
 
+      // ── Phase 2b: Policy & Whitelist ────────────────────────────────────────
+
+      console.log(c.white("\nPhase 2b: Policy & Whitelist"));
+
+      // Quick check: if hire category limit is already set, onboarding was done — skip.
+      const onboardCheckSpin = startSpinner("Checking onboarding state…");
+      let onboardNeeded = true;
+      try {
+        const policyAddress = config.policyEngineAddress ?? "0x9449B15268bE7042C0b473F3f711a41A29220866";
+        const { provider: onboardProvider } = await getClient(config);
+        const peContract = new ethers.Contract(policyAddress, ["function categoryLimits(address,string) view returns (uint256)"], onboardProvider);
+        const hireLimit: bigint = await peContract.categoryLimits(config.walletContractAddress, "hire").catch(() => 0n);
+        onboardNeeded = hireLimit === 0n;
+      } catch { /* assume needed */ }
+
+      if (!onboardNeeded) {
+        onboardCheckSpin.succeed("Policy already configured — skipping");
+      } else {
+        onboardCheckSpin.update("Running wallet onboard ceremony…");
+        const onboardResult = spawnSync(process.execPath, [process.argv[1], "wallet", "onboard"], {
+          encoding: "utf-8",
+          timeout: 300_000,
+          stdio: "inherit",
+          env: { ...process.env },
+        });
+        if (onboardResult.status === 0) {
+          onboardCheckSpin.succeed("Policy & whitelist configured");
+        } else {
+          onboardCheckSpin.fail("wallet onboard did not complete — run manually: arc402 wallet onboard");
+          console.error(c.dim("  This is non-fatal — continuing setup."));
+        }
+      }
+
       // ── Phase 3: Agent Registration ─────────────────────────────────────────
 
       console.log(c.white("\nPhase 3: Agent Registration"));

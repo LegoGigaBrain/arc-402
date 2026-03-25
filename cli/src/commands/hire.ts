@@ -11,16 +11,64 @@ import { c } from '../ui/colors';
 import { startSpinner } from '../ui/spinner';
 import { renderTree, TreeItem } from '../ui/tree';
 import { formatAddress } from '../ui/format';
+import { resolveAgentEndpoint } from "../endpoint-notify";
 
 const DEFAULT_REGISTRY_ADDRESS = "0xD5c2851B00090c92Ba7F4723FB548bb30C9B6865";
+
+/**
+ * Resolve a provider argument to a wallet address.
+ * Accepts:
+ *   - 0x... wallet address (passthrough)
+ *   - subdomain.arc402.xyz (lookup in AgentRegistry by endpoint)
+ *   - https://... endpoint URL (lookup in AgentRegistry by endpoint)
+ */
+async function resolveProviderAddress(
+  providerArg: string,
+  registryAddress: string,
+  provider: ethers.JsonRpcProvider,
+): Promise<string> {
+  if (providerArg.startsWith("0x") && providerArg.length === 42) return providerArg;
+
+  // Normalize to https URL
+  let endpointUrl = providerArg;
+  if (!endpointUrl.startsWith("http")) {
+    // bare subdomain like "gigabrain.arc402.xyz"
+    endpointUrl = `https://${endpointUrl}`;
+  }
+
+  // Query agent health endpoint to get wallet address
+  try {
+    const res = await fetch(`${endpointUrl}/agent`, { signal: AbortSignal.timeout(5000) });
+    if (res.ok) {
+      const data = await res.json() as { wallet?: string; agent?: string };
+      const addr = data.wallet ?? data.agent;
+      if (addr && addr.startsWith("0x")) return addr;
+    }
+  } catch { /* fall through to registry lookup */ }
+
+  // Fallback: scan AgentRegistry for matching endpoint (expensive but works)
+  const registry = new ethers.Contract(registryAddress, AGENT_REGISTRY_ABI, provider);
+  try {
+    // Try common subdomain → wallet lookup via API
+    const subdomain = endpointUrl.replace("https://", "").replace(".arc402.xyz", "").split(".")[0];
+    const checkRes = await fetch(`https://api.arc402.xyz/check/${subdomain}`).catch(() => null);
+    if (checkRes?.ok) {
+      const data = await checkRes.json() as { walletAddress?: string; owner?: string };
+      const addr = data.walletAddress ?? data.owner;
+      if (addr && addr.startsWith("0x")) return addr;
+    }
+  } catch { /* ignore */ }
+
+  throw new Error(`Could not resolve provider address from "${providerArg}". Pass a wallet address (0x...) directly.`);
+}
 
 const sessionManager = new SessionManager();
 
 export function registerHireCommand(program: Command): void {
   program
-    .command("hire")
-    .description("Create the on-chain commitment after off-chain negotiation")
-    .requiredOption("--agent <address>")
+    .command("hire [provider]")
+    .description("Hire an agent — pass wallet address (0x...) or subdomain (gigabrain.arc402.xyz)")
+    .option("--agent <address>", "Provider wallet address or subdomain (alias for positional arg)")
     .requiredOption("--task <description>")
     .requiredOption("--service-type <type>")
     .option("--max <amount>", "Max price in wei (e.g. 1000000000000000) or ETH (e.g. 0.001eth) or USDC (e.g. 1USDC). Required unless --session is provided.")
@@ -30,10 +78,22 @@ export function registerHireCommand(program: Command): void {
     .option("--session <sessionId>", "Load agreed price and deadline from a completed negotiation session")
     .option("--use-eoa", "Sign directly with machine key EOA, bypassing the smart wallet")
     .option("--json")
-    .action(async (opts) => {
+    .action(async (providerArg: string | undefined, opts) => {
       const config = loadConfig();
       if (!config.serviceAgreementAddress) throw new Error("serviceAgreementAddress missing in config");
       const { signer, address } = await requireSigner(config);
+
+      // Resolve provider: positional arg OR --agent flag
+      const rawProvider = providerArg ?? opts.agent;
+      if (!rawProvider) throw new Error("Provider required. Pass as positional arg (gigabrain.arc402.xyz) or --agent <address>");
+      const rpcProvider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const registryAddr = config.agentRegistryAddress ?? DEFAULT_REGISTRY_ADDRESS;
+      const resolving = startSpinner(`Resolving provider: ${rawProvider}`);
+      opts.agent = await resolveProviderAddress(rawProvider, registryAddr, rpcProvider).catch(e => {
+        resolving.fail(`Could not resolve provider: ${e.message}`);
+        process.exit(1);
+      });
+      resolving.succeed(`Provider: ${opts.agent}`);
       const client = new ServiceAgreementClient(config.serviceAgreementAddress, signer);
 
       let maxAmount: string;

@@ -1,6 +1,6 @@
 [project]
 name = "arc402"
-version = "0.5.2"
+version = "0.5.3"
 description = "ARC-402: Agentic Wallet Standard — governed wallets for autonomous agents"
 readme = "README.md"
 requires-python = ">=3.10"

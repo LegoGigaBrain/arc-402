@@ -32,7 +32,7 @@ NETWORKS: dict[str, dict[str, Any]] = {
         "trust_registry": "0x22366D6dabb03062Bc0a5E893EfDff15D8E329b1",   # TrustRegistryV3 — v2
         "intent_attestation": "0x66585C2F96cAe05EA360F6dBF76bA092A7B87669",
         "settlement_coordinator": "0x6653F385F98752575db3180b9306e2d9644f9Eb1",
-        "wallet_factory": "0xD067a4bD3F32aB501A71756161C76309d8088915",   # WalletFactoryV6 — deployed 2026-03-24
+        "wallet_factory": "0x801f0553585f511D9953419A9668edA078196997",   # WalletFactoryV6 — final 2026-03-24
         "agent_registry": "0x6EafeD4FA103D2De04DDee157e35A8e8df91B6A6",   # ARC402RegistryV3 (new default; V2: 0xcc0D8731ccCf6CFfF4e66F6d68cA86330Ea8B622)
         "service_agreement": "0xC98B402CAB9156da68A87a69E3B4bf167A3CCcF6",
         "reputation_oracle": "0x359F76a54F9A345546E430e4d6665A7dC9DaECd4",

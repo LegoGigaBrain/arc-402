@@ -1,12 +1,25 @@
 /**
  * Wallet tools — arc402_wallet_status, arc402_wallet_deploy,
- *                arc402_whitelist_contract, arc402_upgrade_registry
+ *                arc402_whitelist_contract, arc402_upgrade_registry,
+ *                arc402_wallet_onboard
  */
 import { Type } from "@sinclair/typebox";
 import { ethers } from "ethers";
+import { execFileSync } from "child_process";
 import type { PluginApi, ToolResult } from "./hire.js";
 import type { ResolvedConfig } from "../config.js";
 import { runWithWalletApproval, approvalOk, approvalErr } from "./wallet-approval.js";
+
+function shell(args: string[], timeout = 30_000): ToolResult {
+  try {
+    const text = execFileSync("arc402", args, { encoding: "utf-8", timeout });
+    return { content: [{ type: "text", text }] };
+  } catch (e: unknown) {
+    const err = e as { stdout?: string; stderr?: string; message?: string };
+    const out = (err.stdout ?? "") + (err.stderr ?? "") || (err.message ?? String(e));
+    return { content: [{ type: "text", text: out }] };
+  }
+}
 
 const WALLET_FACTORY_ABI = [
   "function deploy(address owner, bytes32 salt) external returns (address wallet)",
@@ -130,7 +143,7 @@ export function registerWalletTools(api: PluginApi, getConfig: () => ResolvedCon
   api.registerTool({
     name: "arc402_wallet_deploy",
     description:
-      "Deploy a new ARC-402 smart wallet on Base — your phone wallet approves via WalletConnect and becomes the owner. Returns the predicted wallet address.",
+      "Deploy a new ARC-402 smart wallet on Base — your phone wallet approves via WalletConnect and becomes the owner. Returns the predicted wallet address. After deployment, run arc402_wallet_onboard to complete the post-deploy ceremony (PolicyEngine registration, velocity limit, category limits, and contract whitelisting).",
     parameters: Type.Object({
       salt: Type.Optional(Type.String({ description: "Deployment salt (hex, default: random)" })),
     }),
@@ -530,6 +543,16 @@ export function registerWalletTools(api: PluginApi, getConfig: () => ResolvedCon
       } catch (e: unknown) {
         return approvalErr(e instanceof Error ? e.message : String(e));
       }
+    },
+  });
+
+  api.registerTool({
+    name: "arc402_wallet_onboard",
+    description:
+      "Run post-deploy wallet onboarding — sets velocity limit, 5 category spend limits (general, hire, compute, research, protocol), and whitelists ServiceAgreement, ComputeAgreement, SubscriptionAgreement, Handshake in one WalletConnect session. Idempotent — skips steps already done. Run after arc402_wallet_deploy.",
+    parameters: Type.Object({}),
+    async execute(_id, _params) {
+      return shell(["wallet", "onboard"], 300_000);
     },
   });
 }

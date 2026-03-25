@@ -1,6 +1,6 @@
 {
   "name": "@arc402/sdk",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "ARC-402 typed TypeScript SDK for discovery, negotiation, trust, and governed settlement",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

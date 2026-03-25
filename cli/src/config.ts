@@ -128,6 +128,37 @@ export function loadConfig(): Arc402Config {
     saveConfig(config);
   }
 
+  // ── Contract address migration ────────────────────────────────────────────
+  // Always enforce current NETWORK_DEFAULTS for known protocol addresses.
+  // This prevents stale V3/V4/V5 factory addresses from persisting in config
+  // after a CLI upgrade. User-overrides are intentional — but factory/PE/registry
+  // addresses must track the latest deployed versions.
+  const network = config.network ?? "base-mainnet";
+  const currentDefaults = NETWORK_DEFAULTS[network];
+  if (currentDefaults) {
+    let migrated = false;
+    const FACTORY_V6 = "0x801f0553585f511D9953419A9668edA078196997";
+    const POLICY_ENGINE_V2 = "0x9449B15268bE7042C0b473F3f711a41A29220866";
+    // Migrate stale factory addresses (V3/V4/V5 → V6)
+    const staleFactories = [
+      "0x974d2ae81cC9B4955e325890f4247AC76c92148D", // V3
+      "0x35075D293E39d271860fe942cDA208A907990Cc0", // V4
+      "0x3f4d4b19a69344B04fd9653E1bB12883e97300fE", // V5 frozen unoptimized
+      "0xcB52B5d746eEc05e141039E92e3dBefeAe496051", // V5 active (superseded)
+      "0xD067a4bD3F32aB501A71756161C76309d8088915", // V6 early deploy (frozen)
+    ];
+    if (config.walletFactoryAddress && staleFactories.map(a => a.toLowerCase()).includes(config.walletFactoryAddress.toLowerCase())) {
+      config.walletFactoryAddress = FACTORY_V6;
+      migrated = true;
+    }
+    // Migrate stale PolicyEngine (old PE missing closeContext)
+    if (config.policyEngineAddress?.toLowerCase() === "0xAA5Ef3489C929bFB3BFf5D5FE15aa62d3763c847".toLowerCase()) {
+      config.policyEngineAddress = POLICY_ENGINE_V2;
+      migrated = true;
+    }
+    if (migrated) saveConfig(config);
+  }
+
   return config;
 }
 

@@ -15,7 +15,22 @@ set -euo pipefail
 
 readonly POLICY_FILE="/workroom/.arc402/openshell-policy.yaml"
 readonly RULES_LOG="/workroom/.arc402/iptables-rules.log"
-readonly DAEMON_ENTRY="/workroom/runtime/dist/daemon/index.js"
+# Prefer host-mounted runtime (for dev/override) — fall back to globally installed arc402-cli
+DAEMON_ENTRY="/workroom/runtime/dist/daemon/index.js"
+if [ ! -f "$DAEMON_ENTRY" ]; then
+  # Global npm install path (Linux container default)
+  GLOBAL_DAEMON=$(node -e "try{require.resolve('arc402-cli/dist/daemon/index.js')}catch(e){}" 2>/dev/null || true)
+  if [ -n "$GLOBAL_DAEMON" ]; then
+    DAEMON_ENTRY="$GLOBAL_DAEMON"
+  else
+    # Fallback: locate via npm root
+    NPM_ROOT=$(npm root -g 2>/dev/null || echo "")
+    if [ -n "$NPM_ROOT" ] && [ -f "$NPM_ROOT/arc402-cli/dist/daemon/index.js" ]; then
+      DAEMON_ENTRY="$NPM_ROOT/arc402-cli/dist/daemon/index.js"
+    fi
+  fi
+fi
+readonly DAEMON_ENTRY
 readonly ARENA_POLICY="/workroom/.arc402/arena-policy.yaml"
 readonly ARENA_DEFAULT="/workroom/defaults/arena-policy.yaml"
 
@@ -136,11 +151,13 @@ log "DNS refresh daemon started (PID: $local_dns_pid, interval: ${ARC402_DNS_REF
 # ─── Phase 5: Validate daemon entry point ──────────────────────────────────
 
 if [ ! -f "$DAEMON_ENTRY" ]; then
-  log "ERROR: Daemon entry point not found at $DAEMON_ENTRY"
-  log "The ARC-402 runtime bundle must be mounted at /workroom/runtime/"
-  log "Expected mount: -v /path/to/cli/dist:/workroom/runtime/dist:ro"
+  log "ERROR: Daemon entry point not found."
+  log "Tried: /workroom/runtime/dist/daemon/index.js (host mount)"
+  log "Tried: globally installed arc402-cli (npm install -g arc402-cli)"
+  log "Rebuild the workroom image: arc402 workroom init"
   exit 1
 fi
+log "Daemon entry: $DAEMON_ENTRY"
 
 # ─── Phase 5b: Worker identity + agent runtimes on PATH ────────────────────
 

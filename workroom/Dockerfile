@@ -2,8 +2,16 @@ FROM node:22-slim
 
 # Runtime dependencies for network enforcement + diagnostics
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    iptables curl dnsutils iproute2 procps jq ca-certificates \
+    iptables curl dnsutils iproute2 procps jq ca-certificates python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
+
+# Install arc402-cli globally — Linux-compiled native binaries (better-sqlite3, etc.)
+# This runs at image build time so native addons compile for Linux, not the host OS.
+# ARG allows pinning a specific version: docker build --build-arg ARC402_CLI_VERSION=1.4.19
+ARG ARC402_CLI_VERSION=latest
+RUN npm install -g arc402-cli@${ARC402_CLI_VERSION} --build-from-source 2>&1 | tail -5
+# Stamp the CLI version as an image label so workroom start can detect stale images.
+LABEL arc402.cli.version=${ARC402_CLI_VERSION}
 
 # Create workroom user with the same UID/GID as the host user (default: 1000).
 # This ensures bind-mounted volumes are readable/writable without permission fights.

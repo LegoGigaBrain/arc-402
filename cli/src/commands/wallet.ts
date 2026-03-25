@@ -931,8 +931,22 @@ export function registerWalletCommands(program: Command): void {
     .option("--hardware", "Hardware wallet mode: show raw wc: URI only (for Ledger Live, Trezor Suite, etc.)")
     .option("--sponsored", "Use CDP paymaster for gas sponsorship (requires paymasterUrl + cdpKeyName + CDP_PRIVATE_KEY env)")
     .option("--dry-run", "Simulate the deployment ceremony without sending transactions")
+    .option("--force", "Force a fresh wallet deploy even if an existing wallet is detected in config. Clears onboarding resume state.")
     .action(async (opts) => {
       const config = loadConfig();
+
+      if (opts.force) {
+        // Clear resume state, existing wallet, and stale factory address — force a brand new V6 deploy
+        delete config.onboardingProgress;
+        delete (config as any).walletContractAddress;
+        // Reset factory to current network default (WalletFactoryV6) — overrides any stale V5/V4/V3 address in config
+        const networkDefaults = NETWORK_DEFAULTS[config.network ?? "base-mainnet"];
+        if (networkDefaults?.walletFactoryAddress) {
+          (config as any).walletFactoryAddress = networkDefaults.walletFactoryAddress;
+        }
+        saveConfig(config);
+        console.log(c.dim(` ◈ --force: cleared wallet config. Factory reset to ${(config as any).walletFactoryAddress} (V6).`));
+      }
 
       if (opts.dryRun) {
         const factoryAddr = config.walletFactoryAddress ?? NETWORK_DEFAULTS[config.network]?.walletFactoryAddress ?? "(not configured)";
@@ -985,7 +999,7 @@ export function registerWalletCommands(program: Command): void {
 
         console.log(`Sponsoring deploy via ${paymasterUrl}...`);
         const factoryIface = new ethers.Interface(WALLET_FACTORY_ABI);
-        const factoryData = factoryIface.encodeFunctionData("createWallet", [DEFAULT_ENTRY_POINT]);
+        const factoryData = factoryIface.encodeFunctionData("deployWallet()");
 
         // Predict counterfactual sender address using EntryPoint.getSenderAddress
         const entryPoint = new ethers.Contract(
@@ -1076,7 +1090,7 @@ export function registerWalletCommands(program: Command): void {
           chainId,
           (ownerAccount) => ({
             to: factoryAddress,
-            data: factoryInterface.encodeFunctionData("createWallet", ["0x0000000071727De22E5E9d8BAf0edAc6f37da032"]),
+            data: factoryInterface.encodeFunctionData("deployWallet()"),
             value: "0x0",
           }),
           "Approve ARC402Wallet deployment — you will be set as owner"
@@ -1093,14 +1107,14 @@ export function registerWalletCommands(program: Command): void {
         for (const log of receipt.logs) {
           try {
             const parsed = factoryContract.interface.parseLog(log);
-            if (parsed?.name === "WalletCreated") {
+            if (parsed?.name === "WalletDeployed" || parsed?.name === "WalletCreated") {
               walletAddress = parsed.args.walletAddress as string;
               break;
             }
           } catch { /* skip unparseable logs */ }
         }
         if (!walletAddress) {
-          console.error("Could not find WalletCreated event in receipt. Check the transaction on-chain.");
+          console.error("Could not find WalletDeployed/WalletCreated event in receipt. Check the transaction on-chain.");
           process.exit(1);
         }
         config.walletContractAddress = walletAddress;
@@ -1142,7 +1156,7 @@ export function registerWalletCommands(program: Command): void {
             const gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice ?? BigInt(1_500_000_000);
             const deployGas = await provider.estimateGas({
               to: factoryAddress,
-              data: factoryInterface.encodeFunctionData("createWallet", ["0x0000000071727De22E5E9d8BAf0edAc6f37da032"]),
+              data: factoryInterface.encodeFunctionData("deployWallet()"),
             }).catch(() => BigInt(280_000));
             const ceremonyGas = BigInt(700_000); // ~5 ceremony txs × ~140k each
             const totalGasEth = parseFloat(ethers.formatEther((deployGas + ceremonyGas) * gasPrice));
@@ -1191,7 +1205,7 @@ export function registerWalletCommands(program: Command): void {
           console.log("Deploying...");
           const txHash = await sendTransactionWithSession(client, session, account, chainId, {
             to: factoryAddress,
-            data: factoryInterface.encodeFunctionData("createWallet", ["0x0000000071727De22E5E9d8BAf0edAc6f37da032"]),
+            data: factoryInterface.encodeFunctionData("deployWallet()"),
             value: "0x0",
           });
 
@@ -1207,14 +1221,14 @@ export function registerWalletCommands(program: Command): void {
           for (const log of receipt.logs) {
             try {
               const parsed = factoryContract.interface.parseLog(log);
-              if (parsed?.name === "WalletCreated") {
+              if (parsed?.name === "WalletDeployed" || parsed?.name === "WalletCreated") {
                 deployedWallet = parsed.args.walletAddress as string;
                 break;
               }
             } catch { /* skip unparseable logs */ }
           }
           if (!deployedWallet) {
-            console.error("Could not find WalletCreated event in receipt. Check the transaction on-chain.");
+            console.error("Could not find WalletDeployed/WalletCreated event in receipt. Check the transaction on-chain.");
             process.exit(1);
           }
           walletAddress = deployedWallet;
@@ -1250,20 +1264,20 @@ export function registerWalletCommands(program: Command): void {
         const { signer, address } = await requireSigner(config);
         const factory = new ethers.Contract(factoryAddress, WALLET_FACTORY_ABI, signer);
         const deploySpinner = startSpinner(`Deploying ARC402Wallet via factory at ${factoryAddress}...`);
-        const tx = await factory.createWallet("0x0000000071727De22E5E9d8BAf0edAc6f37da032");
+        const tx = await factory["deployWallet()"]();
         const receipt = await tx.wait();
         let walletAddress: string | null = null;
         for (const log of receipt.logs) {
           try {
             const parsed = factory.interface.parseLog(log);
-            if (parsed?.name === "WalletCreated") {
+            if (parsed?.name === "WalletDeployed" || parsed?.name === "WalletDeployed" || parsed?.name === "WalletCreated") {
               walletAddress = parsed.args.walletAddress as string;
               break;
             }
           } catch { /* skip unparseable logs */ }
         }
         if (!walletAddress) {
-          deploySpinner.fail("Could not find WalletCreated event in receipt. Check the transaction on-chain.");
+          deploySpinner.fail("Could not find WalletDeployed/WalletCreated event in receipt. Check the transaction on-chain.");
           process.exit(1);
         }
         deploySpinner.succeed("Wallet deployed");
@@ -1309,6 +1323,233 @@ export function registerWalletCommands(program: Command): void {
         console.log(`Your wallet contract is ready for policy enforcement`);
         printOpenShellHint();
       }
+    });
+
+  // ─── onboard ───────────────────────────────────────────────────────────────
+  //
+  // Post-deploy ceremony: register on PolicyEngine, set velocity limit,
+  // 5 category spend limits, and whitelist 4 protocol contracts.
+  // Runs in ONE WalletConnect session. Idempotent — skips steps already done.
+
+  wallet.command("onboard")
+    .description("Post-deploy onboarding: PolicyEngine registration, velocity limit, category limits, and contract whitelisting in one WalletConnect session")
+    .option("--velocity-limit <eth>", "Velocity limit in ETH (rolling window)", "0.05")
+    .option("--hardware", "Hardware wallet mode: show raw wc: URI only")
+    .action(async (opts) => {
+      const config = loadConfig();
+
+      if (!config.walletContractAddress) {
+        console.error(c.failure + " " + c.red("No walletContractAddress in config. Run `arc402 wallet deploy` first."));
+        process.exit(1);
+      }
+
+      if (!config.walletConnectProjectId) {
+        console.error(c.failure + " " + c.red("WalletConnect not configured. Run `arc402 config set walletConnectProjectId <id>`."));
+        process.exit(1);
+      }
+
+      const walletAddress = config.walletContractAddress!;
+      const policyAddress = config.policyEngineAddress ?? POLICY_ENGINE_DEFAULT;
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+
+      // Resolve protocol contracts to whitelist
+      const handshakeAddress =
+        config.handshakeAddress ??
+        NETWORK_DEFAULTS[config.network]?.handshakeAddress ??
+        "0x4F5A38Bb746d7E5d49d8fd26CA6beD141Ec2DDb3";
+      const protocolContracts: { address: string; name: string }[] = [
+        { address: config.serviceAgreementAddress ?? NETWORK_DEFAULTS[config.network]?.serviceAgreementAddress ?? "", name: "ServiceAgreement" },
+        { address: config.computeAgreementAddress ?? NETWORK_DEFAULTS[config.network]?.computeAgreementAddress ?? "", name: "ComputeAgreement" },
+        { address: config.subscriptionAgreementAddress ?? NETWORK_DEFAULTS[config.network]?.subscriptionAgreementAddress ?? "", name: "SubscriptionAgreement" },
+        { address: handshakeAddress, name: "Handshake" },
+      ].filter(pc => pc.address && pc.address !== "");
+
+      // Pre-check on-chain state to count pending txs and decide what to skip
+      const checkSpin = startSpinner("Checking onboarding state…");
+
+      let needsRegister = true;
+      let needsDefiAccess = true;
+      let needsVelocity = true;
+      const categoryNeeds: Record<string, boolean> = {};
+      const whitelistNeeds: Record<string, boolean> = {};
+
+      try {
+        const govContract = new ethers.Contract(policyAddress, POLICY_ENGINE_GOVERNANCE_ABI, provider);
+        const limitsContract = new ethers.Contract(policyAddress, POLICY_ENGINE_LIMITS_ABI, provider);
+        const ownerContract = new ethers.Contract(walletAddress, ARC402_WALLET_OWNER_ABI, provider);
+
+        try {
+          const registeredOwner: string = await govContract.walletOwners(walletAddress);
+          needsRegister = registeredOwner === ethers.ZeroAddress;
+        } catch { /* assume needs */ }
+
+        try {
+          const defiEnabled: boolean = await govContract.defiAccessEnabled(walletAddress);
+          needsDefiAccess = !defiEnabled;
+        } catch { /* assume needs */ }
+
+        try {
+          const velocity: bigint = await ownerContract.velocityLimit();
+          needsVelocity = velocity === 0n;
+        } catch { /* assume needs */ }
+
+        for (const { name } of ONBOARDING_CATEGORIES) {
+          try {
+            const existing: bigint = await limitsContract.categoryLimits(walletAddress, name);
+            categoryNeeds[name] = existing === 0n;
+          } catch { categoryNeeds[name] = true; }
+        }
+
+        for (const pc of protocolContracts) {
+          try {
+            const isWL: boolean = await govContract.isContractWhitelisted(walletAddress, pc.address);
+            whitelistNeeds[pc.name] = !isWL;
+          } catch { whitelistNeeds[pc.name] = true; }
+        }
+
+        checkSpin.succeed("State checked");
+      } catch (e) {
+        checkSpin.fail(`State check failed: ${e instanceof Error ? e.message : String(e)}`);
+        process.exit(1);
+      }
+
+      // Count pending transactions
+      let pendingTxCount = 0;
+      if (needsRegister) pendingTxCount++;
+      if (needsDefiAccess) pendingTxCount++;
+      if (needsVelocity) pendingTxCount++;
+      for (const { name } of ONBOARDING_CATEGORIES) {
+        if (categoryNeeds[name]) pendingTxCount++;
+      }
+      for (const pc of protocolContracts) {
+        if (whitelistNeeds[pc.name]) pendingTxCount++;
+      }
+
+      if (pendingTxCount === 0) {
+        console.log(" " + c.success + " Wallet already fully onboarded — nothing to do.");
+        return;
+      }
+
+      console.log(" " + c.dim(`◈ ${pendingTxCount} transaction(s) pending — your phone will need to approve each.`));
+
+      // Telegram notification before first tx
+      const telegramOpts = config.telegramBotToken && config.telegramChatId
+        ? { botToken: config.telegramBotToken, chatId: config.telegramChatId, threadId: config.telegramThreadId }
+        : undefined;
+
+      // Connect WalletConnect ONCE — reuse session for all txs
+      const { client, session, account } = await connectPhoneWallet(
+        config.walletConnectProjectId,
+        chainId,
+        config,
+        { telegramOpts, prompt: `Approve ${pendingTxCount} wallet onboarding transaction(s)`, hardware: !!opts.hardware },
+      );
+
+      const networkName = chainId === 8453 ? "Base" : "Base Sepolia";
+      const shortAddr = `${account.slice(0, 6)}...${account.slice(-5)}`;
+      console.log("\n" + c.success + c.white(` Connected: ${shortAddr} on ${networkName}`));
+
+      if (telegramOpts) {
+        await sendTelegramMessage({
+          botToken: telegramOpts.botToken,
+          chatId: telegramOpts.chatId,
+          threadId: telegramOpts.threadId,
+          text: `◈ arc402 wallet onboard: ${pendingTxCount} txs pending for ${shortAddr}`,
+        });
+      }
+
+      const sendTx = async (call: { to: string; data: string; value: string }, description: string): Promise<string> => {
+        const txSpin = startSpinner(description);
+        const hash = await sendTransactionWithSession(client, session, account, chainId, call);
+        await provider.waitForTransaction(hash, 1);
+        txSpin.succeed(description);
+        return hash;
+      };
+
+      const executeIface = new ethers.Interface(ARC402_WALLET_EXECUTE_ABI);
+      const govIface = new ethers.Interface(POLICY_ENGINE_GOVERNANCE_ABI);
+      const limitsIface = new ethers.Interface(POLICY_ENGINE_LIMITS_ABI);
+      const ownerIface = new ethers.Interface(ARC402_WALLET_OWNER_ABI);
+
+      console.log("\n" + c.dim("── Onboarding ceremony ────────────────────────────────────────"));
+
+      // 1. registerWallet
+      if (needsRegister) {
+        const registerCalldata = govIface.encodeFunctionData("registerWallet", [walletAddress, account]);
+        await sendTx({
+          to: walletAddress,
+          data: executeIface.encodeFunctionData("executeContractCall", [{
+            target: policyAddress,
+            data: registerCalldata,
+            value: 0n,
+            minReturnValue: 0n,
+            maxApprovalAmount: 0n,
+            approvalToken: ethers.ZeroAddress,
+          }]),
+          value: "0x0",
+        }, "registerWallet on PolicyEngine");
+      } else {
+        console.log(" " + c.success + c.dim(" registerWallet — already done"));
+      }
+
+      // 2. enableDefiAccess
+      if (needsDefiAccess) {
+        await sendTx({
+          to: policyAddress,
+          data: govIface.encodeFunctionData("enableDefiAccess", [walletAddress]),
+          value: "0x0",
+        }, "enableDefiAccess on PolicyEngine");
+      } else {
+        console.log(" " + c.success + c.dim(" enableDefiAccess — already done"));
+      }
+
+      // 3. setVelocityLimit
+      if (needsVelocity) {
+        const velocityEth = opts.velocityLimit as string || "0.05";
+        await sendTx({
+          to: walletAddress,
+          data: ownerIface.encodeFunctionData("setVelocityLimit", [ethers.parseEther(velocityEth)]),
+          value: "0x0",
+        }, `setVelocityLimit: ${velocityEth} ETH`);
+      } else {
+        console.log(" " + c.success + c.dim(" setVelocityLimit — already set"));
+      }
+
+      // 4–8. Category limits
+      for (const { name, amountEth } of ONBOARDING_CATEGORIES) {
+        if (categoryNeeds[name]) {
+          await sendTx({
+            to: policyAddress,
+            data: limitsIface.encodeFunctionData("setCategoryLimitFor", [walletAddress, name, ethers.parseEther(amountEth)]),
+            value: "0x0",
+          }, `setCategoryLimitFor: ${name} → ${amountEth} ETH`);
+        } else {
+          console.log(" " + c.success + c.dim(` setCategoryLimitFor(${name}) — already set`));
+        }
+      }
+
+      // 9+. Whitelist protocol contracts
+      for (const pc of protocolContracts) {
+        if (whitelistNeeds[pc.name]) {
+          await sendTx({
+            to: policyAddress,
+            data: govIface.encodeFunctionData("whitelistContract", [walletAddress, pc.address]),
+            value: "0x0",
+          }, `whitelistContract: ${pc.name}`);
+        } else {
+          console.log(" " + c.success + c.dim(` whitelistContract(${pc.name}) — already done`));
+        }
+      }
+
+      console.log(c.dim("── Onboarding complete ─────────────────────────────────────────"));
+      console.log("\n " + c.success + c.white(" Wallet onboarding complete"));
+      renderTree([
+        { label: "Wallet", value: walletAddress },
+        { label: "Owner", value: account },
+        { label: "Velocity Limit", value: (opts.velocityLimit as string || "0.05") + " ETH" },
+        { label: "Contracts Whitelisted", value: protocolContracts.length.toString(), last: true },
+      ]);
     });
 
   // ─── send ──────────────────────────────────────────────────────────────────
@@ -1460,6 +1701,78 @@ export function registerWalletCommands(program: Command): void {
         await (await contract.setDailyLimitFor(address, opts.category, amount)).wait();
         console.log(`Daily limit for ${opts.category} set to ${opts.amount} ETH (12/24h rolling window)`);
       }
+    });
+
+  walletPolicy.command("init")
+    .description("Set all 5 default spending limits in one WalletConnect session (1 phone connection, 5 approvals)")
+    .option("--general <eth>", "General limit", "0.001")
+    .option("--hire <eth>", "Hire limit", "0.1")
+    .option("--compute <eth>", "Compute limit", "0.05")
+    .option("--research <eth>", "Research limit", "0.05")
+    .option("--protocol <eth>", "Protocol limit", "0.1")
+    .action(async (opts) => {
+      const config = loadConfig();
+      const policyAddress = config.policyEngineAddress ?? POLICY_ENGINE_DEFAULT;
+      const chainId = config.network === "base-mainnet" ? 8453 : 84532;
+      const walletAddr = config.walletContractAddress;
+      if (!walletAddr) {
+        console.error("walletContractAddress not set. Run `arc402 wallet deploy` first.");
+        process.exit(1);
+      }
+      if (!config.walletConnectProjectId) {
+        console.error("walletConnectProjectId not set.");
+        process.exit(1);
+      }
+
+      const categories = [
+        { name: "general",  amount: opts.general },
+        { name: "hire",     amount: opts.hire },
+        { name: "compute",  amount: opts.compute },
+        { name: "research", amount: opts.research },
+        { name: "protocol", amount: opts.protocol },
+      ];
+
+      const policyInterface = new ethers.Interface(POLICY_ENGINE_LIMITS_ABI);
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const telegramOpts = config.telegramBotToken && config.telegramChatId ? {
+        botToken: config.telegramBotToken,
+        chatId: config.telegramChatId,
+        threadId: config.telegramThreadId,
+      } : undefined;
+
+      console.log(c.white("\n◈ Spend limit init — 1 connection, 5 approvals\n"));
+      console.log(c.dim("  Connect once — MetaMask will prompt 5 times in sequence."));
+
+      // Connect once, reuse session for all 5 txs
+      const { client, session, account } = await connectPhoneWallet(
+        config.walletConnectProjectId,
+        chainId,
+        config,
+        { telegramOpts, prompt: "Connect wallet for spend limit setup (5 approvals)" }
+      );
+
+      for (const cat of categories) {
+        const amount = ethers.parseEther(cat.amount);
+        const data = policyInterface.encodeFunctionData("setCategoryLimitFor", [walletAddr, cat.name, amount]);
+        console.log(c.dim(`\n  Setting ${cat.name} → ${cat.amount} ETH...`));
+
+        // Send Telegram notification for each
+        if (telegramOpts) {
+          const { sendTelegramMessage: sendTg } = await import("../telegram-notify.js");
+          await sendTg({ ...telegramOpts, text: `Approve spend limit: ${cat.name} → ${cat.amount} ETH` });
+        }
+
+        const txHash = await sendTransactionWithSession(client, session, account, chainId, {
+          to: policyAddress,
+          data,
+          value: "0x0",
+        });
+        console.log(c.dim(`  Submitted: ${txHash}`));
+        await provider.waitForTransaction(txHash);
+        console.log(c.success + c.white(` ${cat.name} → ${cat.amount} ETH`));
+      }
+
+      console.log(c.white("\n✓ All 5 spend limits set.\n"));
     });
 
   walletPolicy.command("set <policyId>")

@@ -61,9 +61,32 @@ const WORKROOM_CONTAINER = "arc402-workroom";
 const POLICY_FILE = path.join(ARC402_DIR, "openshell-policy.yaml");
 const ARENA_POLICY_FILE = path.join(ARC402_DIR, "arena-policy.yaml");
 const ARENA_DATA_DIR = path.join(ARC402_DIR, "arena");
-const WORKROOM_DIR = path.join(__dirname, "..", "..", "..", "workroom"); // relative to cli/dist
+// ── Package root resolution ────────────────────────────────────────────────
+// In a dev checkout: __dirname = cli/dist/commands → 3 levels up = cli/
+// In a global npm install: __dirname = arc402-cli/dist/commands → 2 levels up = arc402-cli/
+// We walk upward from __dirname to find the package.json that belongs to arc402-cli.
+function findPackageRoot(startDir: string): string {
+  let dir = startDir;
+  for (let i = 0; i < 5; i++) {
+    const pkg = path.join(dir, "package.json");
+    if (fs.existsSync(pkg)) {
+      try {
+        const p = JSON.parse(fs.readFileSync(pkg, "utf8"));
+        if (p.name === "arc402-cli") return dir;
+      } catch { /* keep walking */ }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // Fallback: assume 2 levels up (global npm layout)
+  return path.resolve(startDir, "..", "..");
+}
+const CLI_PACKAGE_ROOT = findPackageRoot(__dirname);
+
+const WORKROOM_DIR = path.join(CLI_PACKAGE_ROOT, "workroom");
 // Template ships at workroom/credentials.template.toml, resolved from cli/dist/commands/
-const CREDENTIALS_TEMPLATE = path.resolve(__dirname, "..", "..", "..", "workroom", "credentials.template.toml");
+const CREDENTIALS_TEMPLATE = path.resolve(CLI_PACKAGE_ROOT, "workroom", "credentials.template.toml");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -87,9 +110,24 @@ function imageExists(): boolean {
   return r.ok;
 }
 
+function getCliVersion(): string {
+  return (JSON.parse(fs.readFileSync(path.join(CLI_PACKAGE_ROOT, "package.json"), "utf8")) as { version: string }).version;
+}
+
+function imageVersionMatches(): boolean {
+  // Check the arc402.cli.version label on the existing image against the current CLI version.
+  // Returns false if image is missing, unlabelled, or was built from a different CLI version.
+  const r = runCmd("docker", [
+    "image", "inspect", WORKROOM_IMAGE,
+    "--format", "{{index .Config.Labels \"arc402.cli.version\"}}",
+  ]);
+  if (!r.ok) return false;
+  return r.stdout.trim() === getCliVersion();
+}
+
 function buildImage(useGpu = false): boolean {
   // Find the workroom directory (contains Dockerfile)
-  const workroomSrc = path.resolve(__dirname, "..", "..", "..", "workroom");
+  const workroomSrc = path.join(CLI_PACKAGE_ROOT, "workroom");
   const dockerfile = useGpu ? "Dockerfile.gpu" : "Dockerfile";
   if (!fs.existsSync(path.join(workroomSrc, dockerfile))) {
     if (useGpu) {
@@ -99,10 +137,18 @@ function buildImage(useGpu = false): boolean {
     console.error(`Dockerfile not found at ${workroomSrc}/Dockerfile`);
     return false;
   }
-  console.log(`Building ARC-402 Workroom image (${dockerfile})...`);
-  const result = spawnSync("docker", ["build", "-f", path.join(workroomSrc, dockerfile), "-t", WORKROOM_IMAGE, workroomSrc], {
-    stdio: "inherit",
-  });
+  // Pass current CLI version as build arg — installs matching arc402-cli inside the Linux container.
+  // Also stamp the version as a label so imageVersionMatches() can detect stale images on future runs.
+  const version = getCliVersion();
+  console.log(`Building ARC-402 Workroom image (${dockerfile}, arc402-cli@${version})...`);
+  const result = spawnSync("docker", [
+    "build",
+    "--build-arg", `ARC402_CLI_VERSION=${version}`,
+    "--label", `arc402.cli.version=${version}`,
+    "-f", path.join(workroomSrc, dockerfile),
+    "-t", WORKROOM_IMAGE,
+    workroomSrc,
+  ], { stdio: "inherit" });
   return result.status === 0;
 }
 
@@ -243,18 +289,17 @@ export function registerWorkroomCommands(program: Command): void {
         console.log(c.dim("   No providers enabled in credentials.toml — edit to enable providers."));
       }
 
-      // Build image
-      if (!imageExists()) {
-        if (!buildImage()) {
-          console.error(c.failure + " " + c.red("Failed to build workroom image."));
-          process.exit(1);
-        }
+      // Build image — always rebuild on init so native binaries (e.g. better-sqlite3)
+      // are compiled for Linux inside the container, not reused from a stale host-built image.
+      if (!buildImage()) {
+        console.error(c.failure + " " + c.red("Failed to build workroom image."));
+        process.exit(1);
       }
       console.log(" " + c.success + c.dim(" Image: ") + c.white(WORKROOM_IMAGE));
 
       // Package CLI runtime for the workroom
-      const cliDist = path.resolve(__dirname, "..", "..");
-      const cliPackage = path.resolve(__dirname, "..", "..", "..", "package.json");
+      const cliDist = path.join(CLI_PACKAGE_ROOT, "dist");
+      const cliPackage = path.join(CLI_PACKAGE_ROOT, "package.json");
       if (fs.existsSync(cliDist) && fs.existsSync(cliPackage)) {
         console.log(" " + c.success + c.white(" CLI runtime available for workroom mount"));
       } else {
@@ -288,8 +333,12 @@ export function registerWorkroomCommands(program: Command): void {
         runCmd("docker", ["rm", "-f", WORKROOM_CONTAINER]);
       }
 
-      // Build image if needed
-      if (!imageExists()) {
+      // Build image if missing or stale (version label mismatch means CLI was upgraded
+      // but image still has old Linux-native binaries e.g. better-sqlite3 from a prior build).
+      if (!imageExists() || !imageVersionMatches()) {
+        if (imageExists() && !imageVersionMatches()) {
+          console.log(c.dim(`Workroom image is stale (arc402-cli@${getCliVersion()} installed, image has different version). Rebuilding...`));
+        }
         if (!buildImage(useGpu)) {
           console.error("Failed to build workroom image.");
           process.exit(1);
@@ -311,7 +360,7 @@ export function registerWorkroomCommands(program: Command): void {
       const providerEnvFlags = await getDockerEnvFlags();
 
       // CLI runtime path
-      const cliRoot = path.resolve(__dirname, "..", "..", "..");
+      const cliRoot = CLI_PACKAGE_ROOT;
 
       console.log(c.dim("Starting ARC-402 Workroom..."));
 
@@ -324,7 +373,9 @@ export function registerWorkroomCommands(program: Command): void {
         ...(useGpu ? ["--gpus", "all", "--runtime", "nvidia"] : []),
         // Mount config (read-write for daemon state/logs)
         "-v", `${ARC402_DIR}:/workroom/.arc402:rw`,
-        // Mount CLI runtime (read-only)
+        // Mount CLI runtime as optional dev override (read-only).
+        // In production (global npm install), the image has arc402-cli pre-installed.
+        // Mounting here lets dev builds override the image's installed version.
         "-v", `${cliRoot}:/workroom/runtime:ro`,
         // Mount jobs directory
         "-v", `${path.join(ARC402_DIR, "jobs")}:/workroom/jobs:rw`,

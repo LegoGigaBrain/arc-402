@@ -9,9 +9,9 @@ import { QRCodeSVG } from 'qrcode.react'
 const WC_PROJECT_ID   = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? '455e9425343b9156fce1428250c9a54a'
 const CHAIN_ID        = 8453
 const BASE_RPC        = 'https://base-mainnet.g.alchemy.com/v2/YIA2uRCsFI-j5pqH-aRzflrACSlV1Qrs'
-const WALLET_FACTORY  = '0xeB72b50a8526971Cb1BD789a99bC8A78075e3957' // v6 — active factory (machine key autonomous ops)
+const WALLET_FACTORY  = '0x801f0553585f511D9953419A9668edA078196997' // v6 — active factory (machine key autonomous ops)
 const ALL_WALLET_FACTORIES = [
-  '0xeB72b50a8526971Cb1BD789a99bC8A78075e3957', // v6 active — machine key autonomous ops
+  '0x801f0553585f511D9953419A9668edA078196997', // v6 active — machine key autonomous ops
   // V5 factories frozen — uncomment to detect legacy wallets for migration
   // '0xcB52B5d746eEc05e141039E92e3dBefeAe496051', // v5 frozen
   // '0x3f4d4b19a69344B04fd9653E1bB12883e97300fE', // v5 frozen
@@ -37,6 +37,15 @@ const PROTOCOL_CONTRACTS_TO_WHITELIST = [
   { address: SUBSCRIPTION_AGREEMENT, name: 'SubscriptionAgreement' },
   { address: HANDSHAKE, name: 'Handshake' },
   { address: SESSION_CHANNELS, name: 'SessionChannels' },
+]
+
+// Standard category spend limits for onboarding
+const ONBOARDING_CATEGORIES = [
+  { name: 'general',  eth: '0.001' },
+  { name: 'hire',     eth: '0.1'   },
+  { name: 'compute',  eth: '0.05'  },
+  { name: 'research', eth: '0.05'  },
+  { name: 'protocol', eth: '0.1'   },
 ]
 
 // ─── Priority order ───────────────────────────────────────────────────────────
@@ -652,6 +661,15 @@ export default function OnboardContent() {
           setStatusMsg('Setting max hire price...')
           await signer.sendTransaction({ to: POLICY_ENGINE, data: policyIface.encodeFunctionData('setCategoryLimitFor', [arc402Wallet, 'hire', hirePriceWei]), value: 0n })
         }
+        // Set all standard category limits (skip if already non-zero)
+        const peReadCats = new ethers.Contract(POLICY_ENGINE, ['function categoryLimits(address,string) view returns (uint256)'], new ethers.JsonRpcProvider(BASE_RPC))
+        for (const cat of ONBOARDING_CATEGORIES) {
+          const existing = await peReadCats.categoryLimits(arc402Wallet, cat.name).catch(() => 0n)
+          if (existing === 0n) {
+            setStatusMsg(`Setting ${cat.name} category limit...`)
+            await signer.sendTransaction({ to: POLICY_ENGINE, data: policyIface.encodeFunctionData('setCategoryLimitFor', [arc402Wallet, cat.name, ethers.parseEther(cat.eth)]), value: 0n })
+          }
+        }
         // Whitelist all protocol contracts
         for (const pc of PROTOCOL_CONTRACTS_TO_WHITELIST) {
           const alreadyWhitelisted = await new ethers.Contract(POLICY_ENGINE, ['function isContractWhitelisted(address,address) view returns (bool)'], new ethers.JsonRpcProvider(BASE_RPC)).isContractWhitelisted(arc402Wallet, pc.address).catch(() => false)
@@ -673,6 +691,15 @@ export default function OnboardContent() {
         if (hirePriceWei) {
           setStatusMsg('Setting max hire price...')
           await sendWCTx(wc, POLICY_ENGINE, policyIface.encodeFunctionData('setCategoryLimitFor', [arc402Wallet, 'hire', hirePriceWei]))
+        }
+        // Set all standard category limits (skip if already non-zero)
+        const peReadCatsWC = new ethers.Contract(POLICY_ENGINE, ['function categoryLimits(address,string) view returns (uint256)'], new ethers.JsonRpcProvider(BASE_RPC))
+        for (const cat of ONBOARDING_CATEGORIES) {
+          const existing = await peReadCatsWC.categoryLimits(arc402Wallet, cat.name).catch(() => 0n)
+          if (existing === 0n) {
+            setStatusMsg(`Setting ${cat.name} category limit...`)
+            await sendWCTx(wc, POLICY_ENGINE, policyIface.encodeFunctionData('setCategoryLimitFor', [arc402Wallet, cat.name, ethers.parseEther(cat.eth)]))
+          }
         }
         // Whitelist all protocol contracts
         for (const pc of PROTOCOL_CONTRACTS_TO_WHITELIST) {

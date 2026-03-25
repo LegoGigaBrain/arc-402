@@ -89,13 +89,25 @@ export async function connectPhoneWallet(
     }
   }
 
-  // Fresh pairing flow
+  // Fresh pairing flow.
+  // Only require the target chain in requiredNamespaces — putting eip155:1 first
+  // caused MetaMask to default to Ethereum mainnet for the session, silently
+  // routing all txs to the wrong chain.
+  // eip155:1 is listed in optionalNamespaces so MetaMask can still include it
+  // (for chain-switch methods) without treating it as the primary chain.
   const { uri, approval } = await client.connect({
     requiredNamespaces: {
       eip155: {
-        methods: ["eth_sendTransaction", "personal_sign", "wallet_switchEthereumChain"],
+        methods: ["eth_sendTransaction", "personal_sign", "wallet_switchEthereumChain", "wallet_addEthereumChain"],
         chains: [`eip155:${chainId}`],
-        events: ["accountsChanged"],
+        events: ["accountsChanged", "chainChanged"],
+      },
+    },
+    optionalNamespaces: {
+      eip155: {
+        methods: ["eth_sendTransaction", "personal_sign", "wallet_switchEthereumChain", "wallet_addEthereumChain"],
+        chains: ["eip155:1", "eip155:84532"],
+        events: ["accountsChanged", "chainChanged"],
       },
     },
   });
@@ -143,47 +155,53 @@ export async function connectPhoneWallet(
   const session = await approval();
   const account = session.namespaces.eip155.accounts[0].split(":")[2];
 
+  // Determine which chain the wallet actually connected on
+  const sessionChainStr = session.namespaces.eip155.accounts[0].split(":")[1];
+  const sessionChainId = parseInt(sessionChainStr, 10);
+
   // Ensure wallet is on the correct chain before sending any tx
   const hexChainId = `0x${chainId.toString(16)}`;
   const networkName = chainId === 8453 ? "Base" : chainId === 84532 ? "Base Sepolia" : `chain ${chainId}`;
 
-  // First try adding the chain (MetaMask ignores if already added)
-  if (chainId === 8453) {
-    try {
-      await client.request({
-        topic: session.topic,
-        chainId: `eip155:1`,
-        request: {
-          method: "wallet_addEthereumChain",
-          params: [{ chainId: hexChainId, chainName: "Base", nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 }, rpcUrls: ["https://mainnet.base.org"], blockExplorerUrls: ["https://basescan.org"] }],
-        },
-      });
-    } catch { /* already added or unsupported */ }
-  }
-
-  // Then switch — retry up to 3 times
-  let chainSwitched = false;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      await client.request({
-        topic: session.topic,
-        chainId: `eip155:${chainId}`,
-        request: {
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: hexChainId }],
-        },
-      });
-      chainSwitched = true;
-      break;
-    } catch {
-      await new Promise(r => setTimeout(r, 1500));
+  if (sessionChainId !== chainId) {
+    // First try adding the chain (using the chain the wallet is currently on)
+    if (chainId === 8453) {
+      try {
+        await client.request({
+          topic: session.topic,
+          chainId: `eip155:${sessionChainId}`,
+          request: {
+            method: "wallet_addEthereumChain",
+            params: [{ chainId: hexChainId, chainName: "Base", nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 }, rpcUrls: ["https://mainnet.base.org"], blockExplorerUrls: ["https://basescan.org"] }],
+          },
+        });
+      } catch { /* already added or unsupported */ }
     }
-  }
-  if (!chainSwitched) {
-    console.log(`\n⚠ Could not auto-switch to ${networkName}. IMPORTANT: Switch to ${networkName} in your wallet NOW before approving the next transaction.`);
-    console.log(`  Otherwise the transaction will go to Ethereum mainnet and fail.`);
-    // Give user 5 seconds to read the warning and switch
-    await new Promise(r => setTimeout(r, 5000));
+
+    // Then switch — retry up to 3 times, using sessionChainId as the request topic
+    let chainSwitched = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await client.request({
+          topic: session.topic,
+          chainId: `eip155:${sessionChainId}`,
+          request: {
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: hexChainId }],
+          },
+        });
+        chainSwitched = true;
+        break;
+      } catch {
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+    if (!chainSwitched) {
+      console.log(`\n⚠ Could not auto-switch to ${networkName}. IMPORTANT: Switch to ${networkName} in your wallet NOW before approving the next transaction.`);
+      console.log(`  Otherwise the transaction will go to Ethereum mainnet and fail.`);
+      // Give user 5 seconds to read the warning and switch
+      await new Promise(r => setTimeout(r, 5000));
+    }
   }
 
   // Persist session (WC sessions last 7 days by default)
@@ -204,6 +222,54 @@ export async function sendTransactionWithSession(
   chainId: number,
   tx: { to: string; data: string; value?: string }
 ): Promise<string> {
+  // Determine the chain the session was established on.
+  const sessionAccounts: string[] = session.namespaces?.eip155?.accounts ?? [];
+  const sessionChainStr = sessionAccounts[0]?.split(":")[1] ?? String(chainId);
+  const sessionChainId = parseInt(sessionChainStr, 10);
+
+  // If session is on a different chain, attempt a hard switch first.
+  // This must succeed — if it doesn't, abort with a clear error rather
+  // than silently submitting to the wrong chain.
+  if (sessionChainId !== chainId) {
+    const hexChainId = `0x${chainId.toString(16)}`;
+    let switched = false;
+
+    // Try wallet_addEthereumChain first (for Base)
+    if (chainId === 8453) {
+      try {
+        await client.request({
+          topic: session.topic,
+          chainId: `eip155:${sessionChainId}`,
+          request: {
+            method: "wallet_addEthereumChain",
+            params: [{ chainId: hexChainId, chainName: "Base", nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 }, rpcUrls: ["https://mainnet.base.org"], blockExplorerUrls: ["https://basescan.org"] }],
+          },
+        });
+      } catch { /* already added */ }
+    }
+
+    // Now switch
+    for (let i = 0; i < 3; i++) {
+      try {
+        await client.request({
+          topic: session.topic,
+          chainId: `eip155:${sessionChainId}`,
+          request: { method: "wallet_switchEthereumChain", params: [{ chainId: hexChainId }] },
+        });
+        switched = true;
+        break;
+      } catch { await new Promise(r => setTimeout(r, 1000)); }
+    }
+
+    if (!switched) {
+      const net = chainId === 8453 ? "Base" : `chain ${chainId}`;
+      throw new Error(
+        `MetaMask is on chain ${sessionChainId} but this transaction requires ${net} (chain ${chainId}).\n` +
+        `Please manually switch to ${net} in MetaMask before running this command.`
+      );
+    }
+  }
+
   return client.request<string>({
     topic: session.topic,
     chainId: `eip155:${chainId}`,
@@ -232,9 +298,16 @@ export async function requestPhoneWalletSignature(
     const { uri, approval } = await client.connect({
       requiredNamespaces: {
         eip155: {
-          methods: ["eth_sendTransaction", "personal_sign", "wallet_switchEthereumChain"],
+          methods: ["eth_sendTransaction", "personal_sign", "wallet_switchEthereumChain", "wallet_addEthereumChain"],
           chains: [`eip155:${chainId}`],
-          events: ["accountsChanged"],
+          events: ["accountsChanged", "chainChanged"],
+        },
+      },
+      optionalNamespaces: {
+        eip155: {
+          methods: ["eth_sendTransaction", "personal_sign", "wallet_switchEthereumChain", "wallet_addEthereumChain"],
+          chains: ["eip155:1", "eip155:84532"],
+          events: ["accountsChanged", "chainChanged"],
         },
       },
     });
@@ -264,23 +337,38 @@ export async function requestPhoneWalletSignature(
     }
     const session = await approval();
     const account = session.namespaces.eip155.accounts[0].split(":")[2];
-    // Switch chain — retry up to 3 times
+    // Determine the chain the wallet actually connected on
+    const sessionChainStr = session.namespaces.eip155.accounts[0].split(":")[1];
+    const sessionChainId = parseInt(sessionChainStr, 10);
     const hexId = `0x${chainId.toString(16)}`;
-    let switched = false;
-    for (let i = 0; i < 3; i++) {
-      try {
-        await client.request({
-          topic: session.topic,
-          chainId: `eip155:${chainId}`,
-          request: { method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] },
-        });
-        switched = true;
-        break;
-      } catch { await new Promise(r => setTimeout(r, 1000)); }
-    }
-    if (!switched) {
-      const net = chainId === 8453 ? "Base" : chainId === 84532 ? "Base Sepolia" : `chain ${chainId}`;
-      console.log(`\n⚠ Could not auto-switch chain. Please switch to ${net} manually in your wallet before approving.`);
+    // Switch chain if needed
+    if (sessionChainId !== chainId) {
+      // First try wallet_addEthereumChain for Base
+      if (chainId === 8453) {
+        try {
+          await client.request({
+            topic: session.topic,
+            chainId: `eip155:${sessionChainId}`,
+            request: { method: "wallet_addEthereumChain", params: [{ chainId: hexId, chainName: "Base", nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 }, rpcUrls: ["https://mainnet.base.org"], blockExplorerUrls: ["https://basescan.org"] }] },
+          });
+        } catch { /* already added or unsupported */ }
+      }
+      let switched = false;
+      for (let i = 0; i < 3; i++) {
+        try {
+          await client.request({
+            topic: session.topic,
+            chainId: `eip155:${sessionChainId}`,
+            request: { method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] },
+          });
+          switched = true;
+          break;
+        } catch { await new Promise(r => setTimeout(r, 1000)); }
+      }
+      if (!switched) {
+        const net = chainId === 8453 ? "Base" : chainId === 84532 ? "Base Sepolia" : `chain ${chainId}`;
+        console.log(`\n⚠ Could not auto-switch chain. Please switch to ${net} manually in your wallet before approving.`);
+      }
     }
     const tx = buildTx(account);
     const txHash = await client.request<string>({

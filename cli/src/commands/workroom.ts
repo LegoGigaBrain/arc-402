@@ -297,14 +297,9 @@ export function registerWorkroomCommands(program: Command): void {
       }
       console.log(" " + c.success + c.dim(" Image: ") + c.white(WORKROOM_IMAGE));
 
-      // Package CLI runtime for the workroom
-      const cliDist = path.join(CLI_PACKAGE_ROOT, "dist");
-      const cliPackage = path.join(CLI_PACKAGE_ROOT, "package.json");
-      if (fs.existsSync(cliDist) && fs.existsSync(cliPackage)) {
-        console.log(" " + c.success + c.white(" CLI runtime available for workroom mount"));
-      } else {
-        console.warn(" " + c.warning + " " + c.yellow("CLI dist not found — workroom will need runtime bundle"));
-      }
+      // Production check: image has arc402-cli pre-installed with Linux-native binaries.
+      // No runtime mount needed. (Use 'arc402 workroom start --dev' to mount host dist/ for dev builds.)
+      console.log(" " + c.success + c.dim(" Runtime: ") + c.white("arc402-cli@" + getCliVersion() + " baked into image (Linux-native binaries)"));
 
       console.log("\n" + c.success + c.white(" Workroom initialized. Start with: arc402 workroom start"));
       console.log(c.dim("Policy hash: ") + c.white(getPolicyHash()));
@@ -315,8 +310,10 @@ export function registerWorkroomCommands(program: Command): void {
     .command("start")
     .description("Start the ARC-402 Workroom (always-on governed container with daemon inside).")
     .option("--compute", "Enable GPU compute mode: uses Dockerfile.gpu and passes --gpus all --runtime nvidia to docker run")
-    .action(async (opts: { compute?: boolean }) => {
+    .option("--dev", "Mount host dist/ into the container for JS-level development overrides (dev builds only; never use in production)")
+    .action(async (opts: { compute?: boolean; dev?: boolean }) => {
       const useGpu = !!opts.compute;
+      const devMount = !!opts.dev;
 
       if (!dockerAvailable()) {
         console.error("Docker is not available.");
@@ -359,10 +356,19 @@ export function registerWorkroomCommands(program: Command): void {
       // Collect provider env flags from credentials.toml
       const providerEnvFlags = await getDockerEnvFlags();
 
-      // CLI runtime path
-      const cliRoot = CLI_PACKAGE_ROOT;
-
       console.log(c.dim("Starting ARC-402 Workroom..."));
+
+      // Dev mount: only activated by --dev flag. Mounts host dist/ (JS only, never node_modules)
+      // into the container so JS changes are visible without rebuilding the image.
+      // NODE_PATH in the entrypoint ensures native addons still resolve from the Linux image install.
+      // Production users: never pass --dev. The image is self-contained.
+      const devMountArgs: string[] = devMount
+        ? ["-v", `${path.join(CLI_PACKAGE_ROOT, "dist")}:/workroom/runtime/dist:ro`]
+        : [];
+
+      if (devMount) {
+        console.log(c.dim("  Dev mode: mounting host dist/ into container (JS override only)"));
+      }
 
       const args = [
         "run", "-d",
@@ -373,14 +379,8 @@ export function registerWorkroomCommands(program: Command): void {
         ...(useGpu ? ["--gpus", "all", "--runtime", "nvidia"] : []),
         // Mount config (read-write for daemon state/logs)
         "-v", `${ARC402_DIR}:/workroom/.arc402:rw`,
-        // Mount CLI dist/ as optional dev override (read-only, JS files only — no node_modules).
-        // Mounting only dist/ means the container's Linux-compiled native addons (better-sqlite3, etc.)
-        // are always used. The host's macOS/Windows node_modules are never visible inside the container.
-        // The entrypoint sets NODE_PATH to the container's global arc402-cli node_modules so that
-        // requires from the mounted dist/ resolve against Linux-compiled binaries.
-        // In production (global npm install), the image has arc402-cli pre-installed; this mount
-        // is a no-op if dist/ doesn't exist on the host.
-        "-v", `${path.join(cliRoot, "dist")}:/workroom/runtime/dist:ro`,
+        // Dev override mount (only when --dev flag is set — never in production)
+        ...devMountArgs,
         // Mount jobs directory
         "-v", `${path.join(ARC402_DIR, "jobs")}:/workroom/jobs:rw`,
         // Mount worker directory (identity, memory, skills, knowledge)

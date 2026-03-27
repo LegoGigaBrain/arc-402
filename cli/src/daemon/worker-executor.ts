@@ -28,10 +28,6 @@ import { ethers } from "ethers";
 import { FileDeliveryManager, type DeliveryManifest } from "./file-delivery.js";
 import { createJobDirectory } from "./job-lifecycle.js";
 
-const COMMIT_DELIVERABLE_ABI = [
-  "function commitDeliverable(uint256 agreementId, bytes32 deliverableHash) external",
-];
-
 const ARC402_DIR = path.join(os.homedir(), ".arc402");
 const JOBS_DIR = path.join(ARC402_DIR, "jobs");
 const WORKER_DIR = process.env.ARC402_WORKER_DIR || path.join(ARC402_DIR, "worker");
@@ -264,29 +260,7 @@ export class WorkerExecutor {
       const manifest = await this.collectDeliverables(rec, logStream);
       rec.deliverableHash = manifest.root_hash;
 
-      // Commit deliverable on-chain if signer and contract address are available
-      logStream.write(`[worker-executor] Checking on-chain commit capability...\n`);
-      if (this.signer && this.serviceAgreementAddress) {
-        try {
-          logStream.write(`[worker-executor] Committing deliverable on-chain for agreement ${rec.agreementId}...\n`);
-          const saContract = new ethers.Contract(
-            this.serviceAgreementAddress,
-            COMMIT_DELIVERABLE_ABI,
-            this.signer
-          );
-          const tx = await saContract.commitDeliverable(BigInt(rec.agreementId), manifest.root_hash) as ethers.TransactionResponse;
-          const receipt = await tx.wait();
-          const txHash = receipt?.hash ?? tx.hash;
-          logStream.write(`[worker-executor] commitDeliverable tx: ${txHash}\n`);
-          this.log({ event: "worker_commit_deliverable", agreement_id: rec.agreementId, tx_hash: txHash, root_hash: manifest.root_hash });
-        } catch (commitErr) {
-          const msg = commitErr instanceof Error ? commitErr.message : String(commitErr);
-          logStream.write(`[worker-executor] Warning: commitDeliverable failed: ${msg}\n`);
-          this.log({ event: "worker_commit_deliverable_error", agreement_id: rec.agreementId, error: msg });
-        }
-      } else {
-        logStream.write(`[worker-executor] Skipping on-chain commit: signer=${!!this.signer} sa=${!!this.serviceAgreementAddress}\n`);
-      }
+      logStream.write(`[worker-executor] Deliverable ready — on-chain commit will be handled by daemon onJobCompleted\n`);
 
       rec.status = "completed";
       rec.completedAt = Date.now();

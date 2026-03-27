@@ -95,6 +95,8 @@ export interface DaemonConfig {
     max_job_size_mb: number;
     auto_download: boolean;
     serve_files: boolean;
+    staged_dir: string;
+    capabilities: Array<{ name: string; path: string; description: string }>;
   };
   worker: {
     agent_type: string;           // openclaw | claude-code | codex | shell
@@ -240,6 +242,14 @@ function withDefaults(raw: Record<string, unknown>): DaemonConfig {
       max_job_size_mb:  num(delivery.max_job_size_mb, 500),
       auto_download:    bool(delivery.auto_download, true),
       serve_files:      bool(delivery.serve_files, true),
+      staged_dir:       str(delivery.staged_dir, ""),
+      capabilities:     Array.isArray(delivery.capabilities)
+        ? (delivery.capabilities as Array<Record<string, unknown>>).map(c => ({
+            name: str(c.name),
+            path: str(c.path),
+            description: str(c.description),
+          }))
+        : [],
     },
     worker: {
       agent_type:            str(worker.agent_type, "openclaw"),

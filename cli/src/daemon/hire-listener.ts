@@ -18,6 +18,7 @@ export interface HireProposal {
   specHash: string;
   agreementId?: string;
   signature?: string;
+  taskDescription?: string;
 }
 
 export interface PolicyResult {
@@ -101,6 +102,7 @@ function parseProposal(msg: Record<string, unknown>): HireProposal | null {
   const payload = (msg.payload ?? msg) as Record<string, unknown>;
   if (!payload.hirerAddress && !payload.hirer_address && !payload.from) return null;
 
+  const taskDesc = String(payload.task ?? payload.taskDescription ?? payload.task_description ?? "");
   return {
     messageId: String(msg.messageId ?? msg.id ?? `msg_${Date.now()}`),
     hirerAddress: String(payload.hirerAddress ?? payload.hirer_address ?? msg.from ?? ""),
@@ -110,6 +112,7 @@ function parseProposal(msg: Record<string, unknown>): HireProposal | null {
     specHash: String(payload.specHash ?? payload.spec_hash ?? ""),
     agreementId: payload.agreementId ? String(payload.agreementId) : undefined,
     signature: payload.signature ? String(payload.signature) : undefined,
+    taskDescription: taskDesc || undefined,
   };
 }
 
@@ -184,6 +187,7 @@ export class HireListener {
         price_eth: proposal.priceEth,
         deadline_unix: proposal.deadlineUnix,
         spec_hash: proposal.specHash,
+        task_description: proposal.taskDescription ?? null,
         status: "rejected",
         reject_reason: policyResult.reason ?? "policy_violation",
       });
@@ -206,6 +210,7 @@ export class HireListener {
       price_eth: proposal.priceEth,
       deadline_unix: proposal.deadlineUnix,
       spec_hash: proposal.specHash,
+      task_description: proposal.taskDescription ?? null,
       status,
       reject_reason: null,
     });

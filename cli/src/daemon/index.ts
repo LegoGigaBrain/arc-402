@@ -36,7 +36,7 @@ import { UserOpsManager, buildAcceptCalldata, buildFulfillCalldata } from "./use
 import { generateReceipt, extractLearnings, createJobDirectory, cleanJobDirectory } from "./job-lifecycle";
 import { FileDeliveryManager } from "./file-delivery";
 import { DeliveryClient } from "./delivery-client";
-import { COMPUTE_AGREEMENT_ABI } from "../abis";
+import { COMPUTE_AGREEMENT_ABI, SERVICE_AGREEMENT_ABI } from "../abis";
 import { HandshakeWatcher } from "./handshake-watcher.js";
 import { WorkerExecutor } from "./worker-executor.js";
 
@@ -50,6 +50,7 @@ export interface HireRequestRow {
   price_eth: string;
   deadline_unix: number;
   spec_hash: string;
+  task_description: string | null;
   status: string; // pending_approval | accepted | rejected | delivered | complete
   created_at: number;
   updated_at: number;
@@ -80,6 +81,7 @@ function openStateDB(dbPath: string): DaemonDB {
       price_eth TEXT,
       deadline_unix INTEGER,
       spec_hash TEXT,
+      task_description TEXT,
       status TEXT NOT NULL,
       created_at INTEGER,
       updated_at INTEGER,
@@ -118,11 +120,14 @@ function openStateDB(dbPath: string): DaemonDB {
     );
   `);
 
+  // Migration: add task_description column to existing DBs that predate this field
+  try { db.exec(`ALTER TABLE hire_requests ADD COLUMN task_description TEXT`); } catch { /* already exists */ }
+
   const insertHireRequest = db.prepare(`
     INSERT OR IGNORE INTO hire_requests
-      (id, agreement_id, hirer_address, capability, price_eth, deadline_unix, spec_hash, status, created_at, updated_at, reject_reason)
+      (id, agreement_id, hirer_address, capability, price_eth, deadline_unix, spec_hash, task_description, status, created_at, updated_at, reject_reason)
     VALUES
-      (@id, @agreement_id, @hirer_address, @capability, @price_eth, @deadline_unix, @spec_hash, @status, @created_at, @updated_at, @reject_reason)
+      (@id, @agreement_id, @hirer_address, @capability, @price_eth, @deadline_unix, @spec_hash, @task_description, @status, @created_at, @updated_at, @reject_reason)
   `);
 
   const getHireRequest = db.prepare(`SELECT * FROM hire_requests WHERE id = ?`);
@@ -683,6 +688,8 @@ export async function runDaemon(foreground = false): Promise<void> {
   hireListener.setApproveCallback(async (hireId) => {
     const hire = db.getHireRequest(hireId);
     if (!hire || !hire.agreement_id || !config.serviceAgreementAddress) return;
+
+    // Submit accept on-chain — try UserOp first, fall back to EOA
     try {
       const callData = buildAcceptCalldata(
         config.serviceAgreementAddress,
@@ -690,20 +697,49 @@ export async function runDaemon(foreground = false): Promise<void> {
         config.wallet.contract_address
       );
       const hash = await userOps.submit(callData, config.wallet.contract_address);
-      log({ event: "hire_auto_accepted", id: hireId, userop_hash: hash });
+      log({ event: "hire_auto_accepted_userop", id: hireId, userop_hash: hash });
       if (config.notifications.notify_on_hire_accepted) {
         await notifier.notifyHireAccepted(hireId, hire.agreement_id);
       }
+    } catch (uErr) {
+      log({ event: "accept_userop_failed_trying_eoa", id: hireId, error: String(uErr) });
+      try {
+        const saContract = new ethers.Contract(config.serviceAgreementAddress, SERVICE_AGREEMENT_ABI, machineKeySigner);
+        const tx = await saContract.accept(BigInt(hire.agreement_id)) as ethers.TransactionResponse;
+        await tx.wait();
+        log({ event: "hire_auto_accepted_eoa", id: hireId, tx_hash: tx.hash });
+        if (config.notifications.notify_on_hire_accepted) {
+          await notifier.notifyHireAccepted(hireId, hire.agreement_id);
+        }
+      } catch (eoaErr) {
+        log({ event: "accept_eoa_also_failed", id: hireId, error: String(eoaErr) });
+        log({ event: "MANUAL_ACCEPT_REQUIRED", agreement_id: hire.agreement_id, message: `Run: arc402 accept ${hire.agreement_id}` });
+      }
+    }
 
-      // Enqueue task execution — worker runs the job, then delivers on completion
-      workerExecutor.enqueue({
-        agreementId: hire.agreement_id,
-        capability: hire.capability ?? "general",
-        specHash: hire.spec_hash ?? "0x0",
-      });
-      log({ event: "job_enqueued", id: hireId, agreement_id: hire.agreement_id, capability: hire.capability });
-    } catch (err) {
-      log({ event: "accept_userop_error", id: hireId, error: String(err) });
+    // Enqueue task execution — worker runs the job, then delivers on completion
+    workerExecutor.enqueue({
+      agreementId: hire.agreement_id,
+      capability: hire.capability ?? "general",
+      specHash: hire.spec_hash ?? "0x0",
+      taskDescription: hire.task_description ?? hire.capability ?? undefined,
+    });
+    log({ event: "job_enqueued", id: hireId, agreement_id: hire.agreement_id, capability: hire.capability });
+
+    // Seed staged deliverables if configured for this capability
+    const stagedDir = config.delivery.staged_dir;
+    const capCfg = config.delivery.capabilities?.find(c => c.name === hire.capability);
+    if (stagedDir && capCfg) {
+      const srcDir = path.join(stagedDir, capCfg.path);
+      const jobDir = path.join(os.homedir(), ".arc402", "jobs", `agreement-${hire.agreement_id}`);
+      if (fs.existsSync(srcDir)) {
+        fs.mkdirSync(jobDir, { recursive: true });
+        const files = fs.readdirSync(srcDir);
+        for (const file of files) {
+          fs.copyFileSync(path.join(srcDir, file), path.join(jobDir, file));
+        }
+        log({ event: "staged_files_seeded", agreement_id: hire.agreement_id, capability: hire.capability, count: files.length });
+      }
     }
   });
 
@@ -924,15 +960,30 @@ export async function runDaemon(foreground = false): Promise<void> {
       try {
           const msg = JSON.parse(body) as Record<string, unknown>;
 
+          // Resolve hirer address — prefer the on-chain smart wallet client field
+          let resolvedHirerAddress = String(msg.hirerAddress ?? msg.hirer_address ?? msg.from ?? "");
+          const rawAgreementId = msg.agreementId ? String(msg.agreementId) : undefined;
+          if (rawAgreementId && config.serviceAgreementAddress) {
+            try {
+              const sa = new ethers.Contract(config.serviceAgreementAddress, SERVICE_AGREEMENT_ABI, provider);
+              const ag = await sa.getAgreement(BigInt(rawAgreementId)) as { client: string };
+              if (ag.client && ag.client !== ethers.ZeroAddress) {
+                resolvedHirerAddress = ag.client;
+              }
+            } catch { /* use fallback */ }
+          }
+
+          const taskDescription = String(msg.task ?? msg.taskDescription ?? "");
+
           // Feed into the hire listener's message handler
           const proposal = {
             messageId: String(msg.messageId ?? msg.id ?? `http_${Date.now()}`),
-            hirerAddress: String(msg.hirerAddress ?? msg.hirer_address ?? msg.from ?? ""),
+            hirerAddress: resolvedHirerAddress,
             capability: String(msg.capability ?? msg.serviceType ?? ""),
             priceEth: String(msg.priceEth ?? msg.price_eth ?? "0"),
             deadlineUnix: Number(msg.deadlineUnix ?? msg.deadline ?? 0),
             specHash: String(msg.specHash ?? msg.spec_hash ?? ""),
-            agreementId: msg.agreementId ? String(msg.agreementId) : undefined,
+            agreementId: rawAgreementId,
             signature: msg.signature ? String(msg.signature) : undefined,
           };
 
@@ -959,6 +1010,7 @@ export async function runDaemon(foreground = false): Promise<void> {
               price_eth: proposal.priceEth,
               deadline_unix: proposal.deadlineUnix,
               spec_hash: proposal.specHash,
+              task_description: taskDescription || null,
               status: "rejected",
               reject_reason: policyResult.reason ?? "policy_violation",
             });
@@ -977,6 +1029,7 @@ export async function runDaemon(foreground = false): Promise<void> {
             price_eth: proposal.priceEth,
             deadline_unix: proposal.deadlineUnix,
             spec_hash: proposal.specHash,
+            task_description: taskDescription || null,
             status,
             reject_reason: null,
           });
@@ -996,10 +1049,27 @@ export async function runDaemon(foreground = false): Promise<void> {
               agreementId: proposal.agreementId,
               capability: proposal.capability,
               specHash: proposal.specHash,
+              taskDescription: taskDescription || undefined,
             });
             log({ event: "http_job_enqueued", id: proposal.messageId, agreement_id: proposal.agreementId });
 
-            // Try to submit accept UserOp (non-blocking, best-effort)
+            // Seed staged deliverables if configured for this capability
+            const httpStagedDir = config.delivery.staged_dir;
+            const httpCapCfg = config.delivery.capabilities?.find(c => c.name === proposal.capability);
+            if (httpStagedDir && httpCapCfg) {
+              const srcDir = path.join(httpStagedDir, httpCapCfg.path);
+              const jobDir = path.join(os.homedir(), ".arc402", "jobs", `agreement-${proposal.agreementId}`);
+              if (fs.existsSync(srcDir)) {
+                fs.mkdirSync(jobDir, { recursive: true });
+                const files = fs.readdirSync(srcDir);
+                for (const file of files) {
+                  fs.copyFileSync(path.join(srcDir, file), path.join(jobDir, file));
+                }
+                log({ event: "staged_files_seeded", agreement_id: proposal.agreementId, capability: proposal.capability, count: files.length });
+              }
+            }
+
+            // Try to submit accept UserOp (non-blocking, best-effort) with EOA fallback
             if (config.serviceAgreementAddress) {
               void (async () => {
                 try {
@@ -1009,13 +1079,24 @@ export async function runDaemon(foreground = false): Promise<void> {
                     config.wallet.contract_address
                   );
                   const hash = await userOps.submit(callData, config.wallet.contract_address);
-                  log({ event: "http_hire_auto_accepted", id: proposal.messageId, userop_hash: hash });
+                  log({ event: "http_hire_auto_accepted_userop", id: proposal.messageId, userop_hash: hash });
                   if (config.notifications.notify_on_hire_accepted) {
                     await notifier.notifyHireAccepted(proposal.messageId, proposal.agreementId!);
                   }
-                } catch (err) {
-                  // Non-fatal — agreement may already be accepted on-chain
-                  log({ event: "http_accept_userop_skipped", id: proposal.messageId, reason: String(err).slice(0, 100) });
+                } catch (uErr) {
+                  log({ event: "http_accept_userop_failed_trying_eoa", id: proposal.messageId, error: String(uErr).slice(0, 100) });
+                  try {
+                    const saContract = new ethers.Contract(config.serviceAgreementAddress!, SERVICE_AGREEMENT_ABI, machineKeySigner);
+                    const tx = await saContract.accept(BigInt(proposal.agreementId!)) as ethers.TransactionResponse;
+                    await tx.wait();
+                    log({ event: "http_hire_auto_accepted_eoa", id: proposal.messageId, tx_hash: tx.hash });
+                    if (config.notifications.notify_on_hire_accepted) {
+                      await notifier.notifyHireAccepted(proposal.messageId, proposal.agreementId!);
+                    }
+                  } catch (eoaErr) {
+                    log({ event: "http_accept_eoa_also_failed", id: proposal.messageId, error: String(eoaErr) });
+                    log({ event: "MANUAL_ACCEPT_REQUIRED", agreement_id: proposal.agreementId, message: `Run: arc402 accept ${proposal.agreementId}` });
+                  }
                 }
               })();
             }

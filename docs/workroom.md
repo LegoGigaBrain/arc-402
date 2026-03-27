@@ -6,39 +6,57 @@
 
 ## The idea
 
-Infrastructure becomes real when someone moves into it.
+Think of it as an office building for agents.
 
-We built the workroom as a governed execution environment. But it became something more specific when Arc moved in — a specialist agent with its own identity, memory, and character, whose workspace lives inside the workroom. That moment changed how we thought about the whole thing.
+You are the company. Your personal AI — running on your machine, managing your calendar, answering your messages — is the CEO. The workroom is the office floor. And inside it, you can have as many specialist workers as you need: a researcher, a writer, a coder, a data analyst. Each with their own desk, their own memory, their own tools. Each operating within a defined scope.
 
-The workroom isn't a container. It's an office. And an office only makes sense when someone shows up to work.
+When a hire comes in, the right worker shows up to work. They sit at their desk, execute the brief, and produce a verifiable deliverable. When the job is done, the agreement closes, the receipt is issued, and the escrow releases.
 
-When an agent gets hired on ARC-402, the question isn't just *will it get paid* — it's *where does the work actually happen?* What can it touch? What can it reach? Who verifies it ran correctly? The workroom is the answer to all three. It transforms an agreement from a payment promise into a bounded, auditable act of work.
+That's the workroom. Not a sandbox. Not a container. An office — with the governance baked into the architecture.
+
+The key distinction: the workroom isn't about restriction. It's about *scope*. A specialist operating within a well-defined scope does better work than a generalist wandering through an unbounded environment. Governance isn't a cage — it's a job description made structural.
 
 Without the workroom, ARC-402 is a payment protocol. *With* the workroom, it becomes a commerce protocol — one where the work itself is governed, not just the settlement.
 
 ---
 
-## The analogy that named it
+## The anatomy of an office
 
-When we were building this, we considered calling it a sandbox. We didn't.
+Every workroom has the same five elements:
 
-A sandbox is where things are contained. A workroom is where things are *built* — under rules, with tools, with receipts at the end.
-
-The analogy holds all the way down:
-
-| Workroom element | What it maps to |
-|-----------------|-----------------|
-| **Walls** | iptables egress policy — the network is locked down to only what the operator permits |
-| **Desk** | filesystem — the worker has a job directory, credentials, and memory, but nothing outside its scope |
-| **Credentials** | injected secrets — API keys and tokens are provided at runtime, never baked in |
-| **Lock** | the workroom closes after settlement — the agreement lifecycle ends, the job directory seals |
+| Element | What it maps to |
+|---------|----------------|
+| **Walls** | iptables egress policy — the network is locked to only what the operator permits |
+| **Desk** | filesystem — each worker has a job directory, credentials, and memory scoped to their role |
+| **Credentials** | injected secrets — API keys and tokens provided at runtime, never baked in |
+| **Lock** | the agreement lifecycle — when a job closes, the job directory seals |
 | **Receipt** | cryptographic deliverable hash — on-chain proof that governed work happened |
 
-You are the company. GigaBrain is the CEO. The worker is the employee. The workroom is the office they show up to.
+Each worker in the workroom gets their own desk. They don't get access to each other's desks. They don't get the run of the building. They get exactly what they need to do the work — nothing more.
 
-The worker doesn't get the run of the building. They get a desk, a clear brief, the tools they need, and walls that keep them from wandering somewhere they shouldn't.
+---
 
-The key insight: the workroom isn't about restriction. It's about *scope*. A skilled worker operating within a well-defined scope does better work than one wandering through an unbounded environment. Governance isn't a cage — it's a job description made structural.
+## Multiple workers, one workroom
+
+A single workroom can house many specialist workers:
+
+```
+~/.arc402/worker/
+├── researcher/     — deep research, source synthesis, factual verification
+├── writer/         — long-form content, structured documents, narrative
+├── coder/          — implementation, code review, debugging
+└── analyst/        — data processing, pattern extraction, reporting
+```
+
+Each worker is a distinct identity with its own:
+- `SOUL.md` — character and operating principles
+- `IDENTITY.md` — name, role, signature
+- `memory/learnings.md` — expertise accumulated across jobs
+- `knowledge/` — domain-specific reference material
+
+Workers accumulate expertise over time. After every completed job, learnings persist. The researcher gets better at research. The analyst gets better at analysis. The workroom becomes more capable with every agreement it fulfills.
+
+You don't spin up a new worker for every job. You train specialists and let them compound.
 
 ---
 

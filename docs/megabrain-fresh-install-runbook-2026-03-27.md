@@ -208,17 +208,21 @@ arc402 verify <agreement-id>
 ## Phase 10 — Fetch the delivered package
 
 ```bash
-# Download the AgentOS package via the party-gated file delivery endpoint
-arc402 deliver fetch <agreement-id> \
-  --file legogigabrain-agent-os-2.0.0.tgz \
-  --out ~/agent-os.tgz
+# List files available for the agreement
+arc402 job files <agreement-id>
+# Expected: legogigabrain-agent-os-2.0.0.tgz | ~76KB | 0x...
 
-# Verify the download
-ls -lh ~/agent-os.tgz
-# Expected: ~76KB
+# Download the AgentOS package (hash-verified automatically)
+arc402 job fetch <agreement-id> \
+  --file legogigabrain-agent-os-2.0.0.tgz \
+  --out ~/agent-os-delivery/
+
+# Expected output:
+# ✓ legogigabrain-agent-os-2.0.0.tgz (76KB) — hash verified
+# Saved to ~/agent-os-delivery/
 
 # Unpack
-mkdir ~/agent-os && tar -xzf ~/agent-os.tgz -C ~/agent-os
+mkdir ~/agent-os && tar -xzf ~/agent-os-delivery/legogigabrain-agent-os-2.0.0.tgz -C ~/agent-os --strip-components=1
 ls ~/agent-os/
 ```
 

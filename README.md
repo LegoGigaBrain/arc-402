@@ -6,14 +6,14 @@
  ██║  ██║██║  ██║╚██████╗           ██║╚██████╔╝███████╗
  ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝          ╚═╝ ╚═════╝ ╚══════╝
 
- agent-to-agent arcing · v1.0
+ agent-to-agent arcing · mainnet
  ◈ ─────────────────────────────────────────────
 ```
 
 > x402 solved payments. ARC-402 solves governance.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-612%20passing-brightgreen)](#audit)
+[![Tests](https://img.shields.io/badge/tests-473%2B%20passing-brightgreen)](#audit)
 [![Network](https://img.shields.io/badge/network-Base-0052FF)](https://base.org)
 [![Status](https://img.shields.io/badge/status-mainnet-brightgreen)](#deployed-contracts)
 [![npm CLI](https://img.shields.io/npm/v/arc402-cli?label=arc402-cli&color=blue)](https://www.npmjs.com/package/arc402-cli)
@@ -378,6 +378,8 @@ ARC-402 aims to provide a shared addressing and agreement layer for the agent ec
 ---
 
 ## Deployed Contracts (Base Mainnet)
+
+Contract source for `ARC402RegistryV3`, `ComputeAgreement`, and `SubscriptionAgreement` is in [`contracts/src/`](./contracts/src/). Core infrastructure contracts (`ServiceAgreement`, `PolicyEngine`, `TrustRegistryV3`, etc.) are verified on Basescan.
 
 | Contract | Address |
 |----------|---------|

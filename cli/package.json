@@ -1,6 +1,6 @@
 {
   "name": "arc402-cli",
-  "version": "1.4.41",
+  "version": "1.4.42",
   "description": "ARC-402 CLI for discovery, negotiation payloads, hire/remediation/dispute workflows, and network reads",
   "bin": {
     "arc402": "./dist/index.js"

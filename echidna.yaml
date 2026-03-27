@@ -1,4 +1,0 @@
-testMode: "assertion"
-testLimit: 50000
-shrinkLimit: 5000
-solcArgs: ""

@@ -1,6 +1,0 @@
-testMode: "assertion"
-testLimit: 10000
-timeout: 120
-contract: "SubscriptionAgreement"
-remappings:
-  - "@openzeppelin/contracts/=contracts/lib/openzeppelin-contracts/contracts/"

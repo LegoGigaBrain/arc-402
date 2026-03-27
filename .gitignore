@@ -127,3 +127,12 @@ products/arc-402/contracts/lib/
 !plugin/src/tools/
 !plugin/src/tools/*.ts
 .wake/
+
+# ─── Audit toolchain artifacts ───
+crytic-export/
+echidna*.yaml
+medusa.json
+
+# ─── Internal specs / skill (not for public repo surface) ───
+products/arc402/
+skills/

@@ -161,6 +161,19 @@ export class FileDeliveryManager {
       return { allowed: true, party: "provider" };
     }
 
+    // Also accept machine key EOA if the X-ARC402-Wallet header identifies a party wallet.
+    // V6 smart wallets sign protocol actions via an authorized machine key (EOA),
+    // so the recovered signer is the EOA, not the wallet contract address.
+    const walletHeader = (req.headers["x-arc402-wallet"] as string | undefined)?.toLowerCase();
+    if (walletHeader) {
+      if (walletHeader === parties.hirerAddress.toLowerCase()) {
+        return { allowed: true, party: "hirer" };
+      }
+      if (walletHeader === parties.providerAddress.toLowerCase()) {
+        return { allowed: true, party: "provider" };
+      }
+    }
+
     return { allowed: false, reason: "signer_not_party_to_agreement" };
   }
 

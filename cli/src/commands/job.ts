@@ -34,14 +34,20 @@ function truncHash(hash: string): string {
 
 type AuthHeaders = Record<string, string>;
 
-async function buildAuthHeaders(privateKey: string, agreementId: string): Promise<AuthHeaders> {
+async function buildAuthHeaders(privateKey: string, agreementId: string, walletContractAddress?: string): Promise<AuthHeaders> {
   const wallet = new ethers.Wallet(privateKey);
   const message = `arc402:download:${agreementId}`;
   const sig = await wallet.signMessage(message);
-  return {
+  const headers: AuthHeaders = {
     "X-ARC402-Signature": sig,
-    "X-ARC402-Signer": wallet.address,
+    "X-ARC402-Signer": wallet.address, // the EOA that actually signed
   };
+  // If operator has a smart wallet, include it so the daemon can verify party membership.
+  // V6 wallets sign via machine key EOA — the wallet contract is the on-chain party.
+  if (walletContractAddress) {
+    headers["X-ARC402-Wallet"] = walletContractAddress;
+  }
+  return headers;
 }
 
 async function resolveProviderEndpoint(
@@ -108,7 +114,7 @@ export function registerJobCommands(program: Command): void {
 
       const { endpoint } = await resolveProviderEndpoint(config, agreementId);
       await validateEndpointUrl(endpoint);
-      const headers = await buildAuthHeaders(config.privateKey, agreementId);
+      const headers = await buildAuthHeaders(config.privateKey, agreementId, config.walletContractAddress ?? undefined);
 
       const res = await fetch(`${endpoint}/job/${agreementId}/files`, { headers });
       if (!res.ok) handleHttpError(res.status, agreementId);
@@ -157,7 +163,7 @@ export function registerJobCommands(program: Command): void {
 
       const { endpoint } = await resolveProviderEndpoint(config, agreementId);
       await validateEndpointUrl(endpoint);
-      const headers = await buildAuthHeaders(config.privateKey, agreementId);
+      const headers = await buildAuthHeaders(config.privateKey, agreementId, config.walletContractAddress ?? undefined);
 
       if (opts.file) {
         const name = opts.file;
@@ -227,7 +233,7 @@ export function registerJobCommands(program: Command): void {
 
       const { endpoint } = await resolveProviderEndpoint(config, agreementId);
       await validateEndpointUrl(endpoint);
-      const headers = await buildAuthHeaders(config.privateKey, agreementId);
+      const headers = await buildAuthHeaders(config.privateKey, agreementId, config.walletContractAddress ?? undefined);
 
       const res = await fetch(`${endpoint}/job/${agreementId}/manifest`, { headers });
       if (!res.ok) handleHttpError(res.status, agreementId);

@@ -379,8 +379,6 @@ ARC-402 aims to provide a shared addressing and agreement layer for the agent ec
 
 ## Deployed Contracts (Base Mainnet)
 
-Contract source for `ARC402RegistryV3`, `ComputeAgreement`, and `SubscriptionAgreement` is in [`contracts/src/`](./contracts/src/). Core infrastructure contracts (`ServiceAgreement`, `PolicyEngine`, `TrustRegistryV3`, etc.) are verified on Basescan.
-
 | Contract | Address |
 |----------|---------|
 | PolicyEngine | [`0x0743ab6a7280b416D3b75c7e5457390906312139`](https://basescan.org/address/0x0743ab6a7280b416d3b75c7e5457390906312139) |

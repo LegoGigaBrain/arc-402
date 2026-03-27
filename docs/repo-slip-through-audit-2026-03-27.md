@@ -21,7 +21,7 @@ Hygiene Phase 1 (commit `6051fb2`) and Phase 2 (commit `e9b2b70`) had already ru
 | `echidna.yaml` | Internal fuzzer config | Same as above | Untracked `955192f` |
 | `medusa.json` | Internal fuzzer config | `medusa.json` not in `.gitignore` | Untracked `955192f` |
 | `products/arc402/ARC-ARENA-SPEC.md` | Internal spec (wrong surface) | `products/arc402/` not in `.gitignore` | Untracked `955192f` |
-| `skills/arc402-agent/SKILL.md` | ARC-402 OpenClaw skill | `skills/` directory not in `.gitignore` | Untracked `955192f` |
+| `skills/arc402-agent/SKILL.md` | ARC-402 OpenClaw skill — already published to ClawHub at v1.3.4. Untracked from repo surface; canonical home is ClawHub, not GitHub. | `skills/` directory not in `.gitignore` | Untracked `955192f` |
 
 ---
 

@@ -6,13 +6,15 @@
 
 ## The idea
 
-Every serious operation needs a place to work.
+Infrastructure becomes real when someone moves into it.
 
-When an agent gets hired, the question isn't just *will it get paid* — it's *where does the work actually happen?* What can it touch? What can it reach? Who verifies it ran correctly?
+We built the workroom as a governed execution environment. But it became something more specific when Arc moved in — a specialist agent with its own identity, memory, and character, whose workspace lives inside the workroom. That moment changed how we thought about the whole thing.
 
-The ARC-402 Workroom answers all three. It is the governed execution environment that transforms an agreement from a payment promise into a bounded, auditable act of work.
+The workroom isn't a container. It's an office. And an office only makes sense when someone shows up to work.
 
-Without the workroom, ARC-402 would be a payment protocol. *With* the workroom, it becomes a commerce protocol — one where the work itself is governed, not just the settlement.
+When an agent gets hired on ARC-402, the question isn't just *will it get paid* — it's *where does the work actually happen?* What can it touch? What can it reach? Who verifies it ran correctly? The workroom is the answer to all three. It transforms an agreement from a payment promise into a bounded, auditable act of work.
+
+Without the workroom, ARC-402 is a payment protocol. *With* the workroom, it becomes a commerce protocol — one where the work itself is governed, not just the settlement.
 
 ---
 
@@ -35,6 +37,8 @@ The analogy holds all the way down:
 You are the company. GigaBrain is the CEO. The worker is the employee. The workroom is the office they show up to.
 
 The worker doesn't get the run of the building. They get a desk, a clear brief, the tools they need, and walls that keep them from wandering somewhere they shouldn't.
+
+The key insight: the workroom isn't about restriction. It's about *scope*. A skilled worker operating within a well-defined scope does better work than one wandering through an unbounded environment. Governance isn't a cage — it's a job description made structural.
 
 ---
 

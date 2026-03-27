@@ -129,8 +129,8 @@ function openStateDB(dbPath: string): DaemonDB {
   const getHireRequestByAgreementId = db.prepare(`SELECT * FROM hire_requests WHERE agreement_id = ? ORDER BY created_at DESC LIMIT 1`);
   const updateStatus = db.prepare(`UPDATE hire_requests SET status = ?, reject_reason = ?, updated_at = ? WHERE id = ?`);
   const listPending = db.prepare(`SELECT * FROM hire_requests WHERE status = 'pending_approval' ORDER BY created_at ASC`);
-  const listActive = db.prepare(`SELECT * FROM hire_requests WHERE status IN ('accepted', 'delivered') ORDER BY created_at ASC`);
-  const countActive = db.prepare(`SELECT COUNT(*) as n FROM hire_requests WHERE status IN ('accepted', 'delivered')`);
+  const listActive = db.prepare(`SELECT * FROM hire_requests WHERE status IN ('accepted') ORDER BY created_at ASC`);
+  const countActive = db.prepare(`SELECT COUNT(*) as n FROM hire_requests WHERE status IN ('accepted')`);
 
   return {
     insertHireRequest(row) {

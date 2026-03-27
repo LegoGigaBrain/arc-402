@@ -265,6 +265,7 @@ export class WorkerExecutor {
       rec.deliverableHash = manifest.root_hash;
 
       // Commit deliverable on-chain if signer and contract address are available
+      logStream.write(`[worker-executor] Checking on-chain commit capability...\n`);
       if (this.signer && this.serviceAgreementAddress) {
         try {
           logStream.write(`[worker-executor] Committing deliverable on-chain for agreement ${rec.agreementId}...\n`);
@@ -283,6 +284,8 @@ export class WorkerExecutor {
           logStream.write(`[worker-executor] Warning: commitDeliverable failed: ${msg}\n`);
           this.log({ event: "worker_commit_deliverable_error", agreement_id: rec.agreementId, error: msg });
         }
+      } else {
+        logStream.write(`[worker-executor] Skipping on-chain commit: signer=${!!this.signer} sa=${!!this.serviceAgreementAddress}\n`);
       }
 
       rec.status = "completed";
@@ -513,12 +516,16 @@ export class WorkerExecutor {
     if (knowledge) sections.push(`## Domain Knowledge\nReference material for your specialisation.\n\n${knowledge}`);
     if (datasets) sections.push(`## Reference Examples\n${datasets}`);
 
+    const taskFallback = (!taskContent && !capability)
+      ? `You are a professional AI worker. The hiring agent has requested your services under capability: (unspecified). Produce a high-quality deliverable documenting your analysis and output.`
+      : `Complete the work specified by the capability "${capability}".`;
+
     sections.push(`## Current Task
 Agreement ID: ${agreementId}
 Capability: ${capability}
 Spec Hash: ${specHash}
 
-${taskContent || `Complete the work specified by the capability "${capability}".`}`);
+${taskContent || taskFallback}`);
 
     sections.push(`## Output Instructions
 Store all deliverable files in the current directory.

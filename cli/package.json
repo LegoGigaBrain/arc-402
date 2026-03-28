@@ -1,6 +1,6 @@
 {
   "name": "arc402-cli",
-  "version": "1.4.42",
+  "version": "1.4.47",
   "description": "ARC-402 CLI for discovery, negotiation payloads, hire/remediation/dispute workflows, and network reads",
   "bin": {
     "arc402": "./dist/index.js"
@@ -13,7 +13,7 @@
   "scripts": {
     "build": "tsc",
     "test": "node --test test/**/*.test.js",
-    "prepublishOnly": "npm run build && node -e \"const fs=require('fs'),path=require('path'); const src=path.resolve(__dirname,'../workroom'); const dst=path.resolve(__dirname,'workroom'); if(fs.existsSync(src)){fs.cpSync(src,dst,{recursive:true}); console.log('Copied workroom/ into package');} else { console.warn('WARNING: ../workroom not found \u2014 workroom files will be missing from package'); }\""
+    "prepublishOnly": "npm run build && node -e \"const fs=require('fs'),path=require('path'); const src=path.resolve(__dirname,'../workroom'); const dst=path.resolve(__dirname,'workroom'); if(fs.existsSync(src)){fs.cpSync(src,dst,{recursive:true}); console.log('Copied workroom/ into package');} else { console.warn('WARNING: ../workroom not found — workroom files will be missing from package'); }\""
   },
   "dependencies": {
     "@arc402/sdk": "^0.6.0",

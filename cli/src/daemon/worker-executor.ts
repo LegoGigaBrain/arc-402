@@ -377,13 +377,40 @@ export class WorkerExecutor {
     logStream.write(`[worker-executor] Gateway response received (${deliverable.length} chars)\n`);
     logStream.write(`\n--- Gateway Output ---\n${deliverable}\n`);
 
-    const deliverablePath = path.join(rec.jobDir, "deliverable.md");
-    fs.writeFileSync(
-      deliverablePath,
-      `# Deliverable\n\nAgreement: ${rec.agreementId}\nCapability: ${rec.capability}\n\n---\n\n${deliverable}`,
-      "utf-8"
-    );
-    logStream.write(`[worker-executor] Deliverable written to ${deliverablePath}\n`);
+    // Try to parse <arc402_delivery> structured file block
+    let extractedDeliverable = false;
+    const deliveryMatch = deliverable.match(/<arc402_delivery>\s*([\s\S]*?)\s*<\/arc402_delivery>/);
+    if (deliveryMatch) {
+      try {
+        const parsed = JSON.parse(deliveryMatch[1]) as { files?: Array<{ name: string; content: string }> };
+        if (parsed.files && Array.isArray(parsed.files)) {
+          for (const file of parsed.files) {
+            if (typeof file.name === "string" && typeof file.content === "string") {
+              const safeName = path.basename(file.name);
+              if (safeName && !safeName.startsWith(".")) {
+                const filePath = path.join(rec.jobDir, safeName);
+                fs.writeFileSync(filePath, file.content, "utf-8");
+                logStream.write(`[worker-executor] Extracted file: ${safeName} (${file.content.length} chars)\n`);
+              }
+            }
+          }
+          extractedDeliverable = parsed.files.some(f => path.basename(f.name) === "deliverable.md");
+        }
+      } catch (parseErr) {
+        logStream.write(`[worker-executor] Warning: failed to parse arc402_delivery block: ${parseErr}\n`);
+      }
+    }
+
+    // Fallback: write deliverable.md from raw response if not extracted via delivery block
+    if (!extractedDeliverable) {
+      const deliverablePath = path.join(rec.jobDir, "deliverable.md");
+      fs.writeFileSync(
+        deliverablePath,
+        `# Deliverable\n\nAgreement: ${rec.agreementId}\nCapability: ${rec.capability}\n\n---\n\n${deliverable}`,
+        "utf-8"
+      );
+      logStream.write(`[worker-executor] Deliverable written to ${deliverablePath}\n`);
+    }
   }
 
   private spawnAgent(rec: ExecutionRecord, logStream: fs.WriteStream): Promise<number> {
@@ -502,9 +529,19 @@ Spec Hash: ${specHash}
 ${taskContent || taskFallback}`);
 
     sections.push(`## Output Instructions
-Store all deliverable files in the current directory.
-Write a deliverable.md summarizing your work and results.
-Be thorough and professional. Your output will be hashed and delivered on-chain.`);
+Complete your work thoroughly and professionally. Your output will be hashed and delivered on-chain.
+
+At the end of your response, you MUST include an <arc402_delivery> block containing ALL output files as JSON. This is how your files are transferred to the delivery system. Format:
+
+<arc402_delivery>
+{"files":[{"name":"deliverable.md","content":"# Deliverable\\n\\n..."},{"name":"report.md","content":"..."}]}
+</arc402_delivery>
+
+Rules:
+- ALWAYS include \`deliverable.md\` as a summary of your work
+- Include ALL substantive output files (reports, code, data, etc.)
+- File content must be valid JSON string (escape newlines as \\n, quotes as \\")
+- Do NOT include task.md or job.log in the delivery block`);
 
     return sections.join("\n\n---\n\n");
   }

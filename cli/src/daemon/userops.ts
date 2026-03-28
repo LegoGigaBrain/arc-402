@@ -11,7 +11,7 @@ import { ARC402_WALLET_EXECUTE_ABI } from "../abis";
 // ServiceAgreement calldata encoders
 const SA_IFACE = new ethers.Interface([
   "function accept(uint256 agreementId) external",
-  "function fulfill(uint256 agreementId, bytes32 actualDeliverablesHash) external",
+  "function commitDeliverable(uint256 agreementId, bytes32 deliverableHash) external",
 ]);
 
 // ARC402Wallet.executeContractCall param type
@@ -47,7 +47,7 @@ export function buildFulfillCalldata(
   deliveryHash: string,
   walletAddress: string
 ): string {
-  const inner = SA_IFACE.encodeFunctionData("fulfill", [BigInt(agreementId), deliveryHash]);
+  const inner = SA_IFACE.encodeFunctionData("commitDeliverable", [BigInt(agreementId), deliveryHash]);
   return encodeWalletCall(serviceAgreementAddress, inner);
 }
 
@@ -55,10 +55,12 @@ export class UserOpsManager {
   private bundlerClient: BundlerClient;
   private provider: ethers.Provider;
   private config: DaemonConfig;
+  private machineKeySigner: ethers.Wallet | null;
 
-  constructor(config: DaemonConfig, provider: ethers.Provider) {
+  constructor(config: DaemonConfig, provider: ethers.Provider, machineKeySigner?: ethers.Wallet) {
     this.config = config;
     this.provider = provider;
+    this.machineKeySigner = machineKeySigner ?? null;
 
     const bundlerUrl =
       config.bundler.endpoint || "https://api.pimlico.io/v2/base/rpc";
@@ -69,6 +71,43 @@ export class UserOpsManager {
     );
   }
 
+  private async getBundlerGasPrice(): Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }> {
+    try {
+      const bundlerUrl = this.config.bundler.endpoint || "https://public.pimlico.io/v2/8453/rpc";
+      const response = await fetch(bundlerUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "pimlico_getUserOperationGasPrice",
+          params: [],
+        }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const json = await response.json() as {
+        result?: { standard?: { maxFeePerGas: string; maxPriorityFeePerGas: string } };
+        error?: unknown;
+      };
+      if (json.error) throw new Error(JSON.stringify(json.error));
+      const standard = json.result?.standard;
+      if (standard) {
+        return {
+          maxFeePerGas: BigInt(standard.maxFeePerGas),
+          maxPriorityFeePerGas: BigInt(standard.maxPriorityFeePerGas),
+        };
+      }
+    } catch {
+      // fallback to provider fee data
+    }
+
+    const feeData = await this.provider.getFeeData();
+    return {
+      maxFeePerGas: feeData.maxFeePerGas ?? BigInt(2_000_000_000),
+      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ?? BigInt(1_500_000),
+    };
+  }
+
   async buildUserOp(callData: string, senderWallet: string): Promise<UserOperation> {
     const entryPointContract = new ethers.Contract(
       this.config.network.entry_point,
@@ -76,9 +115,7 @@ export class UserOpsManager {
       this.provider
     );
     const nonce: bigint = await entryPointContract.getNonce(senderWallet, 0);
-    const feeData = await this.provider.getFeeData();
-    const maxFeePerGas = feeData.maxFeePerGas ?? BigInt(1_000_000_000);
-    const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ?? BigInt(100_000_000);
+    const { maxFeePerGas, maxPriorityFeePerGas } = await this.getBundlerGasPrice();
 
     return {
       sender: senderWallet,
@@ -93,8 +130,61 @@ export class UserOpsManager {
     };
   }
 
+  private hashUserOp(userOp: UserOperation): string {
+    const initCode = (userOp.factory && userOp.factoryData)
+      ? ethers.concat([userOp.factory, userOp.factoryData])
+      : "0x";
+    const paymasterAndData = userOp.paymaster
+      ? ethers.concat([
+          userOp.paymaster,
+          userOp.paymasterVerificationGasLimit ?? "0x",
+          userOp.paymasterPostOpGasLimit ?? "0x",
+          userOp.paymasterData ?? "0x",
+        ])
+      : "0x";
+
+    const verGasLimit = BigInt(userOp.verificationGasLimit);
+    const callGasLimit = BigInt(userOp.callGasLimit);
+    const accountGasLimits = ethers.zeroPadValue(
+      ethers.toBeHex((verGasLimit << BigInt(128)) | callGasLimit),
+      32
+    );
+
+    const maxPrioFee = BigInt(userOp.maxPriorityFeePerGas);
+    const maxFee = BigInt(userOp.maxFeePerGas);
+    const gasFees = ethers.zeroPadValue(
+      ethers.toBeHex((maxPrioFee << BigInt(128)) | maxFee),
+      32
+    );
+
+    const packedHash = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+      ["address", "uint256", "bytes32", "bytes32", "bytes32", "uint256", "bytes32", "bytes32"],
+      [
+        userOp.sender,
+        BigInt(userOp.nonce),
+        ethers.keccak256(initCode),
+        ethers.keccak256(userOp.callData),
+        accountGasLimits,
+        BigInt(userOp.preVerificationGas),
+        gasFees,
+        ethers.keccak256(paymasterAndData),
+      ]
+    ));
+
+    return ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "address", "uint256"],
+      [packedHash, this.config.network.entry_point, this.config.network.chain_id]
+    ));
+  }
+
   async submit(callData: string, senderWallet: string): Promise<string> {
     const userOp = await this.buildUserOp(callData, senderWallet);
+
+    if (this.machineKeySigner) {
+      const userOpHash = this.hashUserOp(userOp);
+      userOp.signature = await this.machineKeySigner.signMessage(ethers.getBytes(userOpHash));
+    }
+
     return this.bundlerClient.sendUserOperation(userOp);
   }
 

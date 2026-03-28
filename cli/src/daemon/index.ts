@@ -525,8 +525,11 @@ export async function runDaemon(foreground = false): Promise<void> {
     process.exit(1);
   }
 
+  // Machine key signer — used for UserOp signatures and on-chain compute contract calls
+  const machineKeySigner = new ethers.Wallet(machinePrivateKey, provider);
+
   // ── Step 6: Connect bundler ──────────────────────────────────────────────
-  const userOps = new UserOpsManager(config, provider);
+  const userOps = new UserOpsManager(config, provider, machineKeySigner);
   const bundlerOk = await userOps.pingBundler();
   if (!bundlerOk) {
     log({ event: "bundler_warn", msg: "Bundler endpoint unreachable — will retry on demand" });
@@ -567,9 +570,6 @@ export async function runDaemon(foreground = false): Promise<void> {
   // ── Compute rental subsystem ─────────────────────────────────────────────
   let computeMetering: ComputeMetering | null = null;
   let computeSessions: ComputeSessionManager | null = null;
-
-  // Machine key signer — used for on-chain compute contract calls
-  const machineKeySigner = new ethers.Wallet(machinePrivateKey, provider);
 
   if (config.compute.enabled) {
     computeMetering = new ComputeMetering(
@@ -645,7 +645,9 @@ export async function runDaemon(foreground = false): Promise<void> {
           }
         })
         .catch((err: unknown) => {
-          log({ event: "fulfill_userop_error", agreement_id: agreementId, error: String(err) });
+          const msg = err instanceof Error ? err.message : String(err);
+          log({ event: "fulfill_userop_failed", agreement_id: agreementId, error: msg });
+          log({ event: "MANUAL_ACCEPT_REQUIRED", agreement_id: agreementId, message: `Run: arc402 deliver ${agreementId} --hash ${rootHash}` });
         });
     }
   };
@@ -689,7 +691,7 @@ export async function runDaemon(foreground = false): Promise<void> {
     const hire = db.getHireRequest(hireId);
     if (!hire || !hire.agreement_id || !config.serviceAgreementAddress) return;
 
-    // Submit accept on-chain — try UserOp first, fall back to EOA
+    // Submit accept on-chain via UserOp; if it fails, require manual accept.
     try {
       const callData = buildAcceptCalldata(
         config.serviceAgreementAddress,
@@ -701,20 +703,10 @@ export async function runDaemon(foreground = false): Promise<void> {
       if (config.notifications.notify_on_hire_accepted) {
         await notifier.notifyHireAccepted(hireId, hire.agreement_id);
       }
-    } catch (uErr) {
-      log({ event: "accept_userop_failed_trying_eoa", id: hireId, error: String(uErr) });
-      try {
-        const saContract = new ethers.Contract(config.serviceAgreementAddress, SERVICE_AGREEMENT_ABI, machineKeySigner);
-        const tx = await saContract.accept(BigInt(hire.agreement_id)) as ethers.TransactionResponse;
-        await tx.wait();
-        log({ event: "hire_auto_accepted_eoa", id: hireId, tx_hash: tx.hash });
-        if (config.notifications.notify_on_hire_accepted) {
-          await notifier.notifyHireAccepted(hireId, hire.agreement_id);
-        }
-      } catch (eoaErr) {
-        log({ event: "accept_eoa_also_failed", id: hireId, error: String(eoaErr) });
-        log({ event: "MANUAL_ACCEPT_REQUIRED", agreement_id: hire.agreement_id, message: `Run: arc402 accept ${hire.agreement_id}` });
-      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log({ event: "accept_userop_failed", id: hireId, error: msg });
+      log({ event: "MANUAL_ACCEPT_REQUIRED", agreement_id: hire.agreement_id, message: `Run: arc402 accept ${hire.agreement_id}` });
     }
 
     // Enqueue task execution — worker runs the job, then delivers on completion
@@ -1069,7 +1061,8 @@ export async function runDaemon(foreground = false): Promise<void> {
               }
             }
 
-            // Try to submit accept UserOp (non-blocking, best-effort) with EOA fallback
+            // Try to submit accept UserOp (non-blocking, best-effort). If it fails,
+            // manual accept is required because ServiceAgreement only accepts the smart wallet.
             if (config.serviceAgreementAddress) {
               void (async () => {
                 try {
@@ -1079,24 +1072,14 @@ export async function runDaemon(foreground = false): Promise<void> {
                     config.wallet.contract_address
                   );
                   const hash = await userOps.submit(callData, config.wallet.contract_address);
-                  log({ event: "http_hire_auto_accepted_userop", id: proposal.messageId, userop_hash: hash });
+                  log({ event: "http_accept_userop_submitted", id: proposal.messageId, hash });
                   if (config.notifications.notify_on_hire_accepted) {
                     await notifier.notifyHireAccepted(proposal.messageId, proposal.agreementId!);
                   }
-                } catch (uErr) {
-                  log({ event: "http_accept_userop_failed_trying_eoa", id: proposal.messageId, error: String(uErr).slice(0, 100) });
-                  try {
-                    const saContract = new ethers.Contract(config.serviceAgreementAddress!, SERVICE_AGREEMENT_ABI, machineKeySigner);
-                    const tx = await saContract.accept(BigInt(proposal.agreementId!)) as ethers.TransactionResponse;
-                    await tx.wait();
-                    log({ event: "http_hire_auto_accepted_eoa", id: proposal.messageId, tx_hash: tx.hash });
-                    if (config.notifications.notify_on_hire_accepted) {
-                      await notifier.notifyHireAccepted(proposal.messageId, proposal.agreementId!);
-                    }
-                  } catch (eoaErr) {
-                    log({ event: "http_accept_eoa_also_failed", id: proposal.messageId, error: String(eoaErr) });
-                    log({ event: "MANUAL_ACCEPT_REQUIRED", agreement_id: proposal.agreementId, message: `Run: arc402 accept ${proposal.agreementId}` });
-                  }
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  log({ event: "http_accept_userop_failed", id: proposal.messageId, error: msg });
+                  log({ event: "MANUAL_ACCEPT_REQUIRED", agreement_id: proposal.agreementId, message: `Run: arc402 accept ${proposal.agreementId}` });
                 }
               })();
             }

@@ -9,6 +9,7 @@ import {
   runCmd,
 } from "../openshell-runtime";
 import { DAEMON_LOG, DAEMON_TOML } from "../daemon/config";
+import { loadConfig } from "../config";
 import { CREDENTIALS_PATH, getEnabledProviders, getDockerEnvFlags } from "../daemon/credentials";
 import { c } from "../ui/colors";
 import { startSpinner } from "../ui/spinner";
@@ -427,8 +428,14 @@ network_policies:
         }
       }
 
-      // Resolve secrets from local config
-      const machineKey = process.env.ARC402_MACHINE_KEY || "";
+      // Resolve secrets: env var takes precedence, fallback to arc402 config.json privateKey
+      let machineKey = process.env.ARC402_MACHINE_KEY || "";
+      if (!machineKey) {
+        try {
+          const cfg = loadConfig();
+          if (cfg.privateKey) machineKey = cfg.privateKey;
+        } catch { /* config load is optional */ }
+      }
       const telegramBot = process.env.TELEGRAM_BOT_TOKEN || "";
       const telegramChat = process.env.TELEGRAM_CHAT_ID || "";
 

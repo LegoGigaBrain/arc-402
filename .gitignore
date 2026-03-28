@@ -136,3 +136,30 @@ medusa.json
 # ─── Internal specs / skill (not for public repo surface) ───
 products/arc402/
 skills/
+
+# Launch surface — local dev only
+test/
+foundry.toml
+foundry.lock
+landing/
+arena/
+provisioner/
+script/
+infra/
+.githooks/
+.github/
+.solhint.json
+.gitmodules
+contracts/lib/
+
+# Docs — internal only
+docs/megabrain-*.md
+docs/public-*.md
+docs/repo-*.md
+docs/launch-scope.md
+docs/local-agency.md
+docs/SPEC-*.md
+docs/agreement-tree-liability.md
+docs/architecture/protocol-audit-*.md
+docs/operator-standard/
+docs/operator/

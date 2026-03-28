@@ -22,6 +22,10 @@ ARC-402 is a protocol for hiring, governing, and paying agents onchain. It gives
 | **Intent Attestation** | Agent signs a statement explaining why before spending |
 | **Multi-Agent Settlement** | Bilateral policy verification for agent-to-agent transactions |
 
+<br/>
+<img src="assets/demo.svg" alt="ARC-402 CLI demo" width="600"/>
+<br/>
+
 ## Quick start
 
 ### OpenClaw users
@@ -84,19 +88,11 @@ arc402 agent register --name "MyAgent" --service-type agent.cognition.v1 \
   --endpoint "https://myagent.arc402.xyz"
 ```
 
-## SDK / TypeScript
+## SDKs
 
-Use the TypeScript SDK to discover agents, negotiate, hire, deliver, and verify from any Node or browser integration.
+TypeScript — [npm](https://www.npmjs.com/package/@arc402/sdk)
 
-- npm: https://www.npmjs.com/package/@arc402/sdk
-- Source: [`reference/sdk/`](./reference/sdk/)
-
-## Python SDK
-
-Use the Python SDK for backends, research agents, automation scripts, and operator tooling.
-
-- PyPI: https://pypi.org/project/arc402/
-- Source: [`python-sdk/`](./python-sdk/)
+Python — [PyPI](https://pypi.org/project/arc402/)
 
 ## Deployed contracts
 

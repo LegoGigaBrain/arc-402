@@ -4,6 +4,7 @@ import * as path from "path";
 import * as os from "os";
 import * as http from "http";
 import { spawnSync, execSync } from "child_process";
+import prompts from "prompts";
 import {
   ARC402_DIR,
   runCmd,
@@ -172,6 +173,116 @@ function getPolicyHash(): string {
   const content = fs.readFileSync(POLICY_FILE, "utf-8");
   const crypto = require("crypto");
   return "0x" + crypto.createHash("sha256").update(content).digest("hex").slice(0, 16);
+}
+
+const SYSTEMD_USER_DIR = path.join(os.homedir(), ".config", "systemd", "user");
+const WORKROOM_SERVICE_NAME = "arc402-workroom.service";
+const WORKROOM_SERVICE_PATH = path.join(SYSTEMD_USER_DIR, WORKROOM_SERVICE_NAME);
+
+function shellEscapeSingle(value: string): string {
+  return value.replace(/'/g, "'\\''");
+}
+
+function resolveArc402Bin(): string {
+  const argv1 = process.argv[1];
+  if (argv1 && fs.existsSync(argv1)) {
+    return argv1;
+  }
+
+  try {
+    const which = execSync("which arc402", { encoding: "utf-8" }).trim();
+    if (which) return which;
+  } catch { /* ignore */ }
+
+  return process.argv[1] || "arc402";
+}
+
+function systemdUserAvailable(): boolean {
+  if (process.platform !== "linux") return false;
+  const result = spawnSync("systemctl", ["--user", "status"], { stdio: "ignore" });
+  return result.status === 0 || result.status === 1 || result.status === 3 || result.status === 4;
+}
+
+function workroomServiceInstalled(): boolean {
+  return fs.existsSync(WORKROOM_SERVICE_PATH);
+}
+
+function getWorkroomServiceUnitContent(): string {
+  const arc402Bin = resolveArc402Bin();
+  const nodeBinDir = path.dirname(process.execPath);
+  const homeDir = os.homedir();
+
+  return `[Unit]
+Description=ARC-402 Workroom
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Environment=PATH=${nodeBinDir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=HOME=${homeDir}
+ExecStart=/bin/bash -c '${shellEscapeSingle(arc402Bin)} workroom start && docker wait arc402-workroom; exit 1'
+ExecStop=${arc402Bin} workroom stop
+Restart=always
+RestartSec=10s
+TimeoutStartSec=120
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=arc402-workroom
+
+[Install]
+WantedBy=default.target
+`;
+}
+
+function installWorkroomService(force = false): boolean {
+  if (process.platform !== "linux") {
+    console.log(c.warning + " " + c.yellow("systemd service install is only available on Linux."));
+    console.log(c.dim("Run 'arc402 workroom start' manually, or set up your own service manager on this machine."));
+    return false;
+  }
+
+  if (!systemdUserAvailable()) {
+    console.log(c.warning + " " + c.yellow("systemd user services are not available on this machine."));
+    console.log(c.dim("Run 'arc402 workroom start' manually, or configure your own supervisor/service manager."));
+    return false;
+  }
+
+  if (workroomServiceInstalled() && !force) {
+    console.log(c.warning + " " + c.yellow(`Service already installed at ${WORKROOM_SERVICE_PATH}`));
+    console.log(c.dim("Re-run with --force to overwrite the unit file."));
+    return false;
+  }
+
+  const spinner = startSpinner("Installing systemd user service...");
+  try {
+    fs.mkdirSync(SYSTEMD_USER_DIR, { recursive: true });
+    fs.writeFileSync(WORKROOM_SERVICE_PATH, getWorkroomServiceUnitContent(), "utf-8");
+    const reload = spawnSync("systemctl", ["--user", "daemon-reload"], { stdio: "inherit" });
+    if (reload.status !== 0) throw new Error("systemctl --user daemon-reload failed");
+    const enable = spawnSync("systemctl", ["--user", "enable", "arc402-workroom"], { stdio: "inherit" });
+    if (enable.status !== 0) throw new Error("systemctl --user enable failed");
+
+    const username = os.userInfo().username;
+    const linger = spawnSync("loginctl", ["enable-linger", username], { stdio: "inherit" });
+    if (linger.status !== 0) throw new Error("loginctl enable-linger failed");
+
+    spinner.succeed(c.white("systemd user service installed"));
+    console.log(c.dim(`Unit file: ${WORKROOM_SERVICE_PATH}`));
+    console.log(c.dim("Next steps:"));
+    console.log(c.dim("  systemctl --user start arc402-workroom"));
+    console.log(c.dim("  systemctl --user status arc402-workroom"));
+    console.log(c.dim("  journalctl --user -u arc402-workroom -f"));
+    console.log(c.dim("The workroom will now auto-start on login/boot and restart on crash."));
+    return true;
+  } catch (err) {
+    spinner.fail(c.red("service install failed"));
+    console.error(err instanceof Error ? err.message : String(err));
+    return false;
+  }
 }
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
@@ -389,6 +500,24 @@ network_policies:
 
       console.log("\n" + c.success + c.white(" Workroom initialized. Start with: arc402 workroom start"));
       console.log(c.dim("Policy hash: ") + c.white(getPolicyHash()));
+
+      const serviceSupported = process.platform === "linux" && systemdUserAvailable();
+      if (serviceSupported) {
+        const response = await prompts({
+          type: "confirm",
+          name: "installService",
+          message: "Would you like to install the workroom as a system service? (auto-starts on boot, restarts on crash)",
+          initial: false,
+        });
+
+        if (response.installService) {
+          installWorkroomService(false);
+        } else {
+          console.log(c.dim("Run arc402 workroom install-service at any time to set this up."));
+        }
+      } else {
+        console.log(c.dim("Run arc402 workroom install-service at any time to set this up."));
+      }
     });
 
   // ── start ─────────────────────────────────────────────────────────────────
@@ -599,6 +728,12 @@ network_policies:
         console.log(c.dim("Container:    ") + c.failure + " " + c.red("not created (run: arc402 workroom init)"));
       }
 
+      if (workroomServiceInstalled()) {
+        console.log(c.dim("Service:      ") + c.success + c.white(` systemd (${WORKROOM_SERVICE_NAME}, enabled)`));
+      } else {
+        console.log(c.dim("Service:      ") + c.failure + " " + c.red("not installed") + c.dim(" — run: arc402 workroom install-service"));
+      }
+
       // Policy
       if (fs.existsSync(POLICY_FILE)) {
         console.log(c.dim("Policy file:  ") + c.success + " " + c.white(POLICY_FILE));
@@ -629,6 +764,15 @@ network_policies:
           }
         }
       }
+    });
+
+  // ── install-service ───────────────────────────────────────────────────────
+  workroom
+    .command("install-service")
+    .description("Install the ARC-402 Workroom as a persistent systemd user service.")
+    .option("--force", "Overwrite the existing systemd unit if already installed")
+    .action(async (opts: { force?: boolean }) => {
+      installWorkroomService(!!opts.force);
     });
 
   // ── logs ──────────────────────────────────────────────────────────────────

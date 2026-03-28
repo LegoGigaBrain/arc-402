@@ -138,8 +138,7 @@ The smart contracts went through rigorous internal security review. Independent 
 v1.4.48 CLI  
 v1.3.4 plugin  
 v0.6.3 SDK  
-v0.5.4 Python SDK  
-launch release (2026-03-29)
+v0.5.4 Python SDK
 
 ## Links
 

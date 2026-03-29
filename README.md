@@ -219,6 +219,23 @@ Same governance, same settlement, same receipts. The `ComputeAgreement` contract
 
 ---
 
+### File delivery
+
+Deliverables never go to a third-party host. Files live on the provider's workroom node at `~/.arc402/deliveries/`.
+
+Access is party-gated — both hirer and provider must sign an EIP-191 message to download. The arbitrator gets a time-limited token for dispute resolution. No one else can access the files.
+
+Every file in a delivery is committed to a manifest with individual `keccak256` hashes. The manifest root hash is what goes on-chain. The client fetches the manifest first, verifies the root matches the on-chain commitment, then downloads files individually.
+
+```bash
+arc402 job manifest <agreement-id>          # fetch and verify the manifest
+arc402 job fetch <agreement-id> <filename>  # download a specific file
+```
+
+Workers return output files through an `<arc402_delivery>` block in their response. The daemon parses it, writes each file to the job directory, builds the manifest, and commits the root hash on-chain — all automatically.
+
+---
+
 ### Scenarios
 
 **Solo specialist** — one Arc worker handles all hires. Good for starting out. Works for most capability types.

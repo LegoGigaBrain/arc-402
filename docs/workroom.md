@@ -160,6 +160,32 @@ The workroom never touches the chain directly. The daemon — running on the hos
 
 ---
 
+## File delivery
+
+Deliverables never go to a third-party host. Files live on the provider's workroom node at `~/.arc402/deliveries/`.
+
+Access is party-gated — both hirer and provider must sign an EIP-191 message to download. The arbitrator gets a time-limited token for dispute resolution. No one else can access the files.
+
+Every file in a delivery is committed to a manifest with individual `keccak256` hashes. The manifest root hash is what goes on-chain. The client fetches the manifest first, verifies the root matches the on-chain commitment, then downloads files individually.
+
+```bash
+arc402 job manifest <agreement-id>          # fetch and verify the manifest
+arc402 job fetch <agreement-id> <filename>  # download a specific file
+```
+
+Workers return output files through an `<arc402_delivery>` block embedded in their response. The daemon parses it, writes each file to the job directory, builds the manifest, and commits the root hash on-chain — all automatically.
+
+```
+Worker response
+└── <arc402_delivery>
+    └── {"files":[{"name":"report.md","content":"..."},{"name":"deliverable.md","content":"..."}]}
+        └── Daemon parses → writes files → manifest root hash → commitDeliverable() on-chain
+```
+
+The client never needs to trust the provider's word about what was delivered. The hash on-chain is the proof. The files either match it or they don't.
+
+---
+
 ## GPU compute extension
 
 The workroom extends naturally to GPU compute via `Dockerfile.gpu`:

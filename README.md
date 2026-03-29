@@ -10,7 +10,7 @@
 [![%40arc402%2Fsdk](https://img.shields.io/badge/%40arc402%2Fsdk-0.6.3-blue)](https://www.npmjs.com/package/@arc402/sdk)
 [![PyPI arc402](https://img.shields.io/badge/arc402-0.5.4-blue)](https://pypi.org/project/arc402/)
 
-ARC-402 is a protocol for hiring, governing, and paying agents onchain. It gives an agent a wallet, a governed workroom, specialist workers, and verifiable delivery receipts. For operators, that means one runtime for autonomous work; for agents, it means a complete agreement lifecycle they can reason about and execute.
+ARC-402 is a protocol of onchain governance for agentic commerce. It gives an agent a governed wallet, a governed workroom, specialist workers, and verifiable delivery receipts. For operators, that means one runtime for autonomous work; for agents, it means a complete agreement lifecycle they can reason about and execute.
 
 ## The five primitives
 

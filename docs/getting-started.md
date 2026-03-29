@@ -1,23 +1,12 @@
 # Getting Started with ARC-402
 
-Launch-scope setup only. This guide reflects the current production surface:
-
-- `app.arc402.xyz/onboard` for wallet + passkey + optional policy + optional agent registration
-- `app.arc402.xyz/passkey-sign` for workroom-contained governance approvals
-- OpenClaw with ARC-402's governed workroom as the default operator path
-- the ARC-402 Workroom as the containment layer behind ARC-402 commands, not a separate product story
-
-Phase 2 items are intentionally out of scope here: no Privy/email onboarding and no gas sponsorship flow.
+This guide covers setup from zero to a live ARC-402 agent. Two surfaces:
+- **phone** for owner-wallet and passkey approvals
+- **operator machine** for the always-on governed workroom
 
 ---
 
 ## Choose your setup path
-
-ARC-402 launch setup deliberately splits into two surfaces:
-- **phone** for owner-wallet and passkey approvals
-- **operator machine** for the always-on governed workroom
-
-That split is intentional. The docs should remove the cognitive burden of deciding where each action belongs while still making ARC-402 feel like one product.
 
 ### Option A – Mobile-first onboarding
 Use this if you want the fastest path to a launch-ready wallet and passkey.
@@ -104,9 +93,7 @@ arc402 --version
 arc402 config init
 ```
 
-For launch deployments, treat ARC-402 runtime behavior as a governed workroom attached to your existing OpenClaw setup.
-
-The CLI still exposes daemon commands, but they should be understood as implementation tooling behind that ARC-402 runtime path rather than the default standalone architecture.
+The CLI exposes daemon commands as implementation tooling behind the workroom runtime.
 
 ---
 
@@ -116,21 +103,13 @@ ARC-402 launch-default runtime is the ARC-402 Workroom.
 
 ```bash
 arc402 workroom init
-arc402 workroom init
 arc402 workroom status
 arc402 workroom doctor
 ```
 
-The premium path here is deliberate:
-- `arc402 workroom init` auto-reuses machine key / Telegram details from your ARC-402 CLI config when possible
-- it creates or updates the workroom credential providers for you
-- it syncs the current ARC-402 CLI runtime into the sandbox automatically
-- `arc402 workroom status` verifies both the policy wiring and that the remote daemon bundle is actually present
-- `arc402 workroom doctor` isolates the broken layer when a clean-machine install fails: Docker, workroom, providers, runtime, runtime sync, or daemon boot
+`arc402 workroom init` auto-reuses machine key and Telegram details from your ARC-402 CLI config, creates credential providers, and syncs the CLI runtime into the sandbox. `arc402 workroom status` verifies policy wiring and daemon presence. `arc402 workroom doctor` isolates broken layers when something fails.
 
-The ARC-402 Workroom contains the runtime path and sandboxes the worker behavior plus inherited subprocesses. In practice, ARC-402 gives the operator a dedicated workroom on the machine. Default allowed outbound access is limited to Base RPC, relay, bundler, and Telegram unless the operator extends the policy.
-
-Workroom version quirks are intentionally meant to stay behind ARC-402 commands. If the workroom internals change internal provider or sandbox CLI details again, the operator path should still remain the same: `arc402 workroom init` once, then `arc402 workroom start` – without making the operator reason about a full environment migration.
+Default allowed outbound access is limited to Base RPC, relay, bundler, and Telegram unless the operator extends the policy.
 
 ---
 
@@ -213,37 +192,26 @@ arc402 compute end <session-id>
 arc402 compute withdraw
 ```
 
-The `ComputeAgreement` contract is deployed on Base mainnet at `0x0e06afE90aAD3e0D91e217C46d98F049C2528AF7` and is the default — no config required.
+The `ComputeAgreement` contract is deployed on Base mainnet at `0xf898A8A2cF9900A588B174d9f96349BBA95e57F3` and is the default — no config required.
 
 ### Subscriptions
 
-The `SubscriptionAgreement` contract is deployed on Base mainnet at `0xe1b6D3d0890E09582166EB450a78F6bff038CE5A`.
+The `SubscriptionAgreement` contract is deployed on Base mainnet at `0x809c1D997Eab3531Eb2d01FCD5120Ac786D850D6`.
 
 Set it in config if your app needs it:
 
 ```bash
-arc402 config set subscriptionAgreementAddress 0xe1b6D3d0890E09582166EB450a78F6bff038CE5A
+arc402 config set subscriptionAgreementAddress 0x809c1D997Eab3531Eb2d01FCD5120Ac786D850D6
 ```
 
 SDK usage:
 
 ```ts
 import { SUBSCRIPTION_AGREEMENT_ADDRESS } from "@arc402/sdk";
-import { ethers } from "ethers";
-
-const contract = new ethers.Contract(SUBSCRIPTION_AGREEMENT_ADDRESS, abi, signer);
 ```
 
 ```python
 from arc402 import SUBSCRIPTION_AGREEMENT_ADDRESS
 ```
 
----
 
-## Before GitHub polish
-
-- verify onboarding end-to-end on a real phone wallet
-- verify daemon → passkey-sign round trip with a real passkey
-- verify the workroom runtime start path (`arc402 workroom init` → `arc402 workroom start`)
-- verify direct daemon fallback only as recovery/development behavior, not launch architecture
-- verify agent registration only after endpoint details are real

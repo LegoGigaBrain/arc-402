@@ -65,7 +65,7 @@ Five contracts govern wallet behaviour:
 
 | Contract | Address | What It Does |
 |----------|---------|--------------|
-| `PolicyEngine` | `0xAA5Ef3489C929bFB3BFf5D5FE15aa62d3763c847` | Per-category spending limits |
+| `PolicyEngine` | `0x0743ab6a7280b416D3b75c7e5457390906312139` | Per-category spending limits |
 | `ARC402Wallet` | Your deployed address | Velocity limits, freeze state, active policy, interceptor |
 | `ARC402Guardian` | `0xED0A033B79626cdf9570B6c3baC7f699cD0032D8` | Guardian key registry |
 | `ARC402RegistryV2` | `0xcc0D8731ccCf6CFfF4e66F6d68cA86330Ea8B622` | Contract address registry (v2 — existing wallets) |
@@ -370,4 +370,4 @@ The governance model is designed to bound what the agent can do — not to give 
 
 ---
 
-*ARC-402 | Wallet Governance | v2.0.0*
+*ARC-402 | Wallet Governance*

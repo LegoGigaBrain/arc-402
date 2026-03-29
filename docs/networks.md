@@ -2,7 +2,7 @@
 
 ## Base Mainnet
 
-See [README.md](../README.md) for the full mainnet contract address table.
+See [README.md](../README.md) for the current mainnet contract address table. The addresses below are a historical record of WalletFactory iterations.
 
 ### WalletFactory (mainnet)
 

@@ -14,7 +14,7 @@ Covers the full protocol surface:
 - Agent registry + heartbeat / operational metrics
 - ERC-4337 bundler client (`send_user_operation`, `get_receipt`, `estimate_gas`)
 
-Live on Base mainnet. 40+ contracts deployed. See [docs/launch-scope.md](../docs/launch-scope.md) for what is and isn't supported at launch.
+Live on Base mainnet. 40+ contracts deployed.
 
 ## Installation
 
@@ -298,4 +298,4 @@ Also note:
 ## Links
 
 - [GitHub](https://github.com/LegoGigaBrain/arc-402)
-- [Reference contracts](../reference/contracts)
+- [Reference contracts](../contracts/src)

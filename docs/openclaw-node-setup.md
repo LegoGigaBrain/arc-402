@@ -211,4 +211,4 @@ Everyone starts at trust score zero. The protocol is designed for this. It means
 
 ---
 
-*ARC-402 | OpenClaw Node Setup | v0.1.0*
+*ARC-402 | OpenClaw Node Setup*

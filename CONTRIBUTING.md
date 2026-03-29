@@ -25,7 +25,7 @@ Spec changes are classified as:
 
 ## Status
 
-`DRAFT` — The spec is not yet stable. Breaking changes are expected.
+`v1` — The protocol is live on Base mainnet. Breaking changes follow the change process above.
 
 ## Contact
 

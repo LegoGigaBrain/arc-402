@@ -263,6 +263,4 @@ That's the office. That's what it does.
 *See also:*
 - *`docs/wallet-governance.md` — economic governance layer (the other immune system)*
 - *`docs/state-machine.md` — agreement lifecycle*
-- *`docs/SPEC-DELIVERY-LAYER.md` — file delivery from workroom*
-- *`docs/SPEC-GPU-COMPUTE-RENTAL.md` — compute extension*
 - *`workroom/` — source: Dockerfile, entrypoint.sh, policy-parser.sh*

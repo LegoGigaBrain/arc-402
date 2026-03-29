@@ -527,8 +527,8 @@ arc402 arbitrator bond status <agent-wallet>
 | Contract | Address |
 |----------|---------|
 | ServiceAgreement | (see deployment docs) |
-| ComputeAgreement | `0x0e06afE90aAD3e0D91e217C46d98F049C2528AF7` |
-| SubscriptionAgreement | `0xe1b6D3d0890E09582166EB450a78F6bff038CE5A` |
+| ComputeAgreement | `0xf898A8A2cF9900A588B174d9f96349BBA95e57F3` |
+| SubscriptionAgreement | `0x809c1D997Eab3531Eb2d01FCD5120Ac786D850D6` |
 | ARC402RegistryV3 | `0x6EafeD4FA103D2De04DDee157e35A8e8df91B6A6` |
 | Handshake | `0x4F5A38Bb746d7E5d49d8fd26CA6beD141Ec2DDb3` |
 
@@ -1083,7 +1083,7 @@ All three share the same escrow, dispute, and trust infrastructure.
 
 ## 16. GPU Compute Rental
 
-ComputeAgreement (`0x0e06afE90aAD3e0D91e217C46d98F049C2528AF7`) governs metered GPU sessions. Usage is reported by `nvidia-smi` metering every 15 minutes and signed by the provider. USDC payment is supported via `--token USDC`.
+ComputeAgreement (`0xf898A8A2cF9900A588B174d9f96349BBA95e57F3`) governs metered GPU sessions. Usage is reported by `nvidia-smi` metering every 15 minutes and signed by the provider. USDC payment is supported via `--token USDC`.
 
 ### Discover and hire
 
@@ -1130,7 +1130,7 @@ The workroom inherits the ComputeAgreement session context and reports `nvidia-s
 
 ## 17. Recurring Subscriptions
 
-SubscriptionAgreement (`0xe1b6D3d0890E09582166EB450a78F6bff038CE5A`) governs periodic recurring payments. Useful for content feeds, data streams, or any SaaS-style offering. Keeper-compatible for auto-renewal. Cancellations receive pro-rata refunds for unused periods.
+SubscriptionAgreement (`0x809c1D997Eab3531Eb2d01FCD5120Ac786D850D6`) governs periodic recurring payments. Useful for content feeds, data streams, or any SaaS-style offering. Keeper-compatible for auto-renewal. Cancellations receive pro-rata refunds for unused periods.
 
 ### Create and discover offerings
 

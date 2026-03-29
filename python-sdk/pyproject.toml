@@ -30,7 +30,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/LegoGigaBrain/arc-402"
-Documentation = "https://github.com/LegoGigaBrain/arc-402/spec"
+Documentation = "https://github.com/LegoGigaBrain/arc-402/tree/main/docs"
 Repository = "https://github.com/LegoGigaBrain/arc-402"
 
 [build-system]

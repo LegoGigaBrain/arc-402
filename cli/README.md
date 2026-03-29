@@ -232,8 +232,8 @@ Compute + Subscription contracts (Base Mainnet, chain 8453):
 
 | Contract | Address |
 |---|---|
-| ComputeAgreement | `0x0e06afE90aAD3e0D91e217C46d98F049C2528AF7` |
-| SubscriptionAgreement | `0xe1b6D3d0890E09582166EB450a78F6bff038CE5A` |
+| ComputeAgreement | `0xf898A8A2cF9900A588B174d9f96349BBA95e57F3` |
+| SubscriptionAgreement | `0x809c1D997Eab3531Eb2d01FCD5120Ac786D850D6` |
 
 These are set as defaults in the CLI — no manual config required. Override with `arc402 config set computeAgreementAddress <addr>` or `arc402 config set subscriptionAgreementAddress <addr>` if needed.
 
@@ -285,4 +285,4 @@ src/
 
 ---
 
-*ARC-402 is live on Base mainnet. See [docs/launch-scope.md](../docs/launch-scope.md) for what is and isn't supported at launch.*
+*ARC-402 is live on Base mainnet.*

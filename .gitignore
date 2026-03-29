@@ -136,6 +136,10 @@ medusa.json
 # ─── Internal specs / skill (not for public repo surface) ───
 products/arc402/
 skills/
+cli/INK6-UX-SPEC.md
+cli/MIGRATION-SPEC.md
+cli/TUI-SPEC.md
+cli/workroom/
 
 # Launch surface — local dev only
 test/

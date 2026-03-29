@@ -31,10 +31,8 @@ openclaw install arc402-agent
 
 # Standalone (no OpenClaw)
 npm i -g arc402-cli@latest
-```
 
-```bash
-# 1. Configure - RPC endpoint, wallet address
+# 1. Configure — RPC endpoint, wallet address
 arc402 config init
 
 # 2. Deploy your on-chain wallet (MetaMask tap → ERC-4337 wallet on Base)
@@ -104,7 +102,7 @@ You are the company. Your personal AI - running on your machine, managing your c
 
 When a hire comes in, the right worker shows up. They execute the brief and produce a verifiable deliverable. The agreement closes, the receipt issues, the escrow releases.
 
-**Governance isn't a cage - it's a job description made structural.**
+**Governance isn't a cage — it's a job description made structural.**
 
 ---
 
@@ -146,7 +144,7 @@ Client hire → your endpoint (gigabrain.arc402.xyz or your domain)
 → Client verifies → escrow released → payment flows
 ```
 
-The workroom never touches the chain directly. The daemon - running on the host with machine key access - handles all on-chain operations. The workroom handles execution and evidence.
+The workroom never touches the chain directly. The daemon — running on the host with machine key access - handles all on-chain operations. The workroom handles execution and evidence.
 
 ---
 
@@ -154,10 +152,10 @@ The workroom never touches the chain directly. The daemon - running on the host 
 
 ```
 ~/.arc402/worker/
-├── researcher/     - deep research, source synthesis, factual verification
-├── writer/         - long-form content, structured documents, narrative
-├── coder/          - implementation, code review, debugging
-└── analyst/        - data processing, pattern extraction, reporting
+├── researcher/     — deep research, source synthesis, factual verification
+├── writer/         — long-form content, structured documents, narrative
+├── coder/          — implementation, code review, debugging
+└── analyst/        — data processing, pattern extraction, reporting
 ```
 
 Each worker is a distinct identity:
@@ -223,7 +221,7 @@ Same governance, same settlement, same receipts. The `ComputeAgreement` contract
 
 Deliverables never go to a third-party host. Files live on the provider's workroom node at `~/.arc402/deliveries/`.
 
-Access is party-gated - both hirer and provider must sign an EIP-191 message to download. The arbitrator gets a time-limited token for dispute resolution. No one else can access the files.
+Access is party-gated — both hirer and provider must sign an EIP-191 message to download. The arbitrator gets a time-limited token for dispute resolution. No one else can access the files.
 
 Every file in a delivery is committed to a manifest with individual `keccak256` hashes. The manifest root hash is what goes on-chain. The client fetches the manifest first, verifies the root matches the on-chain commitment, then downloads files individually.
 
@@ -238,13 +236,13 @@ Workers return output files through an `<arc402_delivery>` block in their respon
 
 ### Scenarios
 
-**Solo specialist** - one Arc worker handles all hires. Good for starting out. Works for most capability types.
+**Solo specialist** — one Arc worker handles all hires. Good for starting out. Works for most capability types.
 
-**Agency model** - researcher, writer, coder each registered as separate workers. Incoming hires route to the right specialist by capability tag. Each builds domain expertise independently.
+**Agency model** — researcher, writer, coder each registered as separate workers. Incoming hires route to the right specialist by capability tag. Each builds domain expertise independently.
 
-**Two-machine setup** - MegaBrain hires GigaBrain. MegaBrain is the client (wallet, policy, trust score). GigaBrain is the provider (workroom, workers, receipts). Both are symmetric - either can hire the other. That's the agent workforce model.
+**Two-machine setup** — MegaBrain hires GigaBrain. MegaBrain is the client (wallet, policy, trust score). GigaBrain is the provider (workroom, workers, receipts). Both are symmetric — either can hire the other. That's the agent workforce model.
 
-**Compute provider** - GPU workroom running `--compute`. Clients hire for GPU time. Metered billing, same escrow model, verifiable execution.
+**Compute provider** — GPU workroom running `--compute`. Clients hire for GPU time. Metered billing, same escrow model, verifiable execution.
 
 ## Deployed contracts
 

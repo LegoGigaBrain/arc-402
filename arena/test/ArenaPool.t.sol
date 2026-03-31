@@ -65,19 +65,46 @@ contract MockPolicyEngine {
     }
 }
 
+contract MockWatchtowerRegistry {
+    mapping(address => bool) private _watchtowers;
+
+    function setWatchtower(address wt, bool val) external {
+        _watchtowers[wt] = val;
+    }
+
+    function isWatchtower(address agent) external view returns (bool) {
+        return _watchtowers[agent];
+    }
+}
+
+contract MockGovernance {
+    // Minimal mock — the only thing ArenaPool checks is msg.sender == governance
+    // So we expose a helper to call setFeeBps as governance
+    function callSetFeeBps(address pool, uint256 newFeeBps) external {
+        ArenaPool(pool).setFeeBps(newFeeBps);
+    }
+}
+
 // ─── Test suite ───────────────────────────────────────────────────────────────
 
 contract ArenaPoolTest is Test {
-    ArenaPool         public pool;
-    MockUSDC          public usdc;
-    MockAgentRegistry public agentReg;
-    MockPolicyEngine  public policyEngine;
+    ArenaPool                public pool;
+    MockUSDC                 public usdc;
+    MockAgentRegistry        public agentReg;
+    MockPolicyEngine         public policyEngine;
+    MockWatchtowerRegistry   public watchtowerReg;
+    MockGovernance           public govContract;
 
-    address public resolver  = address(0x1234567890000000000000000000000000000001);
-    address public treasury  = address(0x1234567890000000000000000000000000000002);
-    address public agentA    = address(0xA1);
-    address public agentB    = address(0xB2);
-    address public agentC    = address(0xC3);
+    // Three watchtowers (RESOLUTION_QUORUM = 3)
+    address public watchtower1 = address(0x1111111111111111111111111111111111111111);
+    address public watchtower2 = address(0x2222222222222222222222222222222222222222);
+    address public watchtower3 = address(0x3333333333333333333333333333333333333333);
+    address public watchtower4 = address(0x4444444444444444444444444444444444444444);
+
+    address public treasury    = address(0x1234567890000000000000000000000000000002);
+    address public agentA      = address(0xA1);
+    address public agentB      = address(0xB2);
+    address public agentC      = address(0xC3);
     address public unregistered = address(0xDEAD);
 
     uint256 constant ONE_USDC  = 1_000_000;   // 1 USDC (6 decimals)
@@ -94,7 +121,7 @@ contract ArenaPoolTest is Test {
         usdc.approve(address(pool), amount);
     }
 
-    /// @dev createRound now requires a registered agent. Use agentA as creator.
+    /// @dev createRound requires a registered agent. Use agentA as creator.
     function _createStandardRound() internal returns (uint256 roundId) {
         vm.prank(agentA);
         roundId = pool.createRound("BTC above $70k?", "market.crypto", TWO_HOURS, ONE_USDC);
@@ -106,12 +133,16 @@ contract ArenaPoolTest is Test {
         pool.enterRound(roundId, side, amount, "conviction note");
     }
 
-    /// @dev Warp to resolvesAt and resolve. Required after CRIT-1 fix.
+    /// @dev Warp to resolvesAt and submit quorum (3 watchtowers) to resolve.
     function _resolveRound(uint256 roundId, bool outcome) internal {
         IArenaPool.Round memory r = pool.getRound(roundId);
         vm.warp(r.resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(roundId, outcome, bytes32(0));
+        vm.prank(watchtower1);
+        pool.submitResolution(roundId, outcome, bytes32(0));
+        vm.prank(watchtower2);
+        pool.submitResolution(roundId, outcome, bytes32(0));
+        vm.prank(watchtower3);
+        pool.submitResolution(roundId, outcome, bytes32(0));
     }
 
     // ─── Setup ───────────────────────────────────────────────────────────────
@@ -120,12 +151,15 @@ contract ArenaPoolTest is Test {
         usdc         = new MockUSDC();
         agentReg     = new MockAgentRegistry();
         policyEngine = new MockPolicyEngine();
+        watchtowerReg = new MockWatchtowerRegistry();
+        govContract  = new MockGovernance();
 
         pool = new ArenaPool(
             address(usdc),
             address(policyEngine),
             address(agentReg),
-            resolver,
+            address(watchtowerReg),
+            address(govContract),
             treasury,
             FEE_BPS
         );
@@ -134,34 +168,54 @@ contract ArenaPoolTest is Test {
         agentReg.setRegistered(agentB, true);
         agentReg.setRegistered(agentC, true);
         // unregistered stays false
+
+        // Register 4 watchtowers
+        watchtowerReg.setWatchtower(watchtower1, true);
+        watchtowerReg.setWatchtower(watchtower2, true);
+        watchtowerReg.setWatchtower(watchtower3, true);
+        watchtowerReg.setWatchtower(watchtower4, true);
     }
 
     // ─── Test 01: Constructor stores addresses correctly ─────────────────────
 
     function test_01_ConstructorParams() public view {
-        assertEq(address(pool.usdc()),          address(usdc));
-        assertEq(address(pool.policyEngine()),  address(policyEngine));
-        assertEq(address(pool.agentRegistry()), address(agentReg));
-        assertEq(pool.resolver(),               resolver);
-        assertEq(pool.treasury(),               treasury);
-        assertEq(pool.feeBps(),                 FEE_BPS);
+        assertEq(address(pool.usdc()),               address(usdc));
+        assertEq(address(pool.policyEngine()),        address(policyEngine));
+        assertEq(address(pool.agentRegistry()),       address(agentReg));
+        assertEq(address(pool.watchtowerRegistry()),  address(watchtowerReg));
+        assertEq(pool.governance(),                   address(govContract));
+        assertEq(pool.treasury(),                     treasury);
+        assertEq(pool.feeBps(),                       FEE_BPS);
+        assertEq(pool.RESOLUTION_QUORUM(),            3);
     }
 
     // ─── Test 02: Constructor rejects zero addresses ──────────────────────────
 
     function test_02_ConstructorRejectsZeroAddress() public {
         vm.expectRevert(ArenaPool.ZeroAddress.selector);
-        new ArenaPool(address(0), address(policyEngine), address(agentReg), resolver, treasury, FEE_BPS);
+        new ArenaPool(address(0), address(policyEngine), address(agentReg), address(watchtowerReg), address(govContract), treasury, FEE_BPS);
 
         vm.expectRevert(ArenaPool.ZeroAddress.selector);
-        new ArenaPool(address(usdc), address(0), address(agentReg), resolver, treasury, FEE_BPS);
+        new ArenaPool(address(usdc), address(0), address(agentReg), address(watchtowerReg), address(govContract), treasury, FEE_BPS);
+
+        vm.expectRevert(ArenaPool.ZeroAddress.selector);
+        new ArenaPool(address(usdc), address(policyEngine), address(0), address(watchtowerReg), address(govContract), treasury, FEE_BPS);
+
+        vm.expectRevert(ArenaPool.ZeroAddress.selector);
+        new ArenaPool(address(usdc), address(policyEngine), address(agentReg), address(0), address(govContract), treasury, FEE_BPS);
+
+        vm.expectRevert(ArenaPool.ZeroAddress.selector);
+        new ArenaPool(address(usdc), address(policyEngine), address(agentReg), address(watchtowerReg), address(0), treasury, FEE_BPS);
+
+        vm.expectRevert(ArenaPool.ZeroAddress.selector);
+        new ArenaPool(address(usdc), address(policyEngine), address(agentReg), address(watchtowerReg), address(govContract), address(0), FEE_BPS);
     }
 
     // ─── Test 03: Constructor rejects fee over max ────────────────────────────
 
     function test_03_ConstructorRejectsHighFee() public {
         vm.expectRevert(ArenaPool.FeeTooHigh.selector);
-        new ArenaPool(address(usdc), address(policyEngine), address(agentReg), resolver, treasury, 1_001);
+        new ArenaPool(address(usdc), address(policyEngine), address(agentReg), address(watchtowerReg), address(govContract), treasury, 1_001);
     }
 
     // ─── Test 04: createRound emits event and stores round ───────────────────
@@ -212,13 +266,17 @@ contract ArenaPoolTest is Test {
         // agentB bets NO:  5 USDC
         _enterRound(agentB, roundId, 1, 5_000_000);
 
-        // Fast-forward to resolvesAt
+        // Fast-forward to resolvesAt and get quorum
         IArenaPool.Round memory rInfo = pool.getRound(roundId);
         vm.warp(rInfo.resolvesAt);
 
-        // Resolve YES
-        vm.prank(resolver);
-        pool.resolveRound(roundId, true, keccak256("evidence-btc"));
+        // Submit 3 watchtower attestations for YES=true
+        vm.prank(watchtower1);
+        pool.submitResolution(roundId, true, keccak256("evidence-btc"));
+        vm.prank(watchtower2);
+        pool.submitResolution(roundId, true, keccak256("evidence-btc"));
+        vm.prank(watchtower3);
+        pool.submitResolution(roundId, true, keccak256("evidence-btc"));
 
         IArenaPool.Round memory r = pool.getRound(roundId);
         assertTrue(r.resolved);
@@ -227,11 +285,10 @@ contract ArenaPoolTest is Test {
         assertEq(r.noPot, 5_000_000);
 
         // agentA claims
-        // yesPot = 10 USDC (winner)
-        // noPot  = 5 USDC  (loser)
+        // yesPot = 10 USDC (winner), noPot = 5 USDC (loser)
         // fee    = 3% of 5 USDC = 150_000
         // net    = 5_000_000 - 150_000 = 4_850_000
-        // agentA payout = 10_000_000 + (10_000_000 * 4_850_000) / 10_000_000 = 14_850_000
+        // agentA payout = 10_000_000 + 4_850_000 = 14_850_000
         uint256 expectedPayout = TEN_USDC + 4_850_000;
         uint256 expectedFee    = (5_000_000 * FEE_BPS) / 10_000; // 150_000
 
@@ -242,7 +299,6 @@ contract ArenaPoolTest is Test {
         pool.claim(roundId);
 
         assertEq(usdc.balanceOf(agentA), expectedPayout);
-        // Treasury received fee (per-winner portion = all of it since single winner)
         assertEq(usdc.balanceOf(treasury), expectedFee);
     }
 
@@ -253,9 +309,7 @@ contract ArenaPoolTest is Test {
         _enterRound(agentA, roundId, 0, TEN_USDC); // YES
         _enterRound(agentB, roundId, 1, 5_000_000); // NO
 
-        vm.warp(pool.getRound(roundId).resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(roundId, true, bytes32(0)); // YES wins
+        _resolveRound(roundId, true); // YES wins
 
         // agentB (NO) tries to claim — should revert
         vm.prank(agentB);
@@ -268,10 +322,7 @@ contract ArenaPoolTest is Test {
     function test_08_NonEntrantCannotClaim() public {
         uint256 roundId = _createStandardRound();
         _enterRound(agentA, roundId, 0, TEN_USDC);
-
-        vm.warp(pool.getRound(roundId).resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(roundId, true, bytes32(0));
+        _resolveRound(roundId, true);
 
         vm.prank(agentC);
         vm.expectRevert(ArenaPool.NothingToClaim.selector);
@@ -283,7 +334,6 @@ contract ArenaPoolTest is Test {
     function test_09_EnterAfterStakingCutoff() public {
         uint256 roundId = _createStandardRound();
 
-        // Warp to staking cutoff
         IArenaPool.Round memory r = pool.getRound(roundId);
         vm.warp(r.stakingClosesAt);
 
@@ -299,7 +349,6 @@ contract ArenaPoolTest is Test {
         uint256 roundId = _createStandardRound();
         _enterRound(agentA, roundId, 0, TEN_USDC);
 
-        // Second entry
         _fundAndApprove(agentA, TEN_USDC);
         vm.prank(agentA);
         vm.expectRevert(ArenaPool.AlreadyEntered.selector);
@@ -330,48 +379,44 @@ contract ArenaPoolTest is Test {
         pool.enterRound(roundId, 0, TEN_USDC, "note");
     }
 
-    // ─── Test 13: Frozen round blocks entry ──────────────────────────────────
+    // ─── Test 13: submitResolution rejects non-watchtower ────────────────────
 
-    function test_13_FrozenRoundBlocksEntry() public {
+    function test_13_NonWatchtowerCannotSubmitResolution() public {
         uint256 roundId = _createStandardRound();
-
-        vm.prank(resolver);
-        pool.freezeRound(roundId);
-
-        _fundAndApprove(agentA, TEN_USDC);
-        vm.prank(agentA);
-        vm.expectRevert(ArenaPool.RoundIsFrozen.selector);
-        pool.enterRound(roundId, 0, TEN_USDC, "note");
-    }
-
-    // ─── Test 14: Frozen round blocks resolution ─────────────────────────────
-
-    function test_14_FrozenRoundBlocksResolution() public {
-        uint256 roundId = _createStandardRound();
-        vm.prank(resolver);
-        pool.freezeRound(roundId);
 
         vm.warp(pool.getRound(roundId).resolvesAt);
-        vm.prank(resolver);
-        vm.expectRevert(ArenaPool.RoundIsFrozen.selector);
-        pool.resolveRound(roundId, true, bytes32(0));
+
+        // agentA is not a watchtower
+        vm.prank(agentA);
+        vm.expectRevert(ArenaPool.NotWatchtower.selector);
+        pool.submitResolution(roundId, true, bytes32(0));
     }
 
-    // ─── Test 15: Unfreeze re-enables entry ──────────────────────────────────
+    // ─── Test 14: submitResolution rejects before resolvesAt ─────────────────
 
-    function test_15_UnfreezeReenablesEntry() public {
+    function test_14_CannotSubmitResolutionBeforeResolvesAt() public {
         uint256 roundId = _createStandardRound();
 
-        vm.prank(resolver);
-        pool.freezeRound(roundId);
+        IArenaPool.Round memory r = pool.getRound(roundId);
+        vm.warp(r.resolvesAt - 1);
 
-        vm.prank(resolver);
-        pool.unfreezeRound(roundId);
+        vm.prank(watchtower1);
+        vm.expectRevert(ArenaPool.TooEarlyToResolve.selector);
+        pool.submitResolution(roundId, true, bytes32(0));
+    }
 
-        // Now should succeed
-        _enterRound(agentA, roundId, 0, TEN_USDC);
-        IArenaPool.Entry memory e = pool.getUserEntry(roundId, agentA);
-        assertEq(e.amount, TEN_USDC);
+    // ─── Test 15: submitResolution: watchtower cannot attest twice ────────────
+
+    function test_15_WatchtowerCannotAttestTwice() public {
+        uint256 roundId = _createStandardRound();
+        vm.warp(pool.getRound(roundId).resolvesAt);
+
+        vm.prank(watchtower1);
+        pool.submitResolution(roundId, true, bytes32(0));
+
+        vm.prank(watchtower1);
+        vm.expectRevert(ArenaPool.AlreadyAttested.selector);
+        pool.submitResolution(roundId, true, bytes32(0));
     }
 
     // ─── Test 16: Fee calculation accuracy ───────────────────────────────────
@@ -381,15 +426,13 @@ contract ArenaPoolTest is Test {
         // fee = 3% of losing pot (NO = 10 USDC) = 300_000
         // net losing = 9_700_000
         // agentA payout = 20_000_000 + 9_700_000 = 29_700_000 (sole winner)
-        // treasury should get 300_000 (per-winner portion = 300_000 * 20M/20M = 300_000)
+        // treasury should get 300_000
 
         uint256 roundId = _createStandardRound();
         _enterRound(agentA, roundId, 0, 20_000_000); // YES 20 USDC
         _enterRound(agentB, roundId, 1, 10_000_000); // NO  10 USDC
 
-        vm.warp(pool.getRound(roundId).resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(roundId, true, bytes32(0));
+        _resolveRound(roundId, true);
 
         vm.prank(agentA);
         pool.claim(roundId);
@@ -401,30 +444,12 @@ contract ArenaPoolTest is Test {
     // ─── Test 17: Payout proportional to stake (two YES winners) ─────────────
 
     function test_17_PayoutProportionalToStake() public {
-        // agentA YES: 10 USDC, agentC YES: 30 USDC, agentB NO: 20 USDC
-        // YES pot = 40 USDC (winner side)
-        // NO pot  = 20 USDC (losing side)
-        // fee = 3% of 20 USDC = 600_000
-        // netLosing = 19_400_000
-        //
-        // agentA share = 10/40 of 19_400_000 = 4_850_000
-        // agentA payout = 10_000_000 + 4_850_000 = 14_850_000
-        //
-        // agentC share = 30/40 of 19_400_000 = 14_550_000
-        // agentC payout = 30_000_000 + 14_550_000 = 44_550_000
-        //
-        // fee from agentA: 600_000 * 10/40 = 150_000
-        // fee from agentC: 600_000 * 30/40 = 450_000
-        // total treasury:  600_000
-
         uint256 roundId = _createStandardRound();
         _enterRound(agentA, roundId, 0, 10_000_000);
         _enterRound(agentB, roundId, 1, 20_000_000);
         _enterRound(agentC, roundId, 0, 30_000_000);
 
-        vm.warp(pool.getRound(roundId).resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(roundId, true, bytes32(0));
+        _resolveRound(roundId, true);
 
         vm.prank(agentA);
         pool.claim(roundId);
@@ -442,10 +467,7 @@ contract ArenaPoolTest is Test {
     function test_18_CannotClaimTwice() public {
         uint256 roundId = _createStandardRound();
         _enterRound(agentA, roundId, 0, TEN_USDC);
-
-        vm.warp(pool.getRound(roundId).resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(roundId, true, bytes32(0));
+        _resolveRound(roundId, true);
 
         vm.prank(agentA);
         pool.claim(roundId);
@@ -460,25 +482,25 @@ contract ArenaPoolTest is Test {
     function test_19_CannotResolveAlreadyResolved() public {
         uint256 roundId = _createStandardRound();
         _enterRound(agentA, roundId, 0, TEN_USDC);
+        _resolveRound(roundId, true);
 
-        vm.warp(pool.getRound(roundId).resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(roundId, true, bytes32(0));
-
-        vm.prank(resolver);
+        // Watchtower tries again — round already resolved
+        vm.prank(watchtower1);
         vm.expectRevert(ArenaPool.AlreadyResolved.selector);
-        pool.resolveRound(roundId, false, bytes32(0));
+        pool.submitResolution(roundId, false, bytes32(0));
     }
 
-    // ─── Test 20: Non-resolver cannot resolve ────────────────────────────────
+    // ─── Test 20: Non-governance cannot set fee ───────────────────────────────
 
-    function test_20_NonResolverCannotResolve() public {
-        uint256 roundId = _createStandardRound();
-
-        vm.warp(pool.getRound(roundId).resolvesAt);
+    function test_20_NonGovernanceCannotSetFee() public {
         vm.prank(agentA);
-        vm.expectRevert("ArenaPool: not resolver");
-        pool.resolveRound(roundId, true, bytes32(0));
+        vm.expectRevert(ArenaPool.NotGovernance.selector);
+        pool.setFeeBps(100);
+
+        // A random address also cannot set fee
+        vm.prank(watchtower1);
+        vm.expectRevert(ArenaPool.NotGovernance.selector);
+        pool.setFeeBps(200);
     }
 
     // ─── Test 21: Cannot claim before resolution ─────────────────────────────
@@ -521,7 +543,6 @@ contract ArenaPoolTest is Test {
         uint256 roundId = _createStandardRound();
         _fundAndApprove(agentA, TEN_USDC);
 
-        // Build 281-byte string
         bytes memory longNote = new bytes(281);
         for (uint i = 0; i < 281; i++) longNote[i] = 0x41; // 'A'
 
@@ -537,9 +558,7 @@ contract ArenaPoolTest is Test {
         uint256 r0 = _createStandardRound();
         _enterRound(agentA, r0, 0, TEN_USDC);
         _enterRound(agentB, r0, 1, TEN_USDC);
-        vm.warp(pool.getRound(r0).resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(r0, true, bytes32(0));
+        _resolveRound(r0, true);
         vm.prank(agentA);
         pool.claim(r0);
 
@@ -549,9 +568,7 @@ contract ArenaPoolTest is Test {
         uint256 r1 = pool.createRound("ETH above $4k?", "market.crypto", TWO_HOURS, ONE_USDC);
         _enterRound(agentA, r1, 0, TEN_USDC);
         _enterRound(agentB, r1, 1, TEN_USDC);
-        vm.warp(pool.getRound(r1).resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(r1, false, bytes32(0)); // NO wins
+        _resolveRound(r1, false); // NO wins
         vm.prank(agentB);
         pool.claim(r1);
 
@@ -562,7 +579,7 @@ contract ArenaPoolTest is Test {
         IArenaPool.AgentStanding memory standA = standings[0].agent == agentA ? standings[0] : standings[1];
         assertEq(standA.roundsEntered, 2);
         assertEq(standA.roundsWon, 1);
-        assertEq(standA.winRate, 5_000); // 50% = 5000 bps
+        assertEq(standA.winRate, 5_000); // 50%
 
         // Find agentB
         IArenaPool.AgentStanding memory standB = standings[0].agent == agentB ? standings[0] : standings[1];
@@ -571,20 +588,20 @@ contract ArenaPoolTest is Test {
         assertEq(standB.winRate, 5_000);
     }
 
-    // ─── Test 26: setFeeBps can update fee (only resolver) ───────────────────
+    // ─── Test 26: setFeeBps via governance ───────────────────────────────────
 
-    function test_26_SetFeeBps() public {
-        vm.prank(resolver);
-        pool.setFeeBps(500); // 5%
+    function test_26_SetFeeBpsViaGovernance() public {
+        // Only governance can call setFeeBps
+        govContract.callSetFeeBps(address(pool), 500); // 5%
         assertEq(pool.feeBps(), 500);
 
-        vm.prank(resolver);
-        vm.expectRevert(ArenaPool.FeeTooHigh.selector);
-        pool.setFeeBps(1_001);
+        // Governance can also set to 0
+        govContract.callSetFeeBps(address(pool), 0);
+        assertEq(pool.feeBps(), 0);
 
-        vm.prank(agentA);
-        vm.expectRevert("ArenaPool: not resolver");
-        pool.setFeeBps(100);
+        // Governance cannot exceed MAX_FEE_BPS
+        vm.expectRevert(ArenaPool.FeeTooHigh.selector);
+        govContract.callSetFeeBps(address(pool), 1_001);
     }
 
     // ─── Test 27: NO side wins scenario ──────────────────────────────────────
@@ -594,9 +611,7 @@ contract ArenaPoolTest is Test {
         _enterRound(agentA, roundId, 0, TEN_USDC); // YES
         _enterRound(agentB, roundId, 1, 5_000_000); // NO
 
-        vm.warp(pool.getRound(roundId).resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(roundId, false, bytes32(0)); // NO wins
+        _resolveRound(roundId, false); // NO wins
 
         // agentA (YES) cannot claim
         vm.prank(agentA);
@@ -622,7 +637,8 @@ contract ArenaPoolTest is Test {
             address(usdc),
             address(policyEngine),
             address(agentReg),
-            resolver,
+            address(watchtowerReg),
+            address(govContract),
             treasury,
             0 // 0% fee
         );
@@ -643,8 +659,12 @@ contract ArenaPoolTest is Test {
         zeroPool.enterRound(roundId, 1, 5_000_000, "");
 
         vm.warp(zeroPool.getRound(roundId).resolvesAt);
-        vm.prank(resolver);
-        zeroPool.resolveRound(roundId, true, bytes32(0));
+        vm.prank(watchtower1);
+        zeroPool.submitResolution(roundId, true, bytes32(0));
+        vm.prank(watchtower2);
+        zeroPool.submitResolution(roundId, true, bytes32(0));
+        vm.prank(watchtower3);
+        zeroPool.submitResolution(roundId, true, bytes32(0));
 
         vm.prank(agentA);
         zeroPool.claim(roundId);
@@ -658,7 +678,7 @@ contract ArenaPoolTest is Test {
 
     function test_29_MultipleRoundIsolation() public {
         uint256 r0 = _createStandardRound();
-        vm.warp(block.timestamp + 1); // ensure different timestamps
+        vm.warp(block.timestamp + 1);
         vm.prank(agentA);
         uint256 r1 = pool.createRound("ETH Q?", "market.crypto", TWO_HOURS, ONE_USDC);
 
@@ -687,27 +707,34 @@ contract ArenaPoolTest is Test {
         assertEq(entrants[1], agentB);
     }
 
-    // ─── Test 31: [FIX CRIT-1] Resolve before resolvesAt reverts ─────────────
+    // ─── Test 31: Quorum requires RESOLUTION_QUORUM attestations ─────────────
 
-    function test_31_ResolveBeforeResolvesAt_Reverts() public {
+    function test_31_QuorumRequires3Attestations() public {
         uint256 roundId = _createStandardRound();
         _enterRound(agentA, roundId, 0, TEN_USDC);
 
-        // Try to resolve before resolvesAt — must revert
-        IArenaPool.Round memory r = pool.getRound(roundId);
-        vm.warp(r.resolvesAt - 1);
-        vm.prank(resolver);
-        vm.expectRevert(ArenaPool.TooEarlyToResolve.selector);
-        pool.resolveRound(roundId, true, bytes32(0));
+        vm.warp(pool.getRound(roundId).resolvesAt);
 
-        // Exactly at resolvesAt — should succeed
-        vm.warp(r.resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(roundId, true, bytes32(0));
+        // 1st attestation — not resolved
+        vm.prank(watchtower1);
+        pool.submitResolution(roundId, true, bytes32(0));
+        assertFalse(pool.getRound(roundId).resolved);
+        assertEq(pool.getAttestationCount(roundId, true), 1);
+
+        // 2nd attestation — still not resolved
+        vm.prank(watchtower2);
+        pool.submitResolution(roundId, true, bytes32(0));
+        assertFalse(pool.getRound(roundId).resolved);
+        assertEq(pool.getAttestationCount(roundId, true), 2);
+
+        // 3rd attestation — auto-resolves
+        vm.prank(watchtower3);
+        pool.submitResolution(roundId, true, bytes32(0));
         assertTrue(pool.getRound(roundId).resolved);
+        assertTrue(pool.getRound(roundId).outcome);
     }
 
-    // ─── Test 32: [FIX CRIT-2] Zero winner side refunds losers ──────────────
+    // ─── Test 32: [FIX CRIT-2] Zero winner side refunds all stakers ──────────
 
     function test_32_ZeroWinnerSide_RefundsLosers() public {
         uint256 roundId = _createStandardRound();
@@ -716,50 +743,50 @@ contract ArenaPoolTest is Test {
         _enterRound(agentB, roundId, 0, 5_000_000);
 
         // Resolve NO wins (zero-winner side — noPot = 0, yesPot = 15M)
-        vm.warp(pool.getRound(roundId).resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(roundId, false, bytes32(0)); // NO wins, but noPot=0
+        _resolveRound(roundId, false); // NO wins, but noPot=0
 
-        // Both YES bettors should get full refund of their stakes
+        // Both YES bettors should get full refund
         vm.prank(agentA);
         pool.claim(roundId);
-        assertEq(usdc.balanceOf(agentA), TEN_USDC); // full stake refunded
+        assertEq(usdc.balanceOf(agentA), TEN_USDC);
 
         vm.prank(agentB);
         pool.claim(roundId);
-        assertEq(usdc.balanceOf(agentB), 5_000_000); // full stake refunded
+        assertEq(usdc.balanceOf(agentB), 5_000_000);
 
         // Treasury receives nothing (no fee on refund)
         assertEq(usdc.balanceOf(treasury), 0);
     }
 
-    // ─── Test 33: [FIX HIGH-1] Emergency refund after MAX_FREEZE_DURATION ────
+    // ─── Test 33: emergencyRefund after MAX_FREEZE_DURATION past resolvesAt ───
 
     function test_33_EmergencyRefund_AfterMaxFreezeDuration() public {
         uint256 roundId = _createStandardRound();
         _enterRound(agentA, roundId, 0, TEN_USDC);
         _enterRound(agentB, roundId, 1, 5_000_000);
 
-        // Freeze the round
-        vm.prank(resolver);
-        pool.freezeRound(roundId);
+        IArenaPool.Round memory r = pool.getRound(roundId);
 
-        // Try too soon — should revert
+        // Too soon — must be at least MAX_FREEZE_DURATION past resolvesAt
+        vm.warp(r.resolvesAt + 1);
         vm.prank(agentA);
-        vm.expectRevert(ArenaPool.FreezePeriodActive.selector);
+        vm.expectRevert("ArenaPool: too early for emergency refund");
         pool.emergencyRefund(roundId);
 
-        // Warp past MAX_FREEZE_DURATION (30 days)
-        vm.warp(block.timestamp + 30 days + 1);
+        // Warp past resolvesAt + 30 days
+        vm.warp(r.resolvesAt + 30 days);
+        vm.prank(agentA);
+        vm.expectRevert("ArenaPool: too early for emergency refund");
+        pool.emergencyRefund(roundId);
 
-        // Now should succeed
+        vm.warp(r.resolvesAt + 30 days + 1);
         vm.prank(agentA);
         pool.emergencyRefund(roundId);
-        assertEq(usdc.balanceOf(agentA), TEN_USDC); // stake returned
+        assertEq(usdc.balanceOf(agentA), TEN_USDC);
 
         vm.prank(agentB);
         pool.emergencyRefund(roundId);
-        assertEq(usdc.balanceOf(agentB), 5_000_000); // stake returned
+        assertEq(usdc.balanceOf(agentB), 5_000_000);
     }
 
     // ─── Test 34: [FIX MED-1] refundUnresolved after grace period ───────────
@@ -769,7 +796,7 @@ contract ArenaPoolTest is Test {
         _enterRound(agentA, roundId, 0, TEN_USDC);
 
         // Too soon — grace period not over
-        vm.warp(pool.getRound(roundId).resolvesAt + 72 hours); // exactly at boundary
+        vm.warp(pool.getRound(roundId).resolvesAt + 72 hours);
         vm.prank(agentA);
         vm.expectRevert(ArenaPool.GracePeriodActive.selector);
         pool.refundUnresolved(roundId);
@@ -785,17 +812,14 @@ contract ArenaPoolTest is Test {
 
     function test_35_FeeSnapshotImmutable_AfterResolution() public {
         uint256 roundId = _createStandardRound();
-        _enterRound(agentA, roundId, 0, TEN_USDC);  // YES 10 USDC
-        _enterRound(agentB, roundId, 1, 10_000_000); // NO  10 USDC
+        _enterRound(agentA, roundId, 0, TEN_USDC);
+        _enterRound(agentB, roundId, 1, 10_000_000);
 
         // Resolve with 3% fee
-        vm.warp(pool.getRound(roundId).resolvesAt);
-        vm.prank(resolver);
-        pool.resolveRound(roundId, true, bytes32(0)); // YES wins, feeBps=300 snapshotted
+        _resolveRound(roundId, true); // YES wins, feeBps=300 snapshotted
 
-        // Resolver bumps fee AFTER resolution
-        vm.prank(resolver);
-        pool.setFeeBps(1_000); // 10%
+        // Governance bumps fee AFTER resolution
+        govContract.callSetFeeBps(address(pool), 1_000); // 10%
 
         // Winner should still pay 3% (snapshotted at resolution time)
         // noPot=10M, fee@3%=300k, net=9.7M, payout=10M+9.7M=19.7M
@@ -803,15 +827,14 @@ contract ArenaPoolTest is Test {
         pool.claim(roundId);
 
         assertEq(usdc.balanceOf(agentA), 19_700_000); // 3% fee, not 10%
-        assertEq(usdc.balanceOf(treasury), 300_000);   // 3% of 10M
+        assertEq(usdc.balanceOf(treasury), 300_000);
     }
 
-    // ─── Test 36: [FIX HIGH-3] recordSpend only after USDC transfer ──────────
+    // ─── Test 36: recordSpend order — transfer fails before recordSpend ───────
 
     function test_36_RecordSpendOrder_TransferFailsBeforeRecordSpend() public {
         uint256 roundId = _createStandardRound();
 
-        // Approve less than the entry amount — transfer will fail
         usdc.mint(agentA, TEN_USDC);
         vm.prank(agentA);
         usdc.approve(address(pool), ONE_USDC); // only 1 USDC approved, entering 10
@@ -820,7 +843,6 @@ contract ArenaPoolTest is Test {
         vm.expectRevert("MockUSDC: insufficient allowance");
         pool.enterRound(roundId, 0, TEN_USDC, "note");
 
-        // Verify no entry was recorded (effects should have reverted)
         IArenaPool.Entry memory entry = pool.getUserEntry(roundId, agentA);
         assertEq(entry.agent, address(0));
     }
@@ -831,5 +853,99 @@ contract ArenaPoolTest is Test {
         vm.prank(unregistered);
         vm.expectRevert(ArenaPool.NotRegistered.selector);
         pool.createRound("Q?", "cat", TWO_HOURS, ONE_USDC);
+    }
+
+    // ─── Test 38: Split attestations don't auto-resolve ──────────────────────
+
+    function test_38_SplitAttestationsNoAutoResolve() public {
+        uint256 roundId = _createStandardRound();
+        _enterRound(agentA, roundId, 0, TEN_USDC);
+
+        vm.warp(pool.getRound(roundId).resolvesAt);
+
+        // 2 YES, 2 NO — neither reaches quorum of 3
+        vm.prank(watchtower1);
+        pool.submitResolution(roundId, true, bytes32(0));
+        vm.prank(watchtower2);
+        pool.submitResolution(roundId, true, bytes32(0));
+        vm.prank(watchtower3);
+        pool.submitResolution(roundId, false, bytes32(0));
+        vm.prank(watchtower4);
+        pool.submitResolution(roundId, false, bytes32(0));
+
+        // Should NOT be resolved — no side reached quorum
+        assertFalse(pool.getRound(roundId).resolved);
+        assertEq(pool.getAttestationCount(roundId, true), 2);
+        assertEq(pool.getAttestationCount(roundId, false), 2);
+    }
+
+    // ─── Test 39: hasAttested and getAttestationCount views ──────────────────
+
+    function test_39_AttestationViews() public {
+        uint256 roundId = _createStandardRound();
+        vm.warp(pool.getRound(roundId).resolvesAt);
+
+        assertFalse(pool.hasAttested(roundId, watchtower1));
+        assertEq(pool.getAttestationCount(roundId, true), 0);
+
+        vm.prank(watchtower1);
+        pool.submitResolution(roundId, true, bytes32(0));
+
+        assertTrue(pool.hasAttested(roundId, watchtower1));
+        assertFalse(pool.hasAttested(roundId, watchtower2));
+        assertEq(pool.getAttestationCount(roundId, true), 1);
+        assertEq(pool.getAttestationCount(roundId, false), 0);
+    }
+
+    // ─── Test 40: emergencyRefund fails if already resolved ──────────────────
+
+    function test_40_EmergencyRefund_FailsIfResolved() public {
+        uint256 roundId = _createStandardRound();
+        _enterRound(agentA, roundId, 0, TEN_USDC);
+        _resolveRound(roundId, true);
+
+        IArenaPool.Round memory r = pool.getRound(roundId);
+        vm.warp(r.resolvesAt + 30 days + 1);
+
+        vm.prank(agentA);
+        vm.expectRevert("ArenaPool: already resolved");
+        pool.emergencyRefund(roundId);
+    }
+
+    // ─── Test 41: refundUnresolved fails if already resolved ─────────────────
+
+    function test_41_RefundUnresolved_FailsIfResolved() public {
+        uint256 roundId = _createStandardRound();
+        _enterRound(agentA, roundId, 0, TEN_USDC);
+        _resolveRound(roundId, true);
+
+        vm.warp(pool.getRound(roundId).resolvesAt + 72 hours + 1);
+
+        vm.prank(agentA);
+        vm.expectRevert("ArenaPool: already resolved");
+        pool.refundUnresolved(roundId);
+    }
+
+    // ─── Test 42: ResolutionAttested and RoundAutoResolved events emitted ─────
+
+    function test_42_Events_AttestationAndAutoResolve() public {
+        uint256 roundId = _createStandardRound();
+        vm.warp(pool.getRound(roundId).resolvesAt);
+
+        vm.prank(watchtower1);
+        vm.expectEmit(true, true, false, true);
+        emit IArenaPool.ResolutionAttested(roundId, watchtower1, true, 1);
+        pool.submitResolution(roundId, true, bytes32(0));
+
+        vm.prank(watchtower2);
+        pool.submitResolution(roundId, true, bytes32(0));
+
+        // 3rd attestation triggers both RoundResolved and RoundAutoResolved
+        vm.prank(watchtower3);
+        vm.expectEmit(true, false, false, true);
+        emit IArenaPool.RoundResolved(roundId, true, bytes32(0));
+        vm.expectEmit(true, false, false, true);
+        emit IArenaPool.RoundAutoResolved(roundId, true, 3);
+        pool.submitResolution(roundId, true, bytes32(0));
     }
 }

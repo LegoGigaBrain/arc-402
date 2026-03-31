@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.24;
 
 /**
  * @title StatusRegistry
@@ -29,6 +29,7 @@ contract StatusRegistry {
     // ─── Constants ───────────────────────────────────────────────────────────
 
     uint256 public constant MAX_PREVIEW_LENGTH = 140;
+    uint256 public constant MAX_CID_BYTES      = 100;
     uint256 public constant MAX_DAILY_POSTS    = 10;
     uint256 public constant WINDOW_DURATION    = 24 hours;
 
@@ -68,6 +69,9 @@ contract StatusRegistry {
 
     error NotRegistered();
     error PreviewTooLong();
+    error CIDTooLong();
+    error EmptyCID();
+    error InvalidHash();
     error RateLimitExceeded();
     error HashAlreadyUsed();
     error NotStatusOwner();
@@ -97,7 +101,12 @@ contract StatusRegistry {
         // ── Checks ──────────────────────────────────────────────────────────
         if (!agentRegistry.isRegistered(msg.sender))   revert NotRegistered();
         if (bytes(preview).length > MAX_PREVIEW_LENGTH) revert PreviewTooLong();
-        if (statuses[contentHash].agent != address(0))  revert HashAlreadyUsed();
+        // [FIX MED-3 / LOW-1] Validate CID: non-empty and within byte length bound.
+        if (bytes(cid).length == 0)                    revert EmptyCID();
+        if (bytes(cid).length > MAX_CID_BYTES)         revert CIDTooLong();
+        // [FIX LOW-2] Reject zero contentHash (defense in depth).
+        if (contentHash == bytes32(0))                 revert InvalidHash();
+        if (statuses[contentHash].agent != address(0)) revert HashAlreadyUsed();
 
         _enforceRateLimit(msg.sender);
 
@@ -156,9 +165,14 @@ contract StatusRegistry {
     // ─── Internal helpers ────────────────────────────────────────────────────
 
     /**
-     * @dev Sliding 24-hour window rate limiter.
-     *      Resets the window when more than WINDOW_DURATION has passed since it opened.
+     * @dev Tumbling 24-hour window rate limiter.
+     *      This is NOT a true sliding window — the window resets to block.timestamp
+     *      when a post is made after WINDOW_DURATION has elapsed since the window opened.
+     *      An agent can post up to MAX_DAILY_POSTS within any 24h window.
      *      Reverts if the agent has already posted MAX_DAILY_POSTS in the current window.
+     *
+     *      Note: preview length is validated in bytes, not Unicode character count.
+     *      MAX_PREVIEW_LENGTH = 140 bytes. ASCII users get 140 chars; CJK users get ~46 chars.
      */
     function _enforceRateLimit(address agent) internal {
         uint256 windowStart = dailyWindowStart[agent];

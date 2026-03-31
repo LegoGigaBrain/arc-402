@@ -281,5 +281,44 @@ contract StatusRegistryTest is Test {
         assertEq(registry.MAX_PREVIEW_LENGTH(), 140);
         assertEq(registry.MAX_DAILY_POSTS(),    10);
         assertEq(registry.WINDOW_DURATION(),    24 hours);
+        assertEq(registry.MAX_CID_BYTES(),      100);
+    }
+
+    // ─── Test 18: [FIX MED-3] Empty CID reverts ──────────────────────────────
+
+    function test_PostStatus_EmptyCID_Reverts() public {
+        vm.prank(agentA);
+        vm.expectRevert(StatusRegistry.EmptyCID.selector);
+        registry.postStatus(HASH_1, "", PREVIEW_OK);
+    }
+
+    // ─── Test 19: [FIX MED-3] CID too long reverts ───────────────────────────
+
+    function test_PostStatus_CIDTooLong_Reverts() public {
+        bytes memory longCid = new bytes(101);
+        for (uint i = 0; i < 101; i++) longCid[i] = 0x62; // 'b'
+
+        vm.prank(agentA);
+        vm.expectRevert(StatusRegistry.CIDTooLong.selector);
+        registry.postStatus(HASH_1, string(longCid), PREVIEW_OK);
+    }
+
+    // ─── Test 20: [FIX LOW-2] Zero contentHash reverts ───────────────────────
+
+    function test_PostStatus_ZeroHash_Reverts() public {
+        vm.prank(agentA);
+        vm.expectRevert(StatusRegistry.InvalidHash.selector);
+        registry.postStatus(bytes32(0), CID_1, PREVIEW_OK);
+    }
+
+    // ─── Test 21: Valid CID exactly at max length (100 bytes) succeeds ────────
+
+    function test_PostStatus_CID100Bytes_Accepted() public {
+        bytes memory cid100 = new bytes(100);
+        for (uint i = 0; i < 100; i++) cid100[i] = 0x62;
+
+        vm.prank(agentA);
+        registry.postStatus(HASH_1, string(cid100), PREVIEW_OK);
+        assertEq(registry.getStatus(HASH_1).agent, agentA);
     }
 }

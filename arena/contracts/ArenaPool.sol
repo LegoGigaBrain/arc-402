@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.24;
 
 import "./interfaces/IArenaPool.sol";
 
@@ -76,6 +76,9 @@ contract ArenaPool is IArenaPool {
     uint256 public constant MAX_FEE_BPS                   = 1_000;  // 10%
     uint256 public constant DEFAULT_MIN_ENTRY             = 1_000_000; // 1 USDC (6 decimals)
     uint256 public constant NOTE_MAX_BYTES                = 280;
+    uint256 public constant BPS_DENOMINATOR               = 10_000;
+    uint256 public constant MAX_FREEZE_DURATION           = 30 days;
+    uint256 public constant RESOLUTION_GRACE_PERIOD       = 72 hours;
 
     // ─── Protocol fee ─────────────────────────────────────────────────────────
 
@@ -134,6 +137,9 @@ contract ArenaPool is IArenaPool {
     error AlreadyClaimed();
     error NoteTooLong();
     error InvalidDuration();
+    error TooEarlyToResolve();
+    error FreezePeriodActive();
+    error GracePeriodActive();
 
     // ─── Constructor ─────────────────────────────────────────────────────────
 
@@ -189,6 +195,7 @@ contract ArenaPool is IArenaPool {
     ) external nonReentrant returns (uint256 roundId) {
         // ── Checks ──────────────────────────────────────────────────────────
         if (duration <= STAKING_CUTOFF_BEFORE_RESOLVE) revert InvalidDuration();
+        if (!agentRegistry.isRegistered(msg.sender))   revert NotRegistered();
 
         uint256 effectiveMin = minEntry == 0 ? DEFAULT_MIN_ENTRY : minEntry;
 
@@ -224,6 +231,12 @@ contract ArenaPool is IArenaPool {
 
     /// @dev Per-round minimum entry amount (not in spec struct, stored separately).
     mapping(uint256 => uint256) private _roundMinEntry;
+
+    /// @dev Per-round fee snapshot — locked at resolution time to prevent fee frontrun.
+    mapping(uint256 => uint256) private _roundFeeBps;
+
+    /// @dev Per-round freeze timestamp (for emergency refund timeout).
+    mapping(uint256 => uint256) public frozenAt;
 
     /**
      * @notice Enter a prediction round by staking USDC on YES or NO.
@@ -283,12 +296,12 @@ contract ArenaPool is IArenaPool {
         emit RoundEntered(roundId, msg.sender, side, amount, note);
 
         // ── Interactions ────────────────────────────────────────────────────
-        // PolicyEngine.recordSpend — external call after state changes (CEI: this is the interaction)
-        policyEngine.recordSpend(msg.sender, "arena", amount, address(usdc));
-
-        // Pull USDC from agent wallet (SafeTransferFrom pattern: check return value)
+        // [FIX HIGH-3] Pull USDC BEFORE recording spend — CEI: confirm funds held before accounting.
         bool ok = usdc.transferFrom(msg.sender, address(this), amount);
         require(ok, "ArenaPool: USDC transfer failed");
+
+        // PolicyEngine.recordSpend — only reached after token transfer succeeded.
+        policyEngine.recordSpend(msg.sender, "arena", amount, address(usdc));
     }
 
     /**
@@ -304,14 +317,19 @@ contract ArenaPool is IArenaPool {
     ) external nonReentrant onlyResolver {
         // ── Checks ──────────────────────────────────────────────────────────
         Round storage round = _rounds[roundId];
-        if (round.resolvesAt == 0)   revert RoundNotFound();
-        if (round.resolved)          revert AlreadyResolved();
-        if (_frozen[roundId])        revert RoundIsFrozen();
+        if (round.resolvesAt == 0)                      revert RoundNotFound();
+        // [FIX CRIT-1] Enforce resolution time — resolver cannot resolve before resolvesAt.
+        if (block.timestamp < round.resolvesAt)         revert TooEarlyToResolve();
+        if (round.resolved)                             revert AlreadyResolved();
+        if (_frozen[roundId])                           revert RoundIsFrozen();
 
         // ── Effects ─────────────────────────────────────────────────────────
         round.resolved     = true;
         round.outcome      = outcome;
         round.evidenceHash = evidenceHash;
+        // [FIX HIGH-2] Snapshot fee at resolution time — prevents fee frontrun between
+        // resolution and claim. Per-round fee is now immutable after resolveRound.
+        _roundFeeBps[roundId] = feeBps;
 
         emit RoundResolved(roundId, outcome, evidenceHash);
 
@@ -334,35 +352,47 @@ contract ArenaPool is IArenaPool {
         if (_claimed[roundId][msg.sender])        revert AlreadyClaimed();
 
         Entry storage entry = _entries[roundId][msg.sender];
-        if (entry.agent == address(0))            revert NothingToClaim();
+        if (entry.agent == address(0)) revert NothingToClaim();
+
+        uint256 winnerPot = round.outcome ? round.yesPot : round.noPot;
+        uint256 losingPot = round.outcome ? round.noPot  : round.yesPot;
+
+        // [FIX CRIT-2] Zero-winner-side refund path:
+        //   If the resolved winning side has no participants (everyone bet on the losing side),
+        //   refund all stakers their original stake instead of locking funds permanently.
+        if (winnerPot == 0) {
+            // Everyone in this round was on the losing side — refund their stake.
+            // (The winning side is empty, so anyone with an entry gets their stake back.)
+            // ── Effects ──────────────────────────────────────────────────────
+            _claimed[roundId][msg.sender] = true;
+            uint256 refund = entry.amount;
+            emit Claimed(roundId, msg.sender, refund);
+            // ── Interactions ─────────────────────────────────────────────────
+            bool refOk = usdc.transfer(msg.sender, refund);
+            require(refOk, "ArenaPool: refund transfer failed");
+            return;
+        }
+
+        // Normal path — caller must be on the winning side.
         if (entry.side != (round.outcome ? 0 : 1)) revert NothingToClaim(); // wrong side
 
         // ── Effects (all state before transfers) ─────────────────────────────
         _claimed[roundId][msg.sender] = true;
 
         // Payout calculation (parimutuel):
-        //   winnerPot = stake on winning side
-        //   losingPot = stake on losing side
-        //   fee       = feeBps% of losingPot
-        //   netLosing = losingPot - fee
-        //   payout    = stake + (stake / winnerPot) * netLosing
-        //             = stake + (stake * netLosing) / winnerPot
-
-        uint256 winnerPot = round.outcome ? round.yesPot : round.noPot;
-        uint256 losingPot = round.outcome ? round.noPot  : round.yesPot;
-
-        uint256 fee       = (losingPot * feeBps) / 10_000;
+        //   winnerPot  = stake on winning side
+        //   losingPot  = stake on losing side
+        //   fee        = feeBpsSnapshot% of losingPot (snapshotted at resolution — immutable)
+        //   netLosing  = losingPot - fee
+        //   payout     = stake + (stake * netLosing) / winnerPot
+        //
+        // [FIX HIGH-2] Use snapshotted fee — prevents fee frontrun between resolution and claim.
+        // [FIX MED-4]  perWinnerFee computed from raw values (no divide-before-multiply).
+        uint256 roundFee  = _roundFeeBps[roundId];
+        uint256 fee       = (losingPot * roundFee) / BPS_DENOMINATOR;
         uint256 netLosing = losingPot - fee;
 
-        // When the losing side is empty, winner gets stake back only (no fee)
-        uint256 payout;
-        if (winnerPot == 0) {
-            // Pathological case: no winners somehow — return nothing
-            revert NothingToClaim();
-        }
-
-        // stake refund + proportional share of net losing pot
-        payout = entry.amount + (entry.amount * netLosing) / winnerPot;
+        uint256 payout = entry.amount + (entry.amount * netLosing) / winnerPot;
 
         // Update stats for standings
         _stats[msg.sender].roundsWon   += 1;
@@ -371,11 +401,10 @@ contract ArenaPool is IArenaPool {
         emit Claimed(roundId, msg.sender, payout);
 
         // ── Interactions ────────────────────────────────────────────────────
-        // Transfer fee to treasury (only when there's a losing pot)
-        if (fee > 0 && losingPot > 0) {
-            // Fee is split across all winners proportionally — we transfer
-            // the per-winner fee portion here.
-            uint256 perWinnerFee = (fee * entry.amount) / winnerPot;
+        // Transfer per-winner fee portion to treasury.
+        // [FIX MED-4] Compute from raw values to avoid divide-before-multiply precision loss.
+        if (fee > 0) {
+            uint256 perWinnerFee = (losingPot * roundFee * entry.amount) / (BPS_DENOMINATOR * winnerPot);
             if (perWinnerFee > 0) {
                 bool feeOk = usdc.transfer(treasury, perWinnerFee);
                 require(feeOk, "ArenaPool: fee transfer failed");
@@ -391,18 +420,20 @@ contract ArenaPool is IArenaPool {
     /**
      * @notice Freeze a round — blocks new entries and resolution.
      *         Used when evidence is disputed. Only resolver can freeze.
+     *         After MAX_FREEZE_DURATION, participants may call emergencyRefund().
      */
-    function freezeRound(uint256 roundId) external onlyResolver {
+    function freezeRound(uint256 roundId) external nonReentrant onlyResolver {
         require(_rounds[roundId].resolvesAt != 0, "ArenaPool: round not found");
         require(!_frozen[roundId], "ArenaPool: already frozen");
         _frozen[roundId] = true;
+        frozenAt[roundId] = block.timestamp;
         emit RoundFrozen(roundId);
     }
 
     /**
      * @notice Unfreeze a round. Only resolver can unfreeze.
      */
-    function unfreezeRound(uint256 roundId) external onlyResolver {
+    function unfreezeRound(uint256 roundId) external nonReentrant onlyResolver {
         require(_rounds[roundId].resolvesAt != 0, "ArenaPool: round not found");
         require(_frozen[roundId], "ArenaPool: not frozen");
         _frozen[roundId] = false;
@@ -410,10 +441,55 @@ contract ArenaPool is IArenaPool {
     }
 
     /**
+     * @notice Emergency refund for participants in a frozen round that has been frozen
+     *         for longer than MAX_FREEZE_DURATION (30 days) without resolution.
+     *         Participant-initiated rescue path when resolver governance fails.
+     * @param roundId  Frozen round to claim refund from.
+     */
+    function emergencyRefund(uint256 roundId) external nonReentrant {
+        require(_frozen[roundId], "ArenaPool: not frozen");
+        if (block.timestamp < frozenAt[roundId] + MAX_FREEZE_DURATION) revert FreezePeriodActive();
+        require(!_claimed[roundId][msg.sender], "ArenaPool: already claimed");
+        Entry storage entry = _entries[roundId][msg.sender];
+        require(entry.agent != address(0), "ArenaPool: no entry");
+        // ── Effects ──────────────────────────────────────────────────────────
+        _claimed[roundId][msg.sender] = true;
+        emit EmergencyRefund(roundId, msg.sender, entry.amount);
+        // ── Interactions ─────────────────────────────────────────────────────
+        bool ok = usdc.transfer(msg.sender, entry.amount);
+        require(ok, "ArenaPool: refund failed");
+    }
+
+    /**
+     * @notice Refund participants when a round was not resolved within the grace period
+     *         (72 hours after resolvesAt). Safety valve for resolver key loss or abandonment.
+     * @param roundId  Unresolved round past grace period.
+     */
+    function refundUnresolved(uint256 roundId) external nonReentrant {
+        Round storage round = _rounds[roundId];
+        require(round.resolvesAt != 0, "ArenaPool: round not found");
+        require(!round.resolved, "ArenaPool: already resolved");
+        require(!_frozen[roundId], "ArenaPool: use emergencyRefund for frozen rounds");
+        if (block.timestamp <= round.resolvesAt + RESOLUTION_GRACE_PERIOD) revert GracePeriodActive();
+        require(!_claimed[roundId][msg.sender], "ArenaPool: already claimed");
+        Entry storage entry = _entries[roundId][msg.sender];
+        require(entry.agent != address(0), "ArenaPool: no entry");
+        // ── Effects ──────────────────────────────────────────────────────────
+        _claimed[roundId][msg.sender] = true;
+        emit Claimed(roundId, msg.sender, entry.amount);
+        // ── Interactions ─────────────────────────────────────────────────────
+        bool ok = usdc.transfer(msg.sender, entry.amount);
+        require(ok, "ArenaPool: refund failed");
+    }
+
+    /**
      * @notice Update the protocol fee. Only resolver. Max 10%.
+     *         Fee changes only affect rounds resolved AFTER this call —
+     *         fee is snapshotted at resolveRound() time, not at enterRound() time.
      */
     function setFeeBps(uint256 newFeeBps) external onlyResolver {
         if (newFeeBps > MAX_FEE_BPS) revert FeeTooHigh();
+        emit FeeBpsUpdated(feeBps, newFeeBps);
         feeBps = newFeeBps;
     }
 
@@ -430,17 +506,29 @@ contract ArenaPool is IArenaPool {
     }
 
     /**
-     * @notice Returns the global standings — all agents who have participated,
-     *         with their stats and computed win rate in basis points.
+     * @notice Returns paginated standings.
+     * @param offset  Start index (0-based).
+     * @param limit   Maximum entries to return. Pass 0 for up to 200.
+     * @return standings  Array of AgentStanding structs.
+     * @return total      Total number of agents in standings.
+     * @dev   Full standings should be computed off-chain via subgraph. This paginated view
+     *        prevents unbounded gas consumption on-chain.
      */
-    function getStandings() external view returns (AgentStanding[] memory standings) {
-        uint256 n = _standingAgents.length;
+    function getStandings(uint256 offset, uint256 limit)
+        external view returns (AgentStanding[] memory standings, uint256 total)
+    {
+        total = _standingAgents.length;
+        if (limit == 0) limit = 200;
+        if (offset >= total) return (new AgentStanding[](0), total);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        uint256 n = end - offset;
         standings = new AgentStanding[](n);
         for (uint256 i = 0; i < n; i++) {
-            address agent    = _standingAgents[i];
+            address agent    = _standingAgents[offset + i];
             AgentStats storage s = _stats[agent];
             uint256 winRate  = s.roundsEntered > 0
-                ? (s.roundsWon * 10_000) / s.roundsEntered
+                ? (s.roundsWon * BPS_DENOMINATOR) / s.roundsEntered
                 : 0;
             standings[i] = AgentStanding({
                 agent:         agent,
@@ -475,5 +563,10 @@ contract ArenaPool is IArenaPool {
     /// @notice Total rounds created.
     function roundCount() external view returns (uint256) {
         return _nextRoundId;
+    }
+
+    /// @notice Returns the fee basis points snapshotted for a resolved round.
+    function getRoundFeeBps(uint256 roundId) external view returns (uint256) {
+        return _roundFeeBps[roundId];
     }
 }

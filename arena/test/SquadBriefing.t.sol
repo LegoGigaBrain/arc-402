@@ -232,4 +232,89 @@ contract SquadBriefingTest is Test {
         vm.expectRevert(SquadBriefing.NotSquadLead.selector);
         briefing.publishBriefing(squadId, HASH_1, PREVIEW_OK, ENDPOINT_1, _noTags());
     }
+
+    // ─── Proposal flow ────────────────────────────────────────────────────────
+
+    function test_ProposeBriefing_HappyPath() public {
+        bytes32 h = keccak256("proposal-content");
+        vm.prank(contributor);
+        briefing.proposeBriefing(squadId, h, "preview", "https://ep.xyz", new string[](0));
+        assertTrue(briefing.proposalExists(h));
+        SquadBriefing.Proposal memory p = briefing.getProposal(h);
+        assertEq(p.proposer, contributor);
+        assertEq(uint(p.status), uint(SquadBriefing.ProposalStatus.Pending));
+    }
+
+    function test_ProposeBriefing_NonMember_Reverts() public {
+        address nonMember = address(0xFEED);
+        agentReg.setRegistered(nonMember, true);
+        bytes32 h = keccak256("outsider-proposal");
+        vm.prank(nonMember);
+        vm.expectRevert(SquadBriefing.NotSquadMember.selector);
+        briefing.proposeBriefing(squadId, h, "preview", "https://ep.xyz", new string[](0));
+    }
+
+    function test_ProposeBriefing_DuplicateHash_Reverts() public {
+        bytes32 h = keccak256("dup-proposal");
+        vm.prank(contributor);
+        briefing.proposeBriefing(squadId, h, "preview", "https://ep.xyz", new string[](0));
+        vm.prank(contributor);
+        vm.expectRevert(SquadBriefing.ProposalAlreadyExists.selector);
+        briefing.proposeBriefing(squadId, h, "preview", "https://ep.xyz", new string[](0));
+    }
+
+    function test_ApproveProposal_LeadApproves_Publishes() public {
+        bytes32 h = keccak256("approve-me");
+        vm.prank(contributor);
+        briefing.proposeBriefing(squadId, h, "approved preview", "https://ep.xyz", new string[](0));
+        vm.prank(lead);
+        briefing.approveProposal(h);
+        assertTrue(briefing.briefingExists(h));
+        SquadBriefing.Briefing memory b = briefing.getBriefing(h);
+        assertEq(b.publisher, contributor); // proposer is the publisher
+        assertEq(uint(briefing.getProposal(h).status), uint(SquadBriefing.ProposalStatus.Approved));
+    }
+
+    function test_ApproveProposal_Contributor_Reverts() public {
+        bytes32 h = keccak256("contributor-cant-approve");
+        vm.prank(contributor);
+        briefing.proposeBriefing(squadId, h, "preview", "https://ep.xyz", new string[](0));
+        vm.prank(contributor);
+        vm.expectRevert(SquadBriefing.NotSquadLead.selector);
+        briefing.approveProposal(h);
+    }
+
+    function test_RejectProposal_LeadRejects() public {
+        bytes32 h = keccak256("reject-me");
+        vm.prank(contributor);
+        briefing.proposeBriefing(squadId, h, "preview", "https://ep.xyz", new string[](0));
+        vm.prank(lead);
+        briefing.rejectProposal(h);
+        assertFalse(briefing.briefingExists(h));
+        assertEq(uint(briefing.getProposal(h).status), uint(SquadBriefing.ProposalStatus.Rejected));
+    }
+
+    function test_ApproveProposal_AlreadyApproved_Reverts() public {
+        bytes32 h = keccak256("double-approve");
+        vm.prank(contributor);
+        briefing.proposeBriefing(squadId, h, "preview", "https://ep.xyz", new string[](0));
+        vm.prank(lead);
+        briefing.approveProposal(h);
+        vm.prank(lead);
+        vm.expectRevert(SquadBriefing.ProposalAlreadyApproved.selector);
+        briefing.approveProposal(h);
+    }
+
+    function test_GetSquadProposals_ReturnsPending() public {
+        bytes32 h1 = keccak256("p1");
+        bytes32 h2 = keccak256("p2");
+        vm.prank(contributor);
+        briefing.proposeBriefing(squadId, h1, "p1", "https://ep.xyz", new string[](0));
+        vm.prank(contributor);
+        briefing.proposeBriefing(squadId, h2, "p2", "https://ep.xyz", new string[](0));
+        bytes32[] memory proposals = briefing.getSquadProposals(squadId);
+        assertEq(proposals.length, 2);
+        assertEq(proposals[0], h1);
+        assertEq(proposals[1], h2);
+    }
 }

@@ -70,6 +70,8 @@ interface IArenaPool {
 
     event RoundFrozen(uint256 indexed roundId);
     event RoundUnfrozen(uint256 indexed roundId);
+    event EmergencyRefund(uint256 indexed roundId, address indexed agent, uint256 amount);
+    event FeeBpsUpdated(uint256 indexed oldFeeBps, uint256 indexed newFeeBps);
 
     // ─── Functions ───────────────────────────────────────────────────────────
 
@@ -101,5 +103,5 @@ interface IArenaPool {
 
     function getUserEntry(uint256 roundId, address wallet) external view returns (Entry memory);
 
-    function getStandings() external view returns (AgentStanding[] memory);
+    function getStandings(uint256 offset, uint256 limit) external view returns (AgentStanding[] memory standings, uint256 total);
 }

@@ -141,7 +141,7 @@ contract ArenaPool is IArenaPool {
      * @param _usdc          USDC token address (6 decimals on Base)
      * @param _policyEngine  PolicyEngine contract address
      * @param _agentRegistry AgentRegistry contract address
-     * @param _resolver      Designated resolver (protocol multisig in V1)
+     * @param _resolver      Designated resolver (protocol multisig — upgradeable to watchtower quorum)
      * @param _treasury      Protocol fee destination
      * @param _feeBps        Initial fee in basis points (e.g. 300 = 3%)
      */

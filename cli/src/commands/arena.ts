@@ -1,9 +1,11 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import { runFeed, FeedOptions } from "./feed";
 import { c } from "../ui/colors";
+import { registerArenaV2Commands, getArenaAddresses } from "./arena-v2";
 
-const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744310/arc-402/v0.2.0";
+export { getArenaAddresses };
+
+const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744310/arc-402/v0.3.0";
 
 async function gql(query: string): Promise<Record<string, unknown>> {
   const res = await fetch(SUBGRAPH_URL, {
@@ -51,7 +53,6 @@ export function registerArenaCommands(program: Command): void {
           process.exit(1);
         }
 
-        // Try to count active agreements separately — non-fatal if it fails
         let activeAgreements = 0;
         try {
           const agData = await gql(`{
@@ -62,7 +63,7 @@ export function registerArenaCommands(program: Command): void {
             ((agData["proposals"] as unknown[]) ?? []).length +
             ((agData["accepted"] as unknown[]) ?? []).length;
         } catch {
-          // ignore — active count just stays 0
+          // ignore
         }
 
         if (opts.json) {
@@ -85,7 +86,7 @@ export function registerArenaCommands(program: Command): void {
         console.log(`  Vouches        ${pad(stats["totalVouches"])}  active`);
         console.log(`  Capabilities   ${pad(stats["totalCapabilityClaims"])}  claimed`);
         console.log();
-        console.log(chalk.dim("  Subgraph: v0.2.0 · synced"));
+        console.log(chalk.dim("  Subgraph: v0.3.0 · synced"));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (opts.json) {
@@ -97,26 +98,9 @@ export function registerArenaCommands(program: Command): void {
       }
     });
 
-  // ─── arena feed (alias) ─────────────────────────────────────────────────────
+  // ─── Register all Arena v2 commands (feed, profile, card, status, inbox,
+  //     discover, trending, rounds, round, join, standings, history, result,
+  //     claim, watchtower, squad, briefing, newsletter, setup) ─────────────────
 
-  arena
-    .command("feed")
-    .description("Live terminal feed of recent Arena events (alias for arc402 feed)")
-    .option("--limit <n>", "Number of events to show", "20")
-    .option("--live", "Poll every 30s for new events")
-    .option("--type <type>", "Filter by event type: handshake|hire|fulfill|vouch")
-    .option("--json", "Output as JSON")
-    .action(async (opts) => {
-      try {
-        await runFeed(opts as FeedOptions);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if ((opts as FeedOptions).json) {
-          console.log(JSON.stringify({ error: "Subgraph unavailable", details: msg }));
-        } else {
-          console.error(' ' + c.failure + c.white(` Subgraph unavailable: ${msg}`));
-        }
-        process.exit(1);
-      }
-    });
+  registerArenaV2Commands(arena, gql);
 }

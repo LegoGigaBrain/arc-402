@@ -84,8 +84,17 @@ Add to `SquadBriefing.sol`:
 ```solidity
 // ─── New state ────────────────────────────────────────────────────────────
 
-/// contentHash → citation count
+/// Trust registry — pulled at cite-time for weighted citation counting
+ITrustRegistryV3 public immutable trustRegistry;
+
+/// Minimum trust score for a citation to count toward the weighted threshold
+uint256 public constant MIN_CITER_TRUST = 300;
+
+/// contentHash → raw citation count (all registered agents)
 mapping(bytes32 => uint256) public citationCount;
+
+/// contentHash → trust-weighted citation count (citers with score >= MIN_CITER_TRUST only)
+mapping(bytes32 => uint256) public weightedCitationCount;
 
 /// contentHash → citer address → has cited (dedup: one citation per citer per briefing)
 mapping(bytes32 => mapping(address => bool)) private _hasCited;
@@ -98,11 +107,12 @@ error BriefingNotPublished();
 // ─── New event ────────────────────────────────────────────────────────────
 
 event BriefingCited(
-    bytes32 indexed contentHash,   // briefing being cited
-    address indexed citer,         // agent citing it
-    bytes32         citingHash,    // keccak256 of the citing document
-    string          note,          // why this briefing is relevant
-    uint256         newCount,      // updated citation count
+    bytes32 indexed contentHash,     // briefing being cited
+    address indexed citer,           // agent citing it
+    bytes32         citingHash,      // keccak256 of the citing document
+    string          note,            // why this briefing is relevant
+    uint256         newCount,        // updated raw citation count
+    uint256         citerTrustScore, // citer's trust score at cite-time
     uint256         timestamp
 );
 
@@ -131,11 +141,20 @@ function citeBriefing(
     if (_hasCited[contentHash][msg.sender])      revert AlreadyCited();
     if (bytes(note).length > MAX_PREVIEW_LENGTH) revert PreviewTooLong(); // reuse 140-char limit
 
+    // Pull citer trust score from TrustRegistryV3 at cite-time
+    uint256 citerTrustScore = trustRegistry.getGlobalScore(msg.sender);
+
     // Effects
+    // Store: (contentHash, citer, timestamp, citerTrustScore) — recorded in event
     _hasCited[contentHash][msg.sender] = true;
     uint256 newCount = ++citationCount[contentHash];
 
-    emit BriefingCited(contentHash, msg.sender, citingHash, note, newCount, block.timestamp);
+    // Weighted threshold: TRUST_WEIGHTED_CITATION_THRESHOLD = 5 citations from agents with score >= MIN_CITER_TRUST
+    if (citerTrustScore >= MIN_CITER_TRUST) {
+        ++weightedCitationCount[contentHash];
+    }
+
+    emit BriefingCited(contentHash, msg.sender, citingHash, note, newCount, citerTrustScore, block.timestamp);
 }
 ```
 
@@ -152,11 +171,17 @@ event CitationThresholdReached(
 );
 ```
 
-The threshold events are emitted inside `citeBriefing()` when `newCount == 5` or `newCount == 20`. Trust signal calls to `TrustRegistryV3` are made **off-chain** (via the daemon/subgraph indexer) — not from inside the Solidity function. This avoids a cross-contract call chain inside a public function and keeps the contract simple.
+The threshold events are emitted inside `citeBriefing()` when `weightedCitationCount` (trust-weighted count) reaches 5 or 20 — NOT the raw citation count. Trust signal calls to `TrustRegistryV3` are made **off-chain** (via the daemon/subgraph indexer) — not from inside the Solidity function. This avoids a cross-contract call chain inside a public function and keeps the contract simple.
+
+**Why trust-weighted thresholds:**
+- Raw citation counts are gameable: a sybil farm of registered-but-low-trust agents can trigger thresholds cheaply
+- `citeBriefing()` records `citerTrustScore` at cite-time, pulled from TrustRegistryV3
+- Only citations from agents with `score >= MIN_CITER_TRUST (300)` increment `weightedCitationCount`
+- `CitationThresholdReached` is emitted when `weightedCitationCount` crosses 5 or 20
 
 **Why off-chain trust signal dispatch:**
 - Avoids tight coupling between SquadBriefing and TrustRegistryV3
-- Keeps `citeBriefing()` gas-predictable (no external calls)
+- Keeps `citeBriefing()` gas-predictable (score lookup is the only external call)
 - Subgraph indexer listens for `CitationThresholdReached`, dispatches the trust signal via daemon worker
 - Pattern consistent with how ArenaPool handles reputation signals (same off-chain dispatch approach)
 
@@ -167,8 +192,9 @@ The threshold events are emitted inside `citeBriefing()` when `newCount == 5` or
 | Cost to cite | Zero (gas only) |
 | Deduplication | One citation per citer per briefing |
 | Signal type | Economic (citer's trust score weights the signal) |
-| Threshold 1 | 5 citations → trust signal for LEAD + contributors |
-| Threshold 2 | 20 citations → stronger trust signal |
+| Trust-weighted threshold | 5 citations from agents with score ≥ 300 → CitationThresholdReached |
+| Threshold 1 | 5 **trust-weighted** citations (score ≥ 300) → trust signal for LEAD + contributors |
+| Threshold 2 | 20 **trust-weighted** citations → stronger trust signal |
 | Revenue from citations | None — revenue is from subscribers (separate track) |
 
 ---
@@ -510,15 +536,22 @@ contract IntelligenceRegistry {
     // ─── Types ────────────────────────────────────────────────────────────────
 
     struct IntelligenceArtifact {
-        bytes32 contentHash;    // keccak256 of the artifact
-        address creator;        // agent that produced it
-        uint256 squadId;        // ResearchSquad that produced it (0 if solo)
-        string  capabilityTag;  // e.g. "domain.defi.risk", "domain.legal.ai"
-        string  artifactType;   // "briefing" | "lora" | "dataset" | "qa-pairs"
-        string  endpoint;       // daemon endpoint for P2P delivery
-        string  preview;        // ≤140-char description
+        bytes32 contentHash;           // keccak256 of the artifact
+        address creator;               // agent that produced it
+        uint256 squadId;               // ResearchSquad that produced it (0 if solo)
+        string  capabilityTag;         // e.g. "domain.defi.risk", "domain.legal.ai"
+        string  artifactType;          // "briefing" | "lora" | "dataset" | "qa-pairs"
+        string  endpoint;              // daemon endpoint for P2P delivery
+        string  preview;               // ≤140-char description
         uint256 timestamp;
-        uint256 citationCount;  // incremented by recordCitation()
+        uint256 citationCount;         // raw count — all registered agents
+        uint256 weightedCitationCount; // trust-weighted (citers with score >= MIN_CITER_TRUST)
+        bytes32 trainingDataHash;      // hash of training data used (0x0 if not applicable)
+        string  baseModel;             // base model identifier (empty if not applicable)
+        bytes32 evalHash;              // hash of evaluation results (0x0 if not published)
+        bytes32 parentHash;            // parent artifact this derives from (0x0 if original)
+        bytes32 revenueShareHash;      // keccak256 of signed off-chain rev-share agreement
+                                       // 0x0 = creator takes all (valid for solo work)
     }
 
     // ─── Errors ───────────────────────────────────────────────────────────────
@@ -564,6 +597,9 @@ contract IntelligenceRegistry {
 
     uint256 public constant MAX_PREVIEW_LENGTH = 140;
 
+    /// Minimum citer trust score for a citation to count toward weighted threshold
+    uint256 public constant MIN_CITER_TRUST = 300;
+
     // Valid artifact types (checked as keccak256 of string)
     bytes32 private constant _TYPE_BRIEFING  = keccak256("briefing");
     bytes32 private constant _TYPE_LORA      = keccak256("lora");
@@ -572,7 +608,8 @@ contract IntelligenceRegistry {
 
     // ─── State ────────────────────────────────────────────────────────────────
 
-    IAgentRegistry public immutable agentRegistry;
+    IAgentRegistry   public immutable agentRegistry;
+    ITrustRegistryV3 public immutable trustRegistry;
 
     /// contentHash → IntelligenceArtifact
     mapping(bytes32 => IntelligenceArtifact) private _artifacts;
@@ -591,9 +628,11 @@ contract IntelligenceRegistry {
 
     // ─── Constructor ──────────────────────────────────────────────────────────
 
-    constructor(address _agentRegistry) {
+    constructor(address _agentRegistry, address _trustRegistry) {
         if (_agentRegistry == address(0)) revert ZeroAddress();
+        if (_trustRegistry == address(0)) revert ZeroAddress();
         agentRegistry = IAgentRegistry(_agentRegistry);
+        trustRegistry = ITrustRegistryV3(_trustRegistry);
     }
 
     // ─── Writes ───────────────────────────────────────────────────────────────
@@ -602,12 +641,16 @@ contract IntelligenceRegistry {
      * @notice Register an intelligence artifact.
      *         Caller must be a registered ARC-402 agent.
      *
-     * @param contentHash    keccak256 of the artifact content.
-     * @param squadId        ResearchSquad ID (0 for solo production).
-     * @param capabilityTag  Dot-separated domain tag: "domain.defi.risk".
-     * @param artifactType   One of: "briefing", "lora", "dataset", "qa-pairs".
-     * @param endpoint       Daemon endpoint serving the artifact P2P.
-     * @param preview        ≤140-char description shown in discovery feeds.
+     * @param contentHash       keccak256 of the artifact content.
+     * @param squadId           ResearchSquad ID (0 for solo production).
+     * @param capabilityTag     Dot-separated domain tag: "domain.defi.risk".
+     * @param artifactType      One of: "briefing", "lora", "dataset", "qa-pairs".
+     * @param endpoint          Daemon endpoint serving the artifact P2P.
+     * @param preview           ≤140-char description shown in discovery feeds.
+     * @param revenueShareHash  keccak256 of a signed off-chain rev-share agreement.
+     *                          Pass bytes32(0) for solo work (creator takes all).
+     *                          Commits the agreed split on-chain; disputes go through
+     *                          DisputeArbitration. No payment logic in this contract.
      */
     function register(
         bytes32        contentHash,
@@ -615,7 +658,8 @@ contract IntelligenceRegistry {
         string calldata capabilityTag,
         string calldata artifactType,
         string calldata endpoint,
-        string calldata preview
+        string calldata preview,
+        bytes32        revenueShareHash  // bytes32(0) = creator takes all
     ) external {
         // Checks
         if (!agentRegistry.isRegistered(msg.sender))      revert NotRegistered();
@@ -638,15 +682,21 @@ contract IntelligenceRegistry {
         _registered[contentHash] = true;
 
         _artifacts[contentHash] = IntelligenceArtifact({
-            contentHash:   contentHash,
-            creator:       msg.sender,
-            squadId:       squadId,
-            capabilityTag: capabilityTag,
-            artifactType:  artifactType,
-            endpoint:      endpoint,
-            preview:       preview,
-            timestamp:     block.timestamp,
-            citationCount: 0
+            contentHash:           contentHash,
+            creator:               msg.sender,
+            squadId:               squadId,
+            capabilityTag:         capabilityTag,
+            artifactType:          artifactType,
+            endpoint:              endpoint,
+            preview:               preview,
+            timestamp:             block.timestamp,
+            citationCount:         0,
+            weightedCitationCount: 0,
+            trainingDataHash:      bytes32(0),  // set via registerWithProvenance() for LoRAs
+            baseModel:             "",
+            evalHash:              bytes32(0),
+            parentHash:            bytes32(0),
+            revenueShareHash:      revenueShareHash
         });
 
         bytes32 tagKey = keccak256(bytes(capabilityTag));
@@ -665,30 +715,42 @@ contract IntelligenceRegistry {
 
     /**
      * @notice Record a citation for an artifact.
-     *         Called directly, or by SquadBriefing (if integrated).
+     *         msg.sender is the citer — no delegated citation.
+     *         If SquadBriefing relays citations, it calls with its own address
+     *         (SquadBriefing must be registered as a protocol contract in AgentRegistry).
      *         One citation per citer per artifact.
      *
-     *         Emits CitationThresholdReached at counts 5 and 20.
+     *         Emits CitationThresholdReached when trust-weighted count crosses 5 or 20.
      *         Trust signal dispatch happens off-chain (daemon worker listening to events).
      *
      * @param contentHash  Artifact being cited.
      */
-    function recordCitation(bytes32 contentHash, address citer) external {
-        if (!_registered[contentHash])                    revert ArtifactNotFound();
-        if (!agentRegistry.isRegistered(citer))           revert NotRegistered();
-        if (_hasCited[contentHash][citer])                revert AlreadyCited();
+    function recordCitation(bytes32 contentHash) external {
+        if (!_registered[contentHash])                         revert ArtifactNotFound();
+        if (!agentRegistry.isRegistered(msg.sender))           revert NotRegistered();
+        if (_hasCited[contentHash][msg.sender])                revert AlreadyCited();
+
+        // Pull citer trust score at cite-time
+        uint256 citerTrustScore = trustRegistry.getGlobalScore(msg.sender);
 
         // Effects
-        _hasCited[contentHash][citer] = true;
+        _hasCited[contentHash][msg.sender] = true;
         uint256 newCount = ++_artifacts[contentHash].citationCount;
 
-        emit ArtifactCited(contentHash, citer, newCount, block.timestamp);
+        // Trust-weighted count: only citers with score >= MIN_CITER_TRUST
+        if (citerTrustScore >= MIN_CITER_TRUST) {
+            ++_artifacts[contentHash].weightedCitationCount;
+        }
 
-        if (newCount == 5 || newCount == 20) {
+        emit ArtifactCited(contentHash, msg.sender, newCount, block.timestamp);
+
+        // Threshold fires on weighted count, not raw count
+        uint256 wCount = _artifacts[contentHash].weightedCitationCount;
+        if (wCount == 5 || wCount == 20) {
             emit CitationThresholdReached(
                 contentHash,
                 _artifacts[contentHash].creator,
-                newCount,
+                wCount,
                 block.timestamp
             );
         }
@@ -771,6 +833,14 @@ This is identical to the newsletter access pattern already specced. District 2 r
 
 The LoRA pipeline applies the existing workroom + file delivery pattern to ML model outputs. Zero new Solidity required.
 
+### Training architecture
+
+Training runs on a single reliable compute node hired via **ComputeAgreement**. Squad members pool research outputs — data generation is distributed across squad members. The fine-tuning job itself is a single ComputeAgreement session: one provider, one GPU, deterministic output, hashable artifact.
+
+The Squad LEAD opens a ComputeAgreement with a GPU provider. The provider runs the training inside their governed workroom. ComputeAgreement handles metered billing and escrow (billed per minute, settled on actual usage). The output artifact is hashed and registered in IntelligenceRegistry.
+
+Federated learning across heterogeneous GPUs is deferred until usage proves demand for it. The coordination overhead of gradient synchronization is not justified at launch. Distributed data generation (each squad member contributing QA pairs) is the right place for parallelism — centralized training on a single reliable node is the right place for determinism.
+
 ### Pipeline steps
 
 ```
@@ -778,17 +848,26 @@ Step 1: Research squad completes a domain research run
         Output: QA pairs, synthesis docs, annotated citations
         Each output pinned to IPFS, hashes recorded in ResearchSquad
 
-Step 2: LEAD posts a fine-tuning job
-        arc402 hire <compute-provider> \
-          --service-type ai.finetune \
-          --spec-hash <keccak256-of-job-spec>
-        Job spec includes: base model, training data hashes, LoRA rank/alpha, epochs
+Step 2: LEAD opens a ComputeAgreement with a GPU provider
+        arc402 compute hire <provider-address> \
+          --rate 0.5 \
+          --max-hours 4
+        Job spec (base model, training data hashes, LoRA rank/alpha, epochs) is
+        submitted as --spec-hash <keccak256-of-job-spec>.
+
+        NOTE: This is ComputeAgreement — NOT ServiceAgreement.
+        ComputeAgreement = metered GPU session, billed per minute on actual usage.
+        ServiceAgreement = flat-fee deliverable work.
+        Training is metered compute. It belongs to ComputeAgreement.
 
 Step 3: Compute provider's workroom runs the job
-        - Pulls training data from IPFS (authenticated by ServiceAgreement)
-        - Runs LoRA training (e.g. axolotl, unsloth, or custom harness)
+        - Pulls training data from IPFS (authenticated by ComputeAgreement session)
+        - Runs LoRA training on a single reliable compute node
+          (axolotl, unsloth, or custom harness)
         - Produces LoRA adapter file (~200–500MB, safetensors format)
         - Hashes the output: keccak256 of the adapter file
+        - Provider ends session: arc402 compute end <session-id>
+          ComputeAgreement settles based on actual GPU-minutes consumed.
 
 Step 4: Provider registers the artifact
         arc402 arena intelligence register \
@@ -796,27 +875,30 @@ Step 4: Provider registers the artifact
           --type lora \
           --tag domain.defi.risk \
           --endpoint <provider-daemon-url> \
+          --training-data-hash <keccak256-of-training-bundle> \
+          --base-model llama3-8b \
           --preview "LoRA adapter: DeFi risk Q2 2026 (Llama3-8B base, rank 16)"
 
-Step 5: Provider delivers via ServiceAgreement
-        arc402 deliver <agreement-id> --hash <lora-adapter-hash>
-        Payment releases from escrow.
-
-Step 6: Artifact is discoverable and subscribable
+Step 5: Artifact is discoverable and subscribable
         arc402 arena intelligence discover --tag domain.defi.risk --type lora
         Buyers open SubscriptionAgreement for ongoing adapter updates,
-        or ServiceAgreement for one-off purchase.
+        or ServiceAgreement for one-off purchase of a specific adapter version.
 ```
 
 ### Training provenance on-chain
 
 The `IntelligenceRegistry.IntelligenceArtifact` struct doesn't have a `trainingDataHash` field in the base spec. For LoRA provenance, the convention is:
 
-- The `preview` field includes: `"trained on: <training-data-hash-short>"`
-- The full provenance is stored in the IPFS-linked job spec (referenced in `ServiceAgreement.specHash`)
-- The `contentHash` of the LoRA adapter is the on-chain anchor
+`IntelligenceArtifact` carries full provenance fields at registration time:
 
-Post-launch enhancement: add `bytes32 trainingDataHash` to the struct and a `registerWithProvenance()` function. Not blocking v2.
+- `trainingDataHash` — keccak256 of the training data bundle (QA pairs, source docs). Set at registration by the compute provider. Zero if not applicable (e.g. pure briefings).
+- `baseModel` — base model identifier string, e.g. `"llama3-8b"`. Empty if not applicable.
+- `evalHash` — keccak256 of evaluation results (benchmarks, held-out set scores). Zero until provider publishes evals.
+- `parentHash` — if this LoRA derives from a prior adapter, the parent's `contentHash`. Zero for original artifacts.
+
+For LoRA artifacts, the provider populates these fields at `register()` time. The `contentHash` of the LoRA adapter is the primary on-chain anchor; provenance fields make the training lineage fully auditable without off-chain lookups.
+
+The full job spec (base model, rank/alpha, epochs, training data hashes) is stored in the IPFS-linked ComputeAgreement `specHash` — the on-chain pointer to the complete job definition.
 
 ### Artifact serving
 
@@ -1002,7 +1084,7 @@ These are tracked as known future work, not deferred scope.
 
 ### Revenue sharing within squads
 
-On-chain revenue splitting for squad briefing sales. V2 leaves this to off-chain squad governance. V3 adds a `SquadRevenueSplit.sol` that records member percentages and routes incoming `ServiceAgreement` payments proportionally. Needs design work on contribution-weight calculation.
+On-chain revenue splitting for squad briefing sales. V2 leaves this to off-chain squad governance. V3 adds a `SquadRevenueSplit.sol` that records member percentages and routes incoming `ServiceAgreement` and `SubscriptionAgreement` payments proportionally. Needs design work on contribution-weight calculation.
 
 ### ReputationOracle downstream scoring
 
@@ -1024,9 +1106,9 @@ Dedicated `/intelligence/lora` view with:
 
 Extension of competitive rounds: protocol treasury funds a prize pool for top-cited squad briefings in structured seasonal tournaments. Requires `TournamentPrize.sol` (new contract) and a tournament scheduler. Post-launch design work.
 
-### `bytes32 trainingDataHash` in IntelligenceArtifact
+### `registerWithProvenance()` helper function
 
-Add to struct to make LoRA provenance fully on-chain (training data → model adapter traceability). Requires `registerWithProvenance()` function addition. Minor struct change, but requires re-audit of `IntelligenceRegistry.sol`.
+`trainingDataHash`, `baseModel`, `evalHash`, and `parentHash` ship in the base struct at v2. Post-launch, add a `registerWithProvenance()` convenience wrapper that validates non-zero provenance fields for LoRA artifact types and emits a dedicated `LoRARegistered` event for indexer efficiency. Minor addition, no re-audit of the full contract needed.
 
 ---
 
@@ -1037,7 +1119,7 @@ Add to struct to make LoRA provenance fully on-chain (training data → model ad
 - No value transfer → no reentrancy risk
 - Artifact type validation uses `keccak256` comparison against four known types — O(1), no iteration
 - `getByCapability()` returns an array that grows unboundedly over time. For tags with thousands of artifacts, callers should paginate off-chain. A `getByCapabilityPaginated(tag, offset, limit)` view can be added post-launch without contract changes.
-- `recordCitation()` accepts an `address citer` parameter (not `msg.sender`) to allow SquadBriefing to relay citations. This means SquadBriefing (or any caller) can submit citations on behalf of another address. Acceptable tradeoff — the AgentRegistry check (`isRegistered(citer)`) prevents non-agent citations, and the dedup check prevents double-counting. If tighter access control is needed, add an `onlySquadBriefing` modifier post-launch.
+- `recordCitation()` uses `msg.sender` as the citer — no delegated citation. This closes the flaw where any caller could cite on behalf of any agent. If SquadBriefing needs to relay citations, it calls `recordCitation()` with its own address; SquadBriefing must be registered as a protocol contract in AgentRegistry. Alternative: authorized-relayer pattern (add an `onlyAuthorizedRelayer` modifier if relayer set expands beyond SquadBriefing).
 
 ### ResearchSquad.sol — round additions
 
@@ -1083,10 +1165,11 @@ interface IIntelligenceRegistry {
         string calldata capabilityTag,
         string calldata artifactType,
         string calldata endpoint,
-        string calldata preview
+        string calldata preview,
+        bytes32 revenueShareHash
     ) external;
 
-    function recordCitation(bytes32 contentHash, address citer) external;
+    function recordCitation(bytes32 contentHash) external;
 
     function getByCapability(string calldata tag) external view returns (bytes32[] memory);
 
@@ -1099,7 +1182,13 @@ interface IIntelligenceRegistry {
         string memory endpoint,
         string memory preview,
         uint256 timestamp,
-        uint256 citationCount
+        uint256 citationCount,
+        uint256 weightedCitationCount,
+        bytes32 trainingDataHash,
+        string memory baseModel,
+        bytes32 evalHash,
+        bytes32 parentHash,
+        bytes32 revenueShareHash
     );
 
     function artifactExists(bytes32 contentHash) external view returns (bool);
@@ -1122,7 +1211,7 @@ Add to existing `arc402` subgraph (target: v0.4.0):
 
 ```graphql
 type IntelligenceArtifact @entity(immutable: false) {
-  id: ID!                   # contentHash
+  id: ID!                    # contentHash
   creator: Agent!
   squadId: BigInt
   capabilityTag: String!
@@ -1131,6 +1220,12 @@ type IntelligenceArtifact @entity(immutable: false) {
   preview: String!
   timestamp: BigInt!
   citationCount: BigInt!
+  weightedCitationCount: BigInt!
+  trainingDataHash: Bytes
+  baseModel: String
+  evalHash: Bytes
+  parentHash: Bytes
+  revenueShareHash: Bytes
 }
 
 type ArtifactCitation @entity(immutable: true) {

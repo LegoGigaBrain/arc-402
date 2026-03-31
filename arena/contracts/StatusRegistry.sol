@@ -3,12 +3,25 @@ pragma solidity 0.8.24;
 
 /**
  * @title StatusRegistry
- * @notice IPFS-anchored status update registry for ARC Arena.
- *         Agents post intelligence updates (content lives on IPFS; only hash + CID stored on-chain).
- *         Deletes are tombstones — the record is never removed from chain.
+ * @notice On-chain status update registry for ARC Arena.
+ *
+ *         Agents post intelligence updates. Full content (≤280 chars) is stored
+ *         directly in the StatusPosted event — no IPFS dependency, no external
+ *         service, no moving parts. The event log IS the storage layer.
+ *
+ *         The preview field (≤140 chars) is stored on-chain in the StatusMeta
+ *         struct for fast feed rendering without replaying events.
+ *
+ *         For long-form content (briefings, LoRAs, documents), use SquadBriefing.sol
+ *         or IntelligenceRegistry.sol which serve content P2P from the agent's daemon.
+ *
+ *         Design principles:
+ *         - No external dependencies (no IPFS, no Pinata, no external service)
+ *         - Content in the event = permanent, retrievable, no pinning required
+ *         - Deletes are tombstones — record never removed from chain
+ *
  * @dev    CEI pattern throughout. No upgradeability. No via_ir.
  *         Rate limit: 10 statuses per 24-hour sliding window per agent.
- *         Preview field: max 140 chars for fast feed rendering without IPFS fetch.
  */
 
 interface IAgentRegistry {
@@ -20,16 +33,15 @@ contract StatusRegistry {
 
     struct StatusMeta {
         address agent;
-        string  cid;       // IPFS CID
-        string  preview;   // 140-char excerpt for feed rendering without IPFS fetch
+        string  preview;   // ≤140-char excerpt stored on-chain for fast feed rendering
         uint256 timestamp;
         bool    deleted;
     }
 
     // ─── Constants ───────────────────────────────────────────────────────────
 
-    uint256 public constant MAX_PREVIEW_LENGTH = 140;
-    uint256 public constant MAX_CID_BYTES      = 100;
+    uint256 public constant MAX_CONTENT_LENGTH = 280;   // max status content bytes
+    uint256 public constant MAX_PREVIEW_LENGTH = 140;   // max preview bytes (first 140 of content)
     uint256 public constant MAX_DAILY_POSTS    = 10;
     uint256 public constant WINDOW_DURATION    = 24 hours;
 
@@ -40,7 +52,7 @@ contract StatusRegistry {
     /// @notice agent → ordered list of content hashes (most recent last)
     mapping(address => bytes32[]) public agentStatuses;
 
-    /// @notice contentHash → status metadata
+    /// @notice contentHash → status metadata (preview + tombstone flag)
     mapping(bytes32 => StatusMeta) public statuses;
 
     /// @notice Rate limiting: posts made in the current 24-h window
@@ -51,11 +63,13 @@ contract StatusRegistry {
 
     // ─── Events ──────────────────────────────────────────────────────────────
 
+    /// @notice Full content is in the event — subgraph indexes it directly.
+    ///         No IPFS fetch required. Content is the permanent record.
     event StatusPosted(
         address indexed agent,
         bytes32 indexed contentHash,
-        string  cid,
-        string  preview,
+        string  content,   // full status text (≤280 chars) — stored in event log
+        string  preview,   // first ≤140 chars — also stored in StatusMeta for fast reads
         uint256 timestamp
     );
 
@@ -68,9 +82,9 @@ contract StatusRegistry {
     // ─── Errors ──────────────────────────────────────────────────────────────
 
     error NotRegistered();
+    error ContentTooLong();
     error PreviewTooLong();
-    error CIDTooLong();
-    error EmptyCID();
+    error EmptyContent();
     error InvalidHash();
     error RateLimitExceeded();
     error HashAlreadyUsed();
@@ -89,38 +103,42 @@ contract StatusRegistry {
 
     /**
      * @notice Post a status update.
-     * @param contentHash keccak256 of the full IPFS content (verified off-chain by subgraph).
-     * @param cid         IPFS CID pointing to the full content.
-     * @param preview     First 140 chars of the content for fast feed rendering.
+     *
+     *         The full content is emitted in StatusPosted and indexed by the subgraph.
+     *         The contentHash is keccak256(content) — caller must compute and pass it.
+     *         The contract verifies the hash matches the content.
+     *
+     * @param contentHash keccak256(abi.encodePacked(content)) — verified on-chain.
+     * @param content     Full status text (≤280 chars). Stored in event log permanently.
+     * @param preview     First ≤140 chars of content. Stored in StatusMeta for fast reads.
      */
     function postStatus(
-        bytes32        contentHash,
-        string calldata cid,
+        bytes32         contentHash,
+        string calldata content,
         string calldata preview
     ) external {
         // ── Checks ──────────────────────────────────────────────────────────
-        if (!agentRegistry.isRegistered(msg.sender))   revert NotRegistered();
-        if (bytes(preview).length > MAX_PREVIEW_LENGTH) revert PreviewTooLong();
-        // [FIX MED-3 / LOW-1] Validate CID: non-empty and within byte length bound.
-        if (bytes(cid).length == 0)                    revert EmptyCID();
-        if (bytes(cid).length > MAX_CID_BYTES)         revert CIDTooLong();
-        // [FIX LOW-2] Reject zero contentHash (defense in depth).
-        if (contentHash == bytes32(0))                 revert InvalidHash();
-        if (statuses[contentHash].agent != address(0)) revert HashAlreadyUsed();
+        if (!agentRegistry.isRegistered(msg.sender))    revert NotRegistered();
+        if (bytes(content).length == 0)                  revert EmptyContent();
+        if (bytes(content).length > MAX_CONTENT_LENGTH)  revert ContentTooLong();
+        if (bytes(preview).length > MAX_PREVIEW_LENGTH)  revert PreviewTooLong();
+        if (contentHash == bytes32(0))                   revert InvalidHash();
+        // Verify hash matches content — prevents hash/content mismatch attacks
+        if (keccak256(abi.encodePacked(content)) != contentHash) revert InvalidHash();
+        if (statuses[contentHash].agent != address(0))   revert HashAlreadyUsed();
 
         _enforceRateLimit(msg.sender);
 
         // ── Effects ─────────────────────────────────────────────────────────
         statuses[contentHash] = StatusMeta({
             agent:     msg.sender,
-            cid:       cid,
             preview:   preview,
             timestamp: block.timestamp,
             deleted:   false
         });
         agentStatuses[msg.sender].push(contentHash);
 
-        emit StatusPosted(msg.sender, contentHash, cid, preview, block.timestamp);
+        emit StatusPosted(msg.sender, contentHash, content, preview, block.timestamp);
 
         // ── Interactions ────────────────────────────────────────────────────
         // (none — no external calls after state changes)
@@ -141,45 +159,25 @@ contract StatusRegistry {
         meta.deleted = true;
 
         emit StatusDeleted(msg.sender, contentHash, block.timestamp);
-
-        // ── Interactions ────────────────────────────────────────────────────
-        // (none)
     }
 
     // ─── Views ───────────────────────────────────────────────────────────────
 
-    /**
-     * @notice Returns all content hashes posted by an agent (including tombstoned ones).
-     */
     function getAgentStatuses(address agent) external view returns (bytes32[] memory) {
         return agentStatuses[agent];
     }
 
-    /**
-     * @notice Returns the full metadata for a status hash.
-     */
     function getStatus(bytes32 hash) external view returns (StatusMeta memory) {
         return statuses[hash];
     }
 
     // ─── Internal helpers ────────────────────────────────────────────────────
 
-    /**
-     * @dev Tumbling 24-hour window rate limiter.
-     *      This is NOT a true sliding window — the window resets to block.timestamp
-     *      when a post is made after WINDOW_DURATION has elapsed since the window opened.
-     *      An agent can post up to MAX_DAILY_POSTS within any 24h window.
-     *      Reverts if the agent has already posted MAX_DAILY_POSTS in the current window.
-     *
-     *      Note: preview length is validated in bytes, not Unicode character count.
-     *      MAX_PREVIEW_LENGTH = 140 bytes. ASCII users get 140 chars; CJK users get ~46 chars.
-     */
     function _enforceRateLimit(address agent) internal {
         uint256 windowStart = dailyWindowStart[agent];
         uint256 count       = dailyCount[agent];
 
         if (block.timestamp >= windowStart + WINDOW_DURATION) {
-            // Window expired — open a fresh one
             dailyWindowStart[agent] = block.timestamp;
             dailyCount[agent]       = 1;
         } else {

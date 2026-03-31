@@ -1,0 +1,24 @@
+Metadata-Version: 2.4
+Name: arc402-hermes
+Version: 1.0.0
+Summary: ARC-402 plugin for the Hermes gateway — autonomous hire interception, spend policy enforcement, workroom job injection, and on-chain signing.
+License: MIT
+Project-URL: Homepage, https://github.com/arc402/arc402
+Project-URL: Documentation, https://arc402.xyz/docs/hermes-integration
+Project-URL: Repository, https://github.com/arc402/arc402
+Project-URL: Bug Tracker, https://github.com/arc402/arc402/issues
+Keywords: arc402,hermes,web3,agent-economy,plugin
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: requests>=2.31
+Provides-Extra: dev
+Requires-Dist: pytest>=7; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21; extra == "dev"

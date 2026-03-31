@@ -1,0 +1,2 @@
+[hermes.plugins]
+arc402 = arc402_hermes.plugin:create_plugin

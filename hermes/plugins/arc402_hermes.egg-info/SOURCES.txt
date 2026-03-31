@@ -1,0 +1,10 @@
+pyproject.toml
+arc402_hermes/__init__.py
+arc402_hermes/plugin.py
+arc402_hermes/py.typed
+arc402_hermes.egg-info/PKG-INFO
+arc402_hermes.egg-info/SOURCES.txt
+arc402_hermes.egg-info/dependency_links.txt
+arc402_hermes.egg-info/entry_points.txt
+arc402_hermes.egg-info/requires.txt
+arc402_hermes.egg-info/top_level.txt

@@ -20,7 +20,6 @@ contract StatusRegistryTest is Test {
 
     string  constant CONTENT_1  = "Testing a new DeFi risk workflow on ARC Arena.";
     string  constant CONTENT_2  = "Entering the prediction round at $68k consolidation.";
-    string  constant PREVIEW_OK = "Testing a new DeFi risk workflow on ARC Arena.";
 
     function setUp() public {
         agentReg = new MockAgentRegistry();
@@ -35,9 +34,9 @@ contract StatusRegistryTest is Test {
         return keccak256(abi.encodePacked(content));
     }
 
-    function _post(address agent, string memory content, string memory preview) internal {
+    function _post(address agent, string memory content) internal {
         vm.prank(agent);
-        registry.postStatus(_hash(content), content, preview);
+        registry.postStatus(_hash(content), content);
     }
 
     // ─── Constructor ─────────────────────────────────────────────────────────
@@ -48,8 +47,7 @@ contract StatusRegistryTest is Test {
     }
 
     function test_Constants() public view {
-        assertEq(registry.MAX_CONTENT_LENGTH(), 280);
-        assertEq(registry.MAX_PREVIEW_LENGTH(), 140);
+        assertEq(registry.MAX_CONTENT_LENGTH(), 560);
         assertEq(registry.MAX_DAILY_POSTS(),    10);
     }
 
@@ -58,11 +56,10 @@ contract StatusRegistryTest is Test {
     function test_PostStatus_HappyPath() public {
         bytes32 h = _hash(CONTENT_1);
         vm.prank(agentA);
-        registry.postStatus(h, CONTENT_1, PREVIEW_OK);
+        registry.postStatus(h, CONTENT_1);
 
         StatusRegistry.StatusMeta memory meta = registry.getStatus(h);
         assertEq(meta.agent,     agentA);
-        assertEq(meta.preview,   PREVIEW_OK);
         assertFalse(meta.deleted);
         assertGt(meta.timestamp, 0);
     }
@@ -70,81 +67,63 @@ contract StatusRegistryTest is Test {
     function test_PostStatus_EmitsEvent() public {
         bytes32 h = _hash(CONTENT_1);
         vm.expectEmit(true, true, false, true);
-        emit StatusRegistry.StatusPosted(agentA, h, CONTENT_1, PREVIEW_OK, block.timestamp);
+        emit StatusRegistry.StatusPosted(agentA, h, CONTENT_1, block.timestamp);
         vm.prank(agentA);
-        registry.postStatus(h, CONTENT_1, PREVIEW_OK);
+        registry.postStatus(h, CONTENT_1);
     }
 
     function test_PostStatus_UnregisteredAgent_Reverts() public {
         vm.prank(unregistered);
         vm.expectRevert(StatusRegistry.NotRegistered.selector);
-        registry.postStatus(_hash(CONTENT_1), CONTENT_1, PREVIEW_OK);
+        registry.postStatus(_hash(CONTENT_1), CONTENT_1);
     }
 
     function test_PostStatus_EmptyContent_Reverts() public {
         vm.prank(agentA);
         vm.expectRevert(StatusRegistry.EmptyContent.selector);
-        registry.postStatus(keccak256(abi.encodePacked("")), "", PREVIEW_OK);
+        registry.postStatus(keccak256(abi.encodePacked("")), "");
     }
 
     function test_PostStatus_ContentTooLong_Reverts() public {
-        // exactly 281 bytes
-        bytes memory b = new bytes(281);
-        for (uint i = 0; i < 281; i++) b[i] = 0x61; // 'a'
-        string memory long281 = string(b);
+        // exactly 561 bytes
+        bytes memory b = new bytes(561);
+        for (uint i = 0; i < 561; i++) b[i] = 0x61; // 'a'
+        string memory long561 = string(b);
         vm.prank(agentA);
         vm.expectRevert(StatusRegistry.ContentTooLong.selector);
-        registry.postStatus(_hash(long281), long281, PREVIEW_OK);
-    }
-
-    function test_PostStatus_Preview140Chars_Accepted() public {
-        string memory p140 = "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012"; // 142? let's use exactly 140
-        // Build 140-char string
-        string memory p = "12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890";
-        assertEq(bytes(p).length, 140);
-        _post(agentA, CONTENT_1, p);
-        StatusRegistry.StatusMeta memory meta = registry.getStatus(_hash(CONTENT_1));
-        assertEq(bytes(meta.preview).length, 140);
-    }
-
-    function test_PostStatus_PreviewTooLong_Reverts() public {
-        string memory p141 = "123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901";
-        assertEq(bytes(p141).length, 141);
-        vm.prank(agentA);
-        vm.expectRevert(StatusRegistry.PreviewTooLong.selector);
-        registry.postStatus(_hash(CONTENT_1), CONTENT_1, p141);
+        registry.postStatus(_hash(long561), long561);
     }
 
     function test_PostStatus_ZeroHash_Reverts() public {
         vm.prank(agentA);
         vm.expectRevert(StatusRegistry.InvalidHash.selector);
-        registry.postStatus(bytes32(0), CONTENT_1, PREVIEW_OK);
+        registry.postStatus(bytes32(0), CONTENT_1);
     }
 
     function test_PostStatus_HashMismatch_Reverts() public {
         vm.prank(agentA);
         vm.expectRevert(StatusRegistry.InvalidHash.selector);
-        registry.postStatus(_hash(CONTENT_2), CONTENT_1, PREVIEW_OK); // wrong hash for content
+        registry.postStatus(_hash(CONTENT_2), CONTENT_1); // wrong hash for content
     }
 
     function test_PostStatus_DuplicateHash_Reverts() public {
-        _post(agentA, CONTENT_1, PREVIEW_OK);
+        _post(agentA, CONTENT_1);
         vm.prank(agentA);
         vm.expectRevert(StatusRegistry.HashAlreadyUsed.selector);
-        registry.postStatus(_hash(CONTENT_1), CONTENT_1, PREVIEW_OK);
+        registry.postStatus(_hash(CONTENT_1), CONTENT_1);
     }
 
     // ─── deleteStatus ────────────────────────────────────────────────────────
 
     function test_DeleteStatus_HappyPath() public {
-        _post(agentA, CONTENT_1, PREVIEW_OK);
+        _post(agentA, CONTENT_1);
         vm.prank(agentA);
         registry.deleteStatus(_hash(CONTENT_1));
         assertTrue(registry.getStatus(_hash(CONTENT_1)).deleted);
     }
 
     function test_DeleteStatus_EmitsEvent() public {
-        _post(agentA, CONTENT_1, PREVIEW_OK);
+        _post(agentA, CONTENT_1);
         vm.expectEmit(true, true, false, true);
         emit StatusRegistry.StatusDeleted(agentA, _hash(CONTENT_1), block.timestamp);
         vm.prank(agentA);
@@ -152,7 +131,7 @@ contract StatusRegistryTest is Test {
     }
 
     function test_DeleteStatus_WrongAgent_Reverts() public {
-        _post(agentA, CONTENT_1, PREVIEW_OK);
+        _post(agentA, CONTENT_1);
         vm.prank(agentB);
         vm.expectRevert(StatusRegistry.NotStatusOwner.selector);
         registry.deleteStatus(_hash(CONTENT_1));
@@ -165,7 +144,7 @@ contract StatusRegistryTest is Test {
     }
 
     function test_DeleteStatus_AlreadyDeleted_Reverts() public {
-        _post(agentA, CONTENT_1, PREVIEW_OK);
+        _post(agentA, CONTENT_1);
         vm.prank(agentA);
         registry.deleteStatus(_hash(CONTENT_1));
         vm.prank(agentA);
@@ -176,8 +155,8 @@ contract StatusRegistryTest is Test {
     // ─── getAgentStatuses ────────────────────────────────────────────────────
 
     function test_GetAgentStatuses_ReturnsCorrectHashes() public {
-        _post(agentA, CONTENT_1, PREVIEW_OK);
-        _post(agentA, CONTENT_2, PREVIEW_OK);
+        _post(agentA, CONTENT_1);
+        _post(agentA, CONTENT_2);
         bytes32[] memory hashes = registry.getAgentStatuses(agentA);
         assertEq(hashes.length, 2);
         assertEq(hashes[0], _hash(CONTENT_1));
@@ -185,7 +164,7 @@ contract StatusRegistryTest is Test {
     }
 
     function test_GetAgentStatuses_IncludesDeleted() public {
-        _post(agentA, CONTENT_1, PREVIEW_OK);
+        _post(agentA, CONTENT_1);
         vm.prank(agentA);
         registry.deleteStatus(_hash(CONTENT_1));
         bytes32[] memory hashes = registry.getAgentStatuses(agentA);
@@ -207,7 +186,7 @@ contract StatusRegistryTest is Test {
         for (uint256 i = 0; i < 10; i++) {
             string memory c = _makeContent(i);
             vm.prank(agentA);
-            registry.postStatus(_hash(c), c, PREVIEW_OK);
+            registry.postStatus(_hash(c), c);
         }
     }
 
@@ -215,34 +194,34 @@ contract StatusRegistryTest is Test {
         for (uint256 i = 0; i < 10; i++) {
             string memory c = _makeContent(i);
             vm.prank(agentA);
-            registry.postStatus(_hash(c), c, PREVIEW_OK);
+            registry.postStatus(_hash(c), c);
         }
         string memory c11 = _makeContent(10);
         vm.prank(agentA);
         vm.expectRevert(StatusRegistry.RateLimitExceeded.selector);
-        registry.postStatus(_hash(c11), c11, PREVIEW_OK);
+        registry.postStatus(_hash(c11), c11);
     }
 
     function test_RateLimit_ResetsAfter24Hours() public {
         for (uint256 i = 0; i < 10; i++) {
             string memory c = _makeContent(i);
             vm.prank(agentA);
-            registry.postStatus(_hash(c), c, PREVIEW_OK);
+            registry.postStatus(_hash(c), c);
         }
         vm.warp(block.timestamp + 24 hours + 1);
         string memory c11 = _makeContent(100);
         vm.prank(agentA);
-        registry.postStatus(_hash(c11), c11, PREVIEW_OK); // should succeed
+        registry.postStatus(_hash(c11), c11); // should succeed
     }
 
     function test_RateLimit_IndependentPerAgent() public {
         for (uint256 i = 0; i < 10; i++) {
             string memory c = _makeContent(i);
             vm.prank(agentA);
-            registry.postStatus(_hash(c), c, PREVIEW_OK);
+            registry.postStatus(_hash(c), c);
         }
         // agentB should still be able to post
         vm.prank(agentB);
-        registry.postStatus(_hash(CONTENT_1), CONTENT_1, PREVIEW_OK);
+        registry.postStatus(_hash(CONTENT_1), CONTENT_1);
     }
 }

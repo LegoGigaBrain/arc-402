@@ -2211,4 +2211,153 @@ export function registerArenaV2Commands(arena: Command, gql: GqlFn): void {
         process.exit(1);
       }
     });
+
+  // ─── arena split ─────────────────────────────────────────────────────────
+
+  const splitCmd = arena.command("split").description("Squad revenue split management");
+
+  splitCmd
+    .command("create")
+    .description("Create a revenue split for your squad members")
+    .requiredOption("--members <members>", 'Comma-separated name:share% pairs, e.g. "GigaBrain:40,MegaBrain:30,ArcAgent:30"')
+    .option("--json", "Output as JSON")
+    .action(async (opts) => {
+      try {
+        const cfg = loadConfig();
+        const { signer: splitSigner, address: splitAddress2 } = await requireSigner(cfg);
+
+        // Parse members input: "Name:40,Name:30,Name:30"
+        const entries = opts.members.split(",").map((s: string) => s.trim());
+        const parsed: Array<{ label: string; address: string; share: number }> = [];
+
+        for (const entry of entries) {
+          const colonIdx = entry.lastIndexOf(":");
+          if (colonIdx === -1) throw new Error(`Invalid member format: "${entry}" — use Name:share or 0xAddress:share`);
+          const nameOrAddr = entry.slice(0, colonIdx).trim();
+          const sharePct = parseFloat(entry.slice(colonIdx + 1).trim());
+          if (isNaN(sharePct) || sharePct <= 0) throw new Error(`Invalid share for "${nameOrAddr}": ${sharePct}`);
+
+          // Resolve name → address via AgentRegistry if not already an address
+          let addr = nameOrAddr;
+          if (!nameOrAddr.startsWith("0x")) {
+            const agentRegistry = new ethers.Contract(
+              "0xD5c2851B00090c92Ba7F4723FB548bb30C9B6865",
+              ["function getAgentByName(string name) view returns (address)"],
+              splitSigner.provider
+            );
+            try {
+              addr = await (agentRegistry["getAgentByName"] as (n: string) => Promise<string>)(nameOrAddr);
+              if (!addr || addr === ethers.ZeroAddress) throw new Error(`Agent "${nameOrAddr}" not found in registry`);
+            } catch {
+              throw new Error(`Could not resolve agent name "${nameOrAddr}" — use wallet address directly`);
+            }
+          }
+          parsed.push({ label: nameOrAddr, address: addr, share: sharePct });
+        }
+
+        // Validate shares sum to 100
+        const total = parsed.reduce((s, m) => s + m.share, 0);
+        if (Math.abs(total - 100) > 0.01) throw new Error(`Shares must sum to 100% (got ${total}%)`);
+
+        const recipients = parsed.map(m => m.address);
+        const shares = parsed.map(m => Math.round(m.share * 100)); // basis points
+
+        if (!opts.json) {
+          console.log();
+          console.log(chalk.bold("  Creating revenue split"));
+          console.log();
+          parsed.forEach(m => console.log(`  ${c.dim}${m.label}${chalk.reset}  ${m.share}%`));
+          console.log();
+        }
+
+        void splitAddress2; // resolved for wallet check via requireSigner
+
+        // Deploy SquadRevenueSplit
+        const SQUAD_REVENUE_SPLIT_ABI = [
+          "constructor(address[] recipients, uint256[] shares, address usdc, address agentRegistry)",
+        ];
+        const SQUAD_REVENUE_SPLIT_BYTECODE = await (async () => {
+          // Load bytecode from arena out directory
+          const fs = await import("fs");
+          const path = await import("path");
+          const outPath = path.join(__dirname, "../../../arena/out/SquadRevenueSplit.sol/SquadRevenueSplit.json");
+          if (fs.existsSync(outPath)) {
+            const artifact = JSON.parse(fs.readFileSync(outPath, "utf8"));
+            return artifact.bytecode?.object ?? artifact.bytecode;
+          }
+          throw new Error("SquadRevenueSplit artifact not found. Run: forge build --root arena");
+        })();
+
+        const spinner = opts.json ? null : startSpinner("Deploying revenue split contract…");
+        const factory = new ethers.ContractFactory(SQUAD_REVENUE_SPLIT_ABI, SQUAD_REVENUE_SPLIT_BYTECODE, splitSigner);
+        const contract = await factory.deploy(
+          recipients,
+          shares,
+          "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC on Base
+          "0xD5c2851B00090c92Ba7F4723FB548bb30C9B6865", // AgentRegistry
+        );
+        await contract.waitForDeployment();
+        const splitAddress = await contract.getAddress();
+        spinner?.succeed(`Revenue split deployed`);
+
+        if (opts.json) {
+          console.log(JSON.stringify({ address: splitAddress, members: parsed, shares }));
+        } else {
+          console.log();
+          console.log(` ${c.success} Revenue split created`);
+          console.log(`   Address: ${chalk.cyan(splitAddress)}`);
+          console.log();
+          console.log(`  Use with briefing publish:`);
+          console.log(`  ${c.dim}arc402 arena briefing publish <squad-id> --revenue-split ${splitAddress}${chalk.reset}`);
+          console.log();
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(` ${c.failure} ${msg}`);
+        process.exit(1);
+      }
+    });
+
+  splitCmd
+    .command("info <address>")
+    .description("Show revenue split details for a deployed contract")
+    .option("--json", "Output as JSON")
+    .action(async (address, opts) => {
+      try {
+        const cfg = loadConfig();
+        const { signer: infoSigner } = await requireSigner(cfg);
+        const split = new ethers.Contract(address, [
+          "function getRecipients() view returns (address[])",
+          "function getShares() view returns (uint256[])",
+          "function pendingETH(address) view returns (uint256)",
+        ], infoSigner.provider);
+
+        const [recipients, shares] = await Promise.all([
+          split["getRecipients"]() as Promise<string[]>,
+          split["getShares"]() as Promise<bigint[]>,
+        ]);
+
+        const members = recipients.map((r, i) => ({
+          address: r,
+          shareBps: Number(shares[i]),
+          sharePct: (Number(shares[i]) / 100).toFixed(1) + "%",
+        }));
+
+        if (opts.json) {
+          console.log(JSON.stringify({ address, members }));
+        } else {
+          console.log();
+          console.log(chalk.bold(`  Revenue Split — ${address.slice(0, 6)}…${address.slice(-4)}`));
+          console.log();
+          members.forEach(m => {
+            console.log(`  ${chalk.cyan(m.address.slice(0, 6) + "…" + m.address.slice(-4))}  ${m.sharePct}`);
+          });
+          console.log();
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(` ${c.failure} ${msg}`);
+        process.exit(1);
+      }
+    });
 }

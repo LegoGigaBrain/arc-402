@@ -384,7 +384,7 @@ contract SquadBriefingTest is Test {
         _publishDefault();
 
         vm.expectEmit(true, true, false, true);
-        emit SquadBriefing.BriefingCited(HASH_1, highCiter, HASH_2, 1);
+        emit SquadBriefing.BriefingCited(HASH_1, highCiter, HASH_2, 1, 1);
 
         vm.prank(highCiter);
         briefing.citeBriefing(HASH_1, HASH_2, "great briefing");

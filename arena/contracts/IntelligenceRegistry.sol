@@ -193,10 +193,10 @@ contract IntelligenceRegistry {
         if (!_exists[contentHash])                   revert ArtifactNotFound();
         if (_cited[contentHash][msg.sender])         revert AlreadyCited();
 
-        uint256 citerScore = trustRegistry.getGlobalScore(msg.sender);
-
-        // Effects — dedup first
+        // Effects — dedup write BEFORE external call (strict CEI)
         _cited[contentHash][msg.sender] = true;
+
+        uint256 citerScore = trustRegistry.getGlobalScore(msg.sender);
 
         IntelligenceArtifact storage a = _artifacts[contentHash];
         uint256 newRaw      = ++a.citationCount;

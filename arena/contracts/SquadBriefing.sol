@@ -121,7 +121,8 @@ contract SquadBriefing {
         bytes32 indexed contentHash,
         address indexed citer,
         bytes32 citingHash,
-        uint256 newCount
+        uint256 newRawCount,
+        uint256 newWeightedCount
     );
 
     event CitationThresholdReached(
@@ -450,10 +451,10 @@ contract SquadBriefing {
         if (!_published[contentHash])                revert BriefingNotPublished();
         if (_hasCited[contentHash][msg.sender])      revert AlreadyCited();
 
-        uint256 citerScore = trustRegistry.getGlobalScore(msg.sender);
-
-        // Effects
+        // Effects — dedup write BEFORE external call (strict CEI)
         _hasCited[contentHash][msg.sender] = true;
+
+        uint256 citerScore = trustRegistry.getGlobalScore(msg.sender);
         uint256 newRaw      = ++citationCount[contentHash];
         uint256 newWeighted = weightedCitationCount[contentHash];
 
@@ -461,7 +462,7 @@ contract SquadBriefing {
             newWeighted = ++weightedCitationCount[contentHash];
         }
 
-        emit BriefingCited(contentHash, msg.sender, citingHash, newRaw);
+        emit BriefingCited(contentHash, msg.sender, citingHash, newRaw, newWeighted);
 
         if (newWeighted == CITATION_THRESHOLD_1 || newWeighted == CITATION_THRESHOLD_2) {
             emit CitationThresholdReached(contentHash, newWeighted);

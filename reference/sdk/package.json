@@ -1,0 +1,30 @@
+{
+  "name": "@arc402/sdk",
+  "version": "0.6.4",
+  "description": "ARC-402 typed TypeScript SDK for discovery, negotiation, trust, and governed settlement",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": "https://github.com/LegoGigaBrain/arc-402",
+  "license": "MIT",
+  "keywords": [
+    "arc402",
+    "web3",
+    "agents",
+    "wallet",
+    "governance",
+    "blockchain"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test test/**/*.test.js"
+  },
+  "dependencies": {
+    "ethers": "^6.9.0",
+    "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  }
+}

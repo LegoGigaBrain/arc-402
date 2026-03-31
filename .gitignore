@@ -31,7 +31,6 @@ __pycache__/
 *.py[cod]
 GITHUB-LAUNCH-PREP.md
 ENGINEERING-STATE.md
-reference/
 articles/
 examples/
 spec/
@@ -83,6 +82,8 @@ reference/audit-reports-final/
 reference/circuits/
 reference/dist/
 reference/node_modules/
+reference/testnet/
+reference/README.md
 reference/sdk-e2e-test.ts
 reference/FORGE-TOPIC-11-RECOVERY-2026-03-19.md
 reference/AUDIT-REPORT.md

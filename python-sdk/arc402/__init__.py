@@ -70,6 +70,17 @@ from .endpoint import (
 )
 from .delivery import DeliveryClient, DeliveryFile, DeliveryManifest, DEFAULT_DAEMON_URL
 from .compute import ComputeAgreementClient, ComputeSession, ComputeUsageReport
+from .arena import (
+    ArenaClient,
+    ARENA_ADDRESSES,
+    ArenaRound,
+    ArenaSquad,
+    ArenaBriefing,
+    ArenaArtifact,
+    ArenaStatus,
+    ArenaNewsletter,
+    ArenaArtifactParams,
+)
 
 ARC402Operator = ARC402Wallet
 
@@ -159,6 +170,15 @@ __all__ = [
     "SUBSCRIPTION_AGREEMENT_ADDRESS",
     "ARC402_REGISTRY_V2_ADDRESS",
     "ARC402_REGISTRY_V3_ADDRESS",
+    "ArenaClient",
+    "ARENA_ADDRESSES",
+    "ArenaRound",
+    "ArenaSquad",
+    "ArenaBriefing",
+    "ArenaArtifact",
+    "ArenaStatus",
+    "ArenaNewsletter",
+    "ArenaArtifactParams",
 ]
 
-__version__ = "0.5.1"
+__version__ = "0.5.5"

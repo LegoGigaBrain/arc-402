@@ -903,7 +903,7 @@ export async function runDaemon(foreground = false): Promise<void> {
     //       Operator GET paths and all non-protocol POSTs require the daemon bearer token.
     //       /job/* GET routes use party-based EIP-191 auth (verifyPartyAccess), not bearer token.
     const isPublicPost = req.method === "POST" && PUBLIC_POST_PATHS.has(pathname);
-    const isPublicGet = req.method === "GET" && (PUBLIC_GET_PATHS.has(pathname) || pathname.startsWith("/job/"));
+    const isPublicGet = req.method === "GET" && (PUBLIC_GET_PATHS.has(pathname) || pathname.startsWith("/job/") || pathname.startsWith("/newsletter/"));
     if (!isPublicPost && !isPublicGet) {
       const authHeader = req.headers["authorization"] ?? "";
       const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
@@ -1685,6 +1685,95 @@ export async function runDaemon(foreground = false): Promise<void> {
           return;
         }
         fileDelivery.handleManifest(req, res, agreementId, apiToken, log);
+        return;
+      }
+    }
+
+    // ── Newsletter content delivery — subscriber-gated ──────────────────────
+    // GET /newsletter/:newsletterId/issues/:issueHash
+    // Serves newsletter issue content peer-to-peer.
+    // Gating: requester must prove active subscription via SubscriptionAgreement.
+    // Auth headers: X-ARC402-Signer + X-ARC402-Signature (EIP-191 of "arc402:newsletter:<newsletterId>:<issueHash>")
+    if (pathname.startsWith("/newsletter/") && req.method === "GET") {
+      const parts = pathname.split("/");
+      // /newsletter/<newsletterId>/issues/<issueHash>
+      if (parts.length === 5 && parts[3] === "issues") {
+        const newsletterId = parts[2];
+        const issueHash = parts[4];
+
+        const sig = (req.headers["x-arc402-signature"] ?? "") as string;
+        const signerAddr = (req.headers["x-arc402-signer"] ?? "") as string;
+
+        // Daemon bearer token always allowed (local/automated)
+        const authHeader = (req.headers["authorization"] ?? "") as string;
+        if (authHeader.startsWith("Bearer ") && authHeader.slice(7) === apiToken) {
+          // serve — fall through to file serving below
+        } else if (!sig || !signerAddr) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "missing_auth", detail: "Provide X-ARC402-Signature + X-ARC402-Signer headers" }));
+          return;
+        } else {
+          // Verify EIP-191 signature
+          const message = `arc402:newsletter:${newsletterId}:${issueHash}`;
+          let recovered: string;
+          try {
+            const { ethers } = await import("ethers");
+            recovered = ethers.verifyMessage(message, sig);
+          } catch {
+            res.writeHead(401, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "invalid_signature" }));
+            return;
+          }
+          if (recovered.toLowerCase() !== signerAddr.toLowerCase()) {
+            res.writeHead(401, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "signer_mismatch" }));
+            return;
+          }
+
+          // Check SubscriptionAgreement.isActiveSubscriber(publisherWallet, subscriberWallet)
+          // publisherWallet = this daemon's wallet (config.wallet.contract_address)
+          // subscriberWallet = recovered signer address
+          const SUBSCRIPTION_AGREEMENT = "0x809c1D997Eab3531Eb2d01FCD5120Ac786D850D6";
+          const SUBSCRIPTION_ABI = [
+            "function isActiveSubscriber(address publisher, address subscriber) external view returns (bool)"
+          ];
+          try {
+            const { ethers } = await import("ethers");
+            const provider = new ethers.JsonRpcProvider(config.network.rpc_url);
+            const subAgreement = new ethers.Contract(SUBSCRIPTION_AGREEMENT, SUBSCRIPTION_ABI, provider);
+            const isActive = await subAgreement.isActiveSubscriber(
+              config.wallet.contract_address,
+              recovered
+            );
+            if (!isActive) {
+              res.writeHead(403, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "not_subscribed", detail: "No active subscription found for this address" }));
+              return;
+            }
+          } catch (err) {
+            log({ event: "newsletter_gate_error", error: String(err) });
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "gate_check_failed" }));
+            return;
+          }
+        }
+
+        // Serve the newsletter issue file from ~/.arc402/newsletters/<newsletterId>/<issueHash>
+        const path = await import("path");
+        const fs = await import("fs");
+        const os = await import("os");
+        const issueDir = path.join(os.homedir(), ".arc402", "newsletters", newsletterId);
+        const issueFile = path.join(issueDir, `${issueHash}.md`);
+
+        if (!fs.existsSync(issueFile)) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "issue_not_found" }));
+          return;
+        }
+
+        const content = fs.readFileSync(issueFile, "utf-8");
+        res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8" });
+        res.end(content);
         return;
       }
     }

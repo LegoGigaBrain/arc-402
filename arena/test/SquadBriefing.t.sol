@@ -19,16 +19,33 @@ contract MockAgentRegistrySB {
     }
 }
 
+// ─── Mock TrustRegistry ───────────────────────────────────────────────────────
+
+contract MockTrustRegistrySB {
+    mapping(address => uint256) private _scores;
+
+    function setScore(address agent, uint256 score) external {
+        _scores[agent] = score;
+    }
+
+    function getGlobalScore(address agent) external view returns (uint256) {
+        return _scores[agent];
+    }
+}
+
 // ─── Test suite ───────────────────────────────────────────────────────────────
 
 contract SquadBriefingTest is Test {
     ResearchSquad        public researchSquad;
     SquadBriefing        public briefing;
     MockAgentRegistrySB  public agentReg;
+    MockTrustRegistrySB  public trustReg;
 
     address public lead        = address(0xA1);
     address public contributor = address(0xB2);
     address public outsider    = address(0xC3);
+    address public highCiter   = address(0xD1);
+    address public lowCiter    = address(0xD2);
 
     uint256 public squadId;
 
@@ -38,12 +55,18 @@ contract SquadBriefingTest is Test {
     bytes32 constant HASH_2      = keccak256("briefing-content-2");
     string  constant PREVIEW_OK  = "Q1 on-chain flows: net accumulation at 68k. BTC likely to consolidate.";
     function setUp() public {
-        agentReg     = new MockAgentRegistrySB();
+        agentReg      = new MockAgentRegistrySB();
+        trustReg      = new MockTrustRegistrySB();
         researchSquad = new ResearchSquad(address(agentReg));
-        briefing      = new SquadBriefing(address(researchSquad), address(agentReg));
+        briefing      = new SquadBriefing(address(researchSquad), address(agentReg), address(trustReg));
 
         agentReg.setRegistered(lead,        true);
         agentReg.setRegistered(contributor, true);
+        agentReg.setRegistered(highCiter,   true);
+        agentReg.setRegistered(lowCiter,    true);
+
+        trustReg.setScore(highCiter, 500); // above MIN_CITER_TRUST
+        trustReg.setScore(lowCiter,  100); // below MIN_CITER_TRUST
 
         // Create a squad — lead is auto-assigned LEAD role
         vm.prank(lead);
@@ -209,10 +232,13 @@ contract SquadBriefingTest is Test {
 
     function test_Constructor_RejectsZeroAddresses() public {
         vm.expectRevert(SquadBriefing.ZeroAddress.selector);
-        new SquadBriefing(address(0), address(agentReg));
+        new SquadBriefing(address(0), address(agentReg), address(trustReg));
 
         vm.expectRevert(SquadBriefing.ZeroAddress.selector);
-        new SquadBriefing(address(researchSquad), address(0));
+        new SquadBriefing(address(researchSquad), address(0), address(trustReg));
+
+        vm.expectRevert(SquadBriefing.ZeroAddress.selector);
+        new SquadBriefing(address(researchSquad), address(agentReg), address(0));
     }
 
     // ─── 14. Empty squad returns empty briefing list ──────────────────────────
@@ -346,5 +372,89 @@ contract SquadBriefingTest is Test {
         assertEq(b.squadId,     squadId);
         assertEq(b.contentHash, wrapUpHash);
         assertEq(b.publisher,   lead);
+    }
+
+    // ─── citeBriefing tests ───────────────────────────────────────────────────
+
+    function _publishDefault() internal {
+        _publish(lead, HASH_1, PREVIEW_OK, ENDPOINT_1, _noTags());
+    }
+
+    function test_CiteBriefing_HappyPath_HighTrust() public {
+        _publishDefault();
+
+        vm.expectEmit(true, true, false, true);
+        emit SquadBriefing.BriefingCited(HASH_1, highCiter, HASH_2, 1);
+
+        vm.prank(highCiter);
+        briefing.citeBriefing(HASH_1, HASH_2, "great briefing");
+
+        assertEq(briefing.citationCount(HASH_1),         1);
+        assertEq(briefing.weightedCitationCount(HASH_1), 1);
+        assertTrue(briefing.hasCited(HASH_1, highCiter));
+    }
+
+    function test_CiteBriefing_LowTrust_RawCountOnly() public {
+        _publishDefault();
+
+        vm.prank(lowCiter); // score = 100, below MIN_CITER_TRUST
+        briefing.citeBriefing(HASH_1, HASH_2, "citing");
+
+        assertEq(briefing.citationCount(HASH_1),         1); // raw incremented
+        assertEq(briefing.weightedCitationCount(HASH_1), 0); // weighted NOT incremented
+        assertTrue(briefing.hasCited(HASH_1, lowCiter));
+    }
+
+    function test_CiteBriefing_AlreadyCited_Reverts() public {
+        _publishDefault();
+
+        vm.prank(highCiter);
+        briefing.citeBriefing(HASH_1, HASH_2, "first");
+
+        vm.prank(highCiter);
+        vm.expectRevert(SquadBriefing.AlreadyCited.selector);
+        briefing.citeBriefing(HASH_1, HASH_2, "second");
+    }
+
+    function test_CiteBriefing_UnpublishedBriefing_Reverts() public {
+        // HASH_1 not published yet
+        vm.prank(highCiter);
+        vm.expectRevert(SquadBriefing.BriefingNotPublished.selector);
+        briefing.citeBriefing(HASH_1, HASH_2, "citing unpublished");
+    }
+
+    function test_CiteBriefing_Threshold1_Event() public {
+        _publishDefault();
+
+        // Register 5 high-trust citers
+        address[5] memory citers;
+        for (uint i = 0; i < 5; i++) {
+            citers[i] = address(uint160(0xF100 + i));
+            agentReg.setRegistered(citers[i], true);
+            trustReg.setScore(citers[i], 500);
+        }
+
+        // First 4 — no threshold event
+        for (uint i = 0; i < 4; i++) {
+            vm.prank(citers[i]);
+            briefing.citeBriefing(HASH_1, HASH_2, "cite");
+        }
+
+        // 5th should emit CitationThresholdReached(HASH_1, 5)
+        vm.expectEmit(true, false, false, true);
+        emit SquadBriefing.CitationThresholdReached(HASH_1, 5);
+
+        vm.prank(citers[4]);
+        briefing.citeBriefing(HASH_1, HASH_2, "cite");
+
+        assertEq(briefing.weightedCitationCount(HASH_1), 5);
+    }
+
+    function test_CiteBriefing_UnregisteredCiter_Reverts() public {
+        _publishDefault();
+
+        vm.prank(outsider); // not registered in agentReg
+        vm.expectRevert(SquadBriefing.NotRegistered.selector);
+        briefing.citeBriefing(HASH_1, HASH_2, "outsider cite");
     }
 }

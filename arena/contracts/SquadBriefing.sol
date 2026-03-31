@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "./interfaces/IAgentRegistry.sol";
 import "./interfaces/IResearchSquad.sol";
+import "./interfaces/ITrustRegistryV3.sol";
 
 /**
  * @title SquadBriefing
@@ -66,6 +67,8 @@ contract SquadBriefing {
     error EmptyContentHash();
     error ProposalNotPending();
     error TooManyTags();
+    error AlreadyCited();
+    error BriefingNotPublished();
 
     // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -114,10 +117,31 @@ contract SquadBriefing {
         uint256 timestamp
     );
 
+    event BriefingCited(
+        bytes32 indexed contentHash,
+        address indexed citer,
+        bytes32 citingHash,
+        uint256 newCount
+    );
+
+    event CitationThresholdReached(
+        bytes32 indexed contentHash,
+        uint256 threshold
+    );
+
     // ─── State ────────────────────────────────────────────────────────────────
 
-    IResearchSquad public immutable researchSquad;
-    IAgentRegistry public immutable agentRegistry;
+    IResearchSquad   public immutable researchSquad;
+    IAgentRegistry   public immutable agentRegistry;
+    ITrustRegistryV3 public immutable trustRegistry;
+
+    uint256 public constant MIN_CITER_TRUST      = 300;
+    uint256 public constant CITATION_THRESHOLD_1 = 5;
+    uint256 public constant CITATION_THRESHOLD_2 = 20;
+
+    mapping(bytes32 => uint256) public citationCount;
+    mapping(bytes32 => uint256) public weightedCitationCount;
+    mapping(bytes32 => mapping(address => bool)) private _hasCited;
 
     /// contentHash → Briefing
     mapping(bytes32 => Briefing) private _briefings;
@@ -139,11 +163,13 @@ contract SquadBriefing {
 
     // ─── Constructor ──────────────────────────────────────────────────────────
 
-    constructor(address _researchSquad, address _agentRegistry) {
+    constructor(address _researchSquad, address _agentRegistry, address _trustRegistry) {
         if (_researchSquad == address(0)) revert ZeroAddress();
         if (_agentRegistry == address(0)) revert ZeroAddress();
+        if (_trustRegistry == address(0)) revert ZeroAddress();
         researchSquad = IResearchSquad(_researchSquad);
         agentRegistry = IAgentRegistry(_agentRegistry);
+        trustRegistry = ITrustRegistryV3(_trustRegistry);
     }
 
     // ─── Writes ───────────────────────────────────────────────────────────────
@@ -393,5 +419,54 @@ contract SquadBriefing {
 
     function proposalExists(bytes32 contentHash) external view returns (bool) {
         return _proposalExists[contentHash];
+    }
+
+    // ─── Citation ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Cite a published briefing. msg.sender is the citer.
+     *         No delegated citation is permitted.
+     *
+     *         Raw citationCount always increments.
+     *         weightedCitationCount increments only when citer trust score
+     *         >= MIN_CITER_TRUST (300). One citation per citer per briefing.
+     *
+     * @param contentHash  The briefing being cited.
+     * @param citingHash   contentHash of the citing artifact (informational).
+     * @param note         Optional free-text annotation (not stored on-chain).
+     */
+    function citeBriefing(
+        bytes32         contentHash,
+        bytes32         citingHash,
+        string calldata note
+    ) external {
+        // Checks
+        if (!agentRegistry.isRegistered(msg.sender)) revert NotRegistered();
+        if (!_published[contentHash])                revert BriefingNotPublished();
+        if (_hasCited[contentHash][msg.sender])      revert AlreadyCited();
+
+        uint256 citerScore = trustRegistry.getGlobalScore(msg.sender);
+
+        // Effects
+        _hasCited[contentHash][msg.sender] = true;
+        uint256 newRaw      = ++citationCount[contentHash];
+        uint256 newWeighted = weightedCitationCount[contentHash];
+
+        if (citerScore >= MIN_CITER_TRUST) {
+            newWeighted = ++weightedCitationCount[contentHash];
+        }
+
+        emit BriefingCited(contentHash, msg.sender, citingHash, newRaw);
+
+        if (newWeighted == CITATION_THRESHOLD_1 || newWeighted == CITATION_THRESHOLD_2) {
+            emit CitationThresholdReached(contentHash, newWeighted);
+        }
+    }
+
+    /**
+     * @notice Returns true if `citer` has already cited `contentHash`.
+     */
+    function hasCited(bytes32 contentHash, address citer) external view returns (bool) {
+        return _hasCited[contentHash][citer];
     }
 }

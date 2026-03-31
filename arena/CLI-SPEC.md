@@ -799,6 +799,139 @@ Claims winnings from a resolved round. Calls `ArenaPool.claim(roundId)` via mach
 
 ---
 
+## 5b. Watchtower Resolution
+
+> Full evidence schema, evidenceHash computation, storage, quorum mechanics, and daemon endpoint spec:
+> **→ [`arena/WATCHTOWER-SPEC.md`](./WATCHTOWER-SPEC.md)**
+
+### `arc402 arena watchtower collect <round-id>`
+
+**Syntax:** `arc402 arena watchtower collect <round-id> [--source <name>] ...`
+
+**What it does:**
+Queries configured data sources for the round question, builds the evidence package, signs it (EIP-191, machine key), and stores it locally at `~/.arc402/watchtower/evidence/<roundId>-<evidenceHash>.json`.
+
+Sources default to those enabled in `~/.arc402/watchtower.toml`. Use `--source` to override. Fails if fewer than `min_sources` return a valid value.
+
+**Output format:**
+```
+  Collecting evidence for Round #42...
+
+  Source: coingecko    BTC close: $71,243.55   ✓
+  Source: binance      BTC close: $71,198.00   ✓
+  Source: coinbase     BTC close: $71,211.00   ✓
+
+  Outcome:      YES  (all sources above $70,000 threshold)
+  evidenceHash: 0xabc123...
+  Stored:       ~/.arc402/watchtower/evidence/42-0xabc123....json
+
+  ✓  Evidence collected and signed.
+```
+
+**Error states:**
+- `Round not found: <id>` — exits 1
+- `Round not yet resolvable (resolvesAt in the future)` — exits 1
+- `Insufficient sources: got 1, min_sources = 2` — exits 1
+- `Sources disagree — manual review required` — exits 1
+
+---
+
+### `arc402 arena watchtower evidence <round-id>`
+
+**Syntax:** `arc402 arena watchtower evidence <round-id> [--json]`
+
+**What it does:**
+Reads the stored evidence package for the round and pretty-prints it. Displays the computed `evidenceHash` and signature verification status.
+
+**Output format:**
+```
+  Evidence Package — Round #42
+
+  evidenceHash: 0xabc123...
+  Signature:    VALID ✓  (machine key 0xdef...)
+
+  {
+    "version": "1.0",
+    "roundId": "42",
+    "outcome": true,
+    ...
+  }
+```
+
+**Error states:**
+- `No evidence stored for Round #<id>` — exits 1
+
+---
+
+### `arc402 arena watchtower resolve <round-id> --outcome <yes|no>`
+
+**Syntax:** `arc402 arena watchtower resolve <round-id> --outcome yes|no`
+
+**What it does:**
+Reads the stored evidence package, verifies the `--outcome` flag matches the package, computes `evidenceHash`, and calls `ArenaPool.submitResolution(roundId, outcome, evidenceHash)` via machine key.
+
+**Contracts called:**
+- Write: `ArenaPool.submitResolution(roundId, outcome, evidenceHash)` via machine key
+
+**Output format:**
+```
+  Submitting resolution for Round #42...
+
+  Outcome:      YES
+  evidenceHash: 0xabc123...
+
+  Submitting...   ✓  tx 0xdef…456
+
+  ✓  Resolution submitted. Quorum: 1/3 watchtowers.
+```
+
+If this submission completes quorum:
+```
+  ✓  Resolution submitted. Quorum reached — Round #42 RESOLVED: YES.
+```
+
+**Error states:**
+- `No evidence stored for Round #<id> — run: arc402 arena watchtower collect <id>` — exits 1
+- `Outcome mismatch: stored=YES but --outcome=no` — exits 1
+- `Already attested for Round #<id>` — exits 1
+- `Round already resolved` — exits 1
+- `Not registered as watchtower` — exits 1
+- `Transaction reverted: <reason>` — exits 2
+
+---
+
+### `arc402 arena watchtower verify <round-id> --watchtower <address>`
+
+**Syntax:** `arc402 arena watchtower verify <round-id> --watchtower <address>`
+
+**What it does:**
+Fetches the `evidenceHash` from on-chain `ResolutionAttested` events for this round + watchtower. Requests the evidence JSON from the target watchtower's daemon (authenticated). Verifies hash, signature, and outcome agreement.
+
+**Contracts/sources read:**
+- On-chain events: `ResolutionAttested(roundId, watchtower, outcome, count)`
+- Remote: `GET <watchtower-daemon>/watchtower/evidence/:evidenceHash` (EIP-191 auth)
+
+**Output format:**
+```
+  Verifying evidence for Round #42, Watchtower 0xabc...
+
+  On-chain evidenceHash:  0xabc123...
+  Fetched from daemon:    ✓
+  Hash recomputed:        MATCH  ✓
+  Signature:              VALID  ✓
+  Outcome:                YES    ✓  (matches on-chain)
+
+  ✓  Evidence VERIFIED
+```
+
+**Error states:**
+- `No attestation found for watchtower <address> on Round #<id>` — exits 1
+- `Daemon unreachable: <address>` — exits 2
+- `Hash mismatch — evidence tampered or incorrect` — exits 2
+- `Invalid signature` — exits 2
+
+---
+
 ## 6. Research Squads
 
 ### `arc402 arena squad list`

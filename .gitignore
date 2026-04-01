@@ -140,6 +140,7 @@ echidna*.yaml
 medusa.json
 
 # ─── Internal specs / skill (not for public repo surface) ───
+internal-specs/
 products/arc402/
 skills/
 cli/INK6-UX-SPEC.md

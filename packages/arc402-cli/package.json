@@ -13,10 +13,12 @@
   "scripts": {
     "build": "tsc",
     "test": "node --test test/**/*.test.js",
-    "prepublishOnly": "npm run build && node -e \"const fs=require('fs'),path=require('path'); const src=path.resolve(__dirname,'../workroom'); const dst=path.resolve(__dirname,'workroom'); if(fs.existsSync(src)){fs.cpSync(src,dst,{recursive:true}); console.log('Copied workroom/ into package');} else { console.warn('WARNING: ../workroom not found — workroom files will be missing from package'); }\""
+    "prepack": "npm run build && node -e \"const fs=require('fs'),path=require('path'); const src=path.resolve(__dirname,'../../workroom'); const dst=path.resolve(__dirname,'workroom'); if(fs.existsSync(src)){fs.rmSync(dst,{recursive:true,force:true}); fs.cpSync(src,dst,{recursive:true}); console.log('Copied workroom/ into package');} else { console.warn('WARNING: ../../workroom not found — workroom files will be missing from package'); }\"",
+    "postpack": "node -e \"const fs=require('fs'),path=require('path'); const dst=path.resolve(__dirname,'workroom'); fs.rmSync(dst,{recursive:true,force:true}); console.log('Removed packaged workroom/ copy');\"",
+    "prepublishOnly": "npm run prepack"
   },
   "dependencies": {
-    "@arc402/daemon": "file:../arc402-daemon",
+    "@arc402/daemon": "^1.1.0",
     "@arc402/sdk": "^0.6.0",
     "@coinbase/wallet-sdk": "^4.3.7",
     "@types/better-sqlite3": "^7.6.13",

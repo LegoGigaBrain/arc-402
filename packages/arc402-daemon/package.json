@@ -3,6 +3,10 @@
   "version": "1.1.0",
   "description": "ARC-402 daemon — always-on governed commerce node",
   "main": "dist/index.js",
+  "files": [
+    "dist/",
+    "bin/"
+  ],
   "bin": {
     "arc402-daemon": "bin/arc402-daemon"
   },

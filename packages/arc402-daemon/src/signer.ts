@@ -59,7 +59,8 @@ async function validateAndSign(
   chainId: number
 ): Promise<SignResponse> {
   const rpcUrl = req.rpcUrl;
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
+  // Disable JSON-RPC batching so local/mock RPCs and smoke harnesses receive one request per call.
+  const provider = new ethers.JsonRpcProvider(rpcUrl, undefined, { batchMaxCount: 1 });
   const signer = new ethers.Wallet(machineKey.privateKey, provider);
 
   // ─── Re-validate: wallet not frozen ──────────────────────────────────────────
@@ -117,8 +118,6 @@ async function validateAndSign(
     provider
   );
   const nonce: bigint = await entryPointContract.getNonce(req.wallet, 0) as bigint;
-  const feeData = await provider.getFeeData();
-
   const userOp = {
     sender: req.wallet,
     nonce: ethers.toBeHex(nonce),
@@ -126,8 +125,8 @@ async function validateAndSign(
     callGasLimit: ethers.toBeHex(300_000),
     verificationGasLimit: ethers.toBeHex(150_000),
     preVerificationGas: ethers.toBeHex(50_000),
-    maxFeePerGas: ethers.toBeHex(feeData.maxFeePerGas ?? BigInt(2_000_000_000)),
-    maxPriorityFeePerGas: ethers.toBeHex(feeData.maxPriorityFeePerGas ?? BigInt(1_500_000)),
+    maxFeePerGas: ethers.toBeHex(BigInt(2_000_000_000)),
+    maxPriorityFeePerGas: ethers.toBeHex(BigInt(1_500_000_000)),
     signature: "0x",
   };
 

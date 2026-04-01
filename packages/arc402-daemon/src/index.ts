@@ -13,7 +13,6 @@
  */
 import { fork, type ChildProcess } from "child_process";
 import * as path from "path";
-import * as process from "process";
 
 const legacy =
   process.argv.includes("--legacy") ||

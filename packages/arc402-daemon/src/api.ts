@@ -53,6 +53,7 @@ export function routeToCapability(method: string, urlPath: string): string {
   if (method === "POST" && urlPath === "/verify")             return "agreement.verify";
   if (method === "POST" && urlPath === "/subscribe")          return "subscribe";
   if (method === "GET"  && urlPath === "/agreements")         return "agreement.read";
+  if (method === "GET"  && urlPath === "/wallet/status")      return "wallet.read";
   if (method === "GET"  && urlPath === "/workroom/status")    return "workroom.status";
   if (method === "POST" && urlPath === "/auth/revoke")        return "session.revoke:self";
   if (method === "POST" && urlPath === "/wallet/setGuardian") return "wallet.setGuardian";
@@ -173,6 +174,32 @@ function readLocalDaemonToken(): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function ensureLocalDaemonToken(db: Database.Database, wallet: string): string {
+  const existing = readLocalDaemonToken();
+  const now = Date.now();
+  if (existing) {
+    const hash = crypto.createHash("sha256").update(existing).digest("hex");
+    const row = db
+      .prepare("SELECT id FROM sessions WHERE token_hash = ? AND revoked = 0")
+      .get(hash) as { id?: string } | undefined;
+    if (row?.id) return existing;
+  }
+
+  const token = crypto.randomBytes(32).toString("hex");
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const sessionId = crypto.randomBytes(16).toString("hex");
+  const expiresAt = now + 365 * 24 * 60 * 60 * 1000; // 1 year local daemon token
+
+  db.prepare(
+    `INSERT OR REPLACE INTO sessions (id, token_hash, wallet, scope, expires_at, issued_at, revoked)
+     VALUES (?, ?, ?, ?, ?, ?, 0)`
+  ).run(sessionId, tokenHash, wallet, "local", expiresAt, now);
+
+  fs.mkdirSync(path.dirname(DAEMON_TOKEN_PATH), { recursive: true });
+  fs.writeFileSync(DAEMON_TOKEN_PATH, `${token}\n`, { mode: 0o600 });
+  return token;
 }
 
 // ─── SSE event stream ─────────────────────────────────────────────────────────
@@ -410,6 +437,8 @@ async function main(): Promise<void> {
     policyEngineAddress: config.policyEngineAddress ?? process.env.ARC402_POLICY_ENGINE ?? "",
     db,
   };
+
+  ensureLocalDaemonToken(db, apiConfig.walletAddress);
 
   const app = createApiServer(apiConfig);
   const server = http.createServer(app);

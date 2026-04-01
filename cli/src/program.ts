@@ -5,6 +5,7 @@ import { registerAgreementsCommands } from "./commands/agreements";
 import { registerArbitratorCommand } from "./commands/arbitrator";
 import { registerCancelCommand } from "./commands/cancel";
 import { registerChannelCommands } from "./commands/channel";
+import { registerChatCommand } from "./commands/chat";
 import { registerConfigCommands } from "./commands/config";
 import { registerDeliverCommand } from "./commands/deliver";
 import { registerDiscoverCommand } from "./commands/discover";
@@ -53,6 +54,7 @@ export function createProgram(): Command {
     .version((require("../package.json") as { version: string }).version);
 
   registerConfigCommands(program);
+  registerChatCommand(program);
   registerHandshakeCommand(program);
   registerAgentCommands(program);
   registerDiscoverCommand(program);

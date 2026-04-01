@@ -17,6 +17,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import * as net from "net";
 import * as crypto from "crypto";
+import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import * as http from "http";
@@ -120,6 +121,20 @@ function createSessionMiddleware(db: Database.Database) {
       "SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ? AND revoked = 0"
     ).get(hash, Date.now()) as SessionRow | undefined;
 
+    if (!session && token === readLocalDaemonToken()) {
+      (req as AuthenticatedRequest).session = {
+        id: "local-operator",
+        token_hash: hash,
+        wallet: loadDaemonConfig().wallet.contract_address,
+        scope: "operator",
+        expires_at: Number.MAX_SAFE_INTEGER,
+        issued_at: Date.now(),
+        revoked: 0,
+      };
+      next();
+      return;
+    }
+
     if (!session) {
       res.status(401).json({ error: "invalid_session" });
       return;
@@ -138,6 +153,17 @@ function createSessionMiddleware(db: Database.Database) {
     (req as AuthenticatedRequest).session = session;
     next();
   };
+}
+
+const DAEMON_TOKEN_PATH = path.join(os.homedir(), ".arc402", "daemon.token");
+
+function readLocalDaemonToken(): string | undefined {
+  try {
+    const token = fs.readFileSync(DAEMON_TOKEN_PATH, "utf-8").trim();
+    return token.length > 0 ? token : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // ─── SSE event stream ─────────────────────────────────────────────────────────
@@ -314,6 +340,17 @@ export function createApiServer(apiConfig: ApiConfig): express.Express {
        ORDER BY created_at DESC LIMIT 50`
     ).all(session.wallet);
     res.json({ ok: true, agreements: rows });
+  });
+
+  app.get("/wallet/status", sessionMiddleware, (_req: Request, res: Response): void => {
+    res.json({
+      ok: true,
+      wallet: apiConfig.walletAddress,
+      daemonId: apiConfig.daemonId,
+      chainId: apiConfig.chainId,
+      rpcUrl: apiConfig.rpcUrl,
+      policyEngineAddress: apiConfig.policyEngineAddress,
+    });
   });
 
   app.get("/workroom/status", sessionMiddleware, (_req: Request, res: Response): void => {

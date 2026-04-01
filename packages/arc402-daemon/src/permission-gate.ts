@@ -25,6 +25,22 @@ export type PermissionDecision =
   | { granted: true; estimatedSpend?: bigint }
   | { granted: false; reason: string; estimatedSpend?: bigint };
 
+export interface PermissionGateDependencies {
+  createPolicyEngine?: (
+    address: string,
+    provider: ethers.Provider
+  ) => {
+    validateSpend: {
+      staticCall: (
+        wallet: string,
+        category: string,
+        amount: bigint,
+        contextId: string
+      ) => Promise<[boolean, string]>;
+    };
+  };
+}
+
 interface SpendIntent {
   category: PermissionCategory;
   amount: bigint;
@@ -39,7 +55,10 @@ interface CacheEntry {
 const decisionCache = new Map<string, CacheEntry>();
 const spendAccumulator = new Map<string, bigint>();
 
-export async function checkPermissions(p: ToolPermission): Promise<PermissionDecision> {
+export async function checkPermissions(
+  p: ToolPermission,
+  deps: PermissionGateDependencies = {}
+): Promise<PermissionDecision> {
   const intent = deriveSpendIntent(p);
   if (intent.amount === 0n) {
     return { granted: true, estimatedSpend: 0n };
@@ -65,11 +84,12 @@ export async function checkPermissions(p: ToolPermission): Promise<PermissionDec
     return cached.decision;
   }
 
-  const pe = new ethers.Contract(
-    p.context.policyEngineAddress,
-    POLICY_ENGINE_VALIDATE_ABI as unknown as string[],
-    p.context.provider
-  );
+  const pe = deps.createPolicyEngine?.(p.context.policyEngineAddress, p.context.provider) ??
+    new ethers.Contract(
+      p.context.policyEngineAddress,
+      POLICY_ENGINE_VALIDATE_ABI as unknown as string[],
+      p.context.provider
+    );
 
   let decision: PermissionDecision;
   try {

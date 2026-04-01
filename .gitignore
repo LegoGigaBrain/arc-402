@@ -105,6 +105,10 @@ subdomain-worker/
 subgraph/
 memory/
 scripts/
+!scripts/
+scripts/*
+!scripts/daemon-split-smoke.cjs
+!scripts/verify-phase6c.sh
 tools/
 SECURITY-AUDIT.md
 docs/THREAT-MODEL.md

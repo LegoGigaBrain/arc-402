@@ -239,9 +239,11 @@ async function main(): Promise<void> {
   process.on("SIGINT",  () => { server.close(); process.exit(0); });
 }
 
-main().catch((err: unknown) => {
-  process.stderr.write(
-    `[signer] Fatal: ${err instanceof Error ? err.message : String(err)}\n`
-  );
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err: unknown) => {
+    process.stderr.write(
+      `[signer] Fatal: ${err instanceof Error ? err.message : String(err)}\n`
+    );
+    process.exit(1);
+  });
+}

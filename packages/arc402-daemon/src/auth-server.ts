@@ -33,6 +33,17 @@ export interface AuthServerConfig {
   walletAddress: string; // this daemon's ARC402Wallet address
 }
 
+export interface AuthServerDependencies {
+  createProvider?: (rpcUrl: string) => ethers.Provider;
+  recoverSigner?: (message: string, signature: string) => string;
+  getWalletOwner?: (wallet: string, provider: ethers.Provider) => Promise<string>;
+  getWalletsForOwner?: (
+    ownerAddress: string,
+    provider: ethers.Provider,
+    chainId: number
+  ) => Promise<string[]>;
+}
+
 /**
  * Build the EIP-191 message that the owner must sign.
  *
@@ -40,7 +51,7 @@ export interface AuthServerConfig {
  *   challengeId, daemonId, wallet, chainId, requestedScope, expiresAt
  * ))
  */
-function buildChallengeMessage(
+export function buildChallengeMessage(
   challengeId: string,
   daemonId: string,
   wallet: string,
@@ -61,6 +72,148 @@ function buildChallengeMessage(
   );
   const hash = ethers.keccak256(packed);
   return `ARC-402 Remote Auth\nChallenge: ${hash}`;
+}
+
+export interface IssuedAuthChallenge {
+  challengeId: string;
+  challenge: string;
+  daemonId: string;
+  wallet: string;
+  chainId: number;
+  scope: string;
+  expiresAt: number;
+  issuedAt: number;
+}
+
+export function issueAuthChallenge(
+  sessions: SessionManager,
+  cfg: AuthServerConfig,
+  wallet: string,
+  requestedScope?: string
+): IssuedAuthChallenge {
+  const scope = requestedScope ?? "operator";
+  const challengeId = crypto.randomBytes(32).toString("hex");
+  const now = Date.now();
+  const expiresAt = now + CHALLENGE_TTL_MS;
+
+  sessions.storeChallenge({
+    challengeId,
+    daemonId: cfg.daemonId,
+    wallet,
+    chainId: cfg.chainId,
+    scope,
+    expiresAt,
+  });
+
+  return {
+    challengeId,
+    challenge: buildChallengeMessage(
+      challengeId,
+      cfg.daemonId,
+      wallet,
+      cfg.chainId,
+      scope,
+      expiresAt
+    ),
+    daemonId: cfg.daemonId,
+    wallet,
+    chainId: cfg.chainId,
+    scope,
+    expiresAt,
+    issuedAt: now,
+  };
+}
+
+export type AuthSessionResult =
+  | {
+      ok: true;
+      token: string;
+      wallets: string[];
+      wallet: string;
+      scope: string;
+      expiresAt: number;
+    }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+    };
+
+export async function consumeAuthChallenge(
+  sessions: SessionManager,
+  cfg: AuthServerConfig,
+  deps: AuthServerDependencies,
+  provider: ethers.Provider,
+  challengeId: string,
+  signature: string
+): Promise<AuthSessionResult> {
+  const challenge = sessions.getChallenge(challengeId);
+  if (!challenge) {
+    return { ok: false, status: 401, error: "challenge_not_found" };
+  }
+  if (challenge.used) {
+    return { ok: false, status: 401, error: "challenge_already_used" };
+  }
+  if (Date.now() > challenge.expires_at) {
+    return { ok: false, status: 401, error: "challenge_expired" };
+  }
+
+  const message = buildChallengeMessage(
+    challenge.challenge_id ?? challengeId,
+    challenge.daemon_id,
+    challenge.wallet,
+    challenge.chain_id,
+    challenge.scope,
+    challenge.expires_at
+  );
+
+  let recoveredSigner: string;
+  try {
+    recoveredSigner = deps.recoverSigner?.(message, signature) ?? ethers.verifyMessage(message, signature);
+  } catch {
+    return { ok: false, status: 401, error: "invalid_signature" };
+  }
+
+  let onChainOwner: string;
+  try {
+    onChainOwner = deps.getWalletOwner
+      ? await deps.getWalletOwner(challenge.wallet, provider)
+      : await new ethers.Contract(
+          challenge.wallet,
+          ARC402_WALLET_OWNER_CHECK_ABI,
+          provider
+        ).owner() as string;
+  } catch {
+    return { ok: false, status: 503, error: "rpc_unavailable" };
+  }
+
+  if (recoveredSigner.toLowerCase() !== onChainOwner.toLowerCase()) {
+    return { ok: false, status: 401, error: "signer_not_owner" };
+  }
+
+  let ownedWallets: string[] = [];
+  try {
+    ownedWallets = deps.getWalletsForOwner
+      ? await deps.getWalletsForOwner(recoveredSigner, provider, cfg.chainId)
+      : await getWalletsForOwner(recoveredSigner, provider, cfg.chainId);
+  } catch {
+    // Non-fatal — continue with empty wallet list
+  }
+  if (!ownedWallets.some((wallet) => wallet.toLowerCase() === challenge.wallet.toLowerCase())) {
+    ownedWallets = [challenge.wallet, ...ownedWallets];
+  }
+
+  sessions.markChallengeUsed(challengeId);
+  const rawToken = sessions.createSession(challenge.wallet, challenge.scope);
+  const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+  return {
+    ok: true,
+    token: rawToken,
+    wallets: ownedWallets,
+    wallet: challenge.wallet,
+    scope: challenge.scope,
+    expiresAt: Date.now() + SESSION_TTL_MS,
+  };
 }
 
 /**
@@ -130,10 +283,11 @@ async function getWalletsForOwner(
 export function registerAuthRoutes(
   app: Express,
   db: Database.Database,
-  cfg: AuthServerConfig
+  cfg: AuthServerConfig,
+  deps: AuthServerDependencies = {}
 ): void {
   const sessions = new SessionManager(db);
-  const provider = new ethers.JsonRpcProvider(cfg.rpcUrl);
+  const provider = deps.createProvider?.(cfg.rpcUrl) ?? new ethers.JsonRpcProvider(cfg.rpcUrl);
 
   // ─── POST /auth/challenge ─────────────────────────────────────────────────────
   // { wallet, requestedScope } → { challengeId, challenge, expiresAt }
@@ -149,39 +303,7 @@ export function registerAuthRoutes(
       return;
     }
 
-    const scope = requestedScope ?? "operator";
-    const challengeId = crypto.randomBytes(32).toString("hex");
-    const now = Date.now();
-    const expiresAt = now + CHALLENGE_TTL_MS;
-
-    sessions.storeChallenge({
-      challengeId,
-      daemonId: cfg.daemonId,
-      wallet,
-      chainId: cfg.chainId,
-      scope,
-      expiresAt,
-    });
-
-    const challengeMessage = buildChallengeMessage(
-      challengeId,
-      cfg.daemonId,
-      wallet,
-      cfg.chainId,
-      scope,
-      expiresAt
-    );
-
-    res.json({
-      challengeId,
-      challenge: challengeMessage,
-      daemonId: cfg.daemonId,
-      wallet,
-      chainId: cfg.chainId,
-      scope,
-      expiresAt,
-      issuedAt: now,
-    });
+    res.json(issueAuthChallenge(sessions, cfg, wallet, requestedScope));
   });
 
   // ─── POST /auth/session ───────────────────────────────────────────────────────
@@ -199,85 +321,19 @@ export function registerAuthRoutes(
         return;
       }
 
-      // 1. Load challenge from store
-      const challenge = sessions.getChallenge(challengeId);
-      if (!challenge) {
-        res.status(401).json({ error: "challenge_not_found" });
-        return;
-      }
-      if (challenge.used) {
-        res.status(401).json({ error: "challenge_already_used" });
-        return;
-      }
-      if (Date.now() > challenge.expires_at) {
-        res.status(401).json({ error: "challenge_expired" });
-        return;
-      }
-
-      // 2. Rebuild challenge message and recover signer from EIP-191 signature
-      const message = buildChallengeMessage(
-        challenge.challenge_id ?? challengeId,
-        challenge.daemon_id,
-        challenge.wallet,
-        challenge.chain_id,
-        challenge.scope,
-        challenge.expires_at
+      const result = await consumeAuthChallenge(
+        sessions,
+        cfg,
+        deps,
+        provider,
+        challengeId,
+        signature
       );
-
-      let recoveredSigner: string;
-      try {
-        recoveredSigner = ethers.verifyMessage(message, signature);
-      } catch {
-        res.status(401).json({ error: "invalid_signature" });
+      if (!result.ok) {
+        res.status(result.status).json({ error: result.error });
         return;
       }
-
-      // 3. Verify recovered signer === wallet.owner() (on-chain check)
-      const walletContract = new ethers.Contract(
-        challenge.wallet,
-        ARC402_WALLET_OWNER_CHECK_ABI,
-        provider
-      );
-      let onChainOwner: string;
-      try {
-        onChainOwner = await walletContract.owner() as string;
-      } catch {
-        res.status(503).json({ error: "rpc_unavailable" });
-        return;
-      }
-
-      if (recoveredSigner.toLowerCase() !== onChainOwner.toLowerCase()) {
-        res.status(401).json({ error: "signer_not_owner" });
-        return;
-      }
-
-      // 4. Query WalletFactory for all wallets owned by this EOA
-      let ownedWallets: string[] = [];
-      try {
-        ownedWallets = await getWalletsForOwner(recoveredSigner, provider, cfg.chainId);
-      } catch {
-        // Non-fatal — continue with empty wallet list
-      }
-      // Always include the challenged wallet
-      if (!ownedWallets.some(w => w.toLowerCase() === challenge.wallet.toLowerCase())) {
-        ownedWallets = [challenge.wallet, ...ownedWallets];
-      }
-
-      // 5. Mark challenge as used (single-use)
-      sessions.markChallengeUsed(challengeId);
-
-      // 6. Issue session token
-      const rawToken = sessions.createSession(challenge.wallet, challenge.scope);
-
-      // 7. Return token + wallet list
-      const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-      res.json({
-        token: rawToken,
-        wallets: ownedWallets,
-        wallet: challenge.wallet,
-        scope: challenge.scope,
-        expiresAt: Date.now() + SESSION_TTL_MS,
-      });
+      res.json(result);
     })();
   });
 

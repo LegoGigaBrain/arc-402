@@ -47,7 +47,7 @@ interface AuthenticatedRequest extends Request {
 
 // ─── Capability routing ───────────────────────────────────────────────────────
 
-function routeToCapability(method: string, urlPath: string): string {
+export function routeToCapability(method: string, urlPath: string): string {
   if (method === "POST" && urlPath === "/hire")               return "agreement.propose";
   if (method === "POST" && urlPath === "/deliver")            return "agreement.deliver";
   if (method === "POST" && urlPath === "/verify")             return "agreement.verify";
@@ -55,6 +55,15 @@ function routeToCapability(method: string, urlPath: string): string {
   if (method === "GET"  && urlPath === "/agreements")         return "agreement.read";
   if (method === "GET"  && urlPath === "/workroom/status")    return "workroom.status";
   if (method === "POST" && urlPath === "/auth/revoke")        return "session.revoke:self";
+  if (method === "POST" && urlPath === "/wallet/setGuardian") return "wallet.setGuardian";
+  if (method === "POST" && urlPath === "/wallet/setMachineKey") return "wallet.setMachineKey";
+  if (method === "POST" && urlPath === "/wallet/authorizeMachineKey") return "wallet.authorizeMachineKey";
+  if (method === "POST" && urlPath === "/policy/setSpendLimit") return "policy.setSpendLimit";
+  if (method === "POST" && urlPath === "/daemon/exportKey")   return "daemon.exportKey";
+  if (method === "GET"  && urlPath === "/daemon/readSecrets") return "daemon.readSecrets";
+  if (method === "POST" && urlPath === "/daemon/shell")       return "daemon.shell";
+  if (method === "POST" && urlPath === "/daemon/restart")     return "daemon.restart";
+  if (method === "POST" && urlPath === "/daemon/config/write") return "daemon.config.write";
   if (urlPath.startsWith("/arena/"))                          return `arena.${urlPath.slice(7)}`;
   return `${method.toLowerCase()}${urlPath.replace(/\//g, ".")}`;
 }
@@ -107,7 +116,7 @@ async function callSigner(request: SignRequest): Promise<SignResponse> {
 
 // ─── Session middleware ───────────────────────────────────────────────────────
 
-function createSessionMiddleware(db: Database.Database) {
+export function createSessionMiddleware(db: Database.Database) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const authHeader = req.headers["authorization"];
     const token = authHeader?.replace("Bearer ", "");
@@ -413,9 +422,11 @@ async function main(): Promise<void> {
   process.on("SIGINT",  () => { server.close(); db.close(); process.exit(0); });
 }
 
-main().catch((err: unknown) => {
-  process.stderr.write(
-    `[api] Fatal: ${err instanceof Error ? err.message : String(err)}\n`
-  );
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err: unknown) => {
+    process.stderr.write(
+      `[api] Fatal: ${err instanceof Error ? err.message : String(err)}\n`
+    );
+    process.exit(1);
+  });
+}

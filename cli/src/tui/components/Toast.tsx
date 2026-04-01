@@ -26,6 +26,9 @@ export function Toast({ toast, onDismiss }: ToastProps) {
   const { icon, color } = VARIANT_CONFIG[toast.variant];
 
   useEffect(() => {
+    if (toast.duration !== undefined && toast.duration <= 0) {
+      return;
+    }
     const timer = setTimeout(() => {
       onDismiss(toast.id);
     }, toast.duration ?? 5000);

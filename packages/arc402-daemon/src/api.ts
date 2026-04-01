@@ -25,6 +25,8 @@ import { loadDaemonConfig } from "./config";
 import { registerAuthRoutes, type AuthServerConfig } from "./auth-server";
 import { SESSION_FORBIDDEN, isCapabilityAllowed } from "./capabilities";
 import { SIGNER_SOCKET_PATH, type SignRequest, type SignResponse } from "./signer";
+import { EndpointPolicy, hasExplicitCommerceDelegation, resolveJobId } from "./endpoint-policy";
+import { guardTaskContent } from "./prompt-guard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -226,12 +228,58 @@ export interface ApiConfig {
   db: Database.Database;
 }
 
+function collectInboundTaskTexts(body: unknown): string[] {
+  if (!body || typeof body !== "object") return [];
+  const record = body as Record<string, unknown>;
+  const values = [
+    record.task,
+    record.taskDescription,
+    record.task_description,
+    record.content,
+    record.prompt,
+    record.workloadDescription,
+    record.workload_description,
+  ];
+  return values.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
 export function createApiServer(apiConfig: ApiConfig): express.Express {
   const app = express();
   const { db, rpcUrl, policyEngineAddress } = apiConfig;
   const sessionMiddleware = createSessionMiddleware(db);
+  const endpointPolicy = new EndpointPolicy();
 
   app.use(express.json({ limit: "1mb" }));
+  app.use((req: Request, res: Response, next: NextFunction): void => {
+    const jobId = resolveJobId(req.headers);
+    if (jobId) {
+      endpointPolicy.lockForJob(jobId);
+      if (hasExplicitCommerceDelegation(req.body, req.path)) {
+        endpointPolicy.grantCommerceDelegate(jobId);
+      }
+      if (!endpointPolicy.isAllowed(jobId, req.path)) {
+        res.status(403).json({
+          error: "commerce_delegation_required",
+          reason: "This job was not granted commerce delegation. The worker agent cannot initiate hires or subscriptions.",
+        });
+        return;
+      }
+    }
+
+    for (const text of collectInboundTaskTexts(req.body)) {
+      const guardResult = guardTaskContent(text);
+      if (!guardResult.safe) {
+        res.status(400).json({
+          error: "task_rejected",
+          reason: "Task content failed security screening",
+          code: "PROMPT_INJECTION_DETECTED",
+          category: guardResult.category,
+        });
+        return;
+      }
+    }
+    next();
+  });
 
   // ── Health ──────────────────────────────────────────────────────────────────
   app.get("/health", (_req, res) => {

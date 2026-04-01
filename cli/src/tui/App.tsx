@@ -13,6 +13,7 @@ import { useNotifications } from "./useNotifications";
 import { createProgram } from "../program";
 import { StatusCard } from "./components/StatusCard";
 import { ToastContainer } from "./components/Toast";
+import { useDaemonEvents } from "./useDaemonEvents";
 import chalk from "chalk";
 
 const BUILTIN_CMDS = ["help", "exit", "quit", "clear", "status"];
@@ -42,7 +43,7 @@ export function App({ version, network, wallet, balance }: AppProps) {
   const { execute, isRunning } = useCommand();
   const { send, isSending } = useChat();
   const { rows } = useTerminalSize();
-  const { toasts, dismiss } = useNotifications();
+  const { toasts, dismiss, push } = useNotifications();
 
   useEffect(() => {
     if (headerRef.current) {
@@ -77,6 +78,77 @@ export function App({ version, network, wallet, balance }: AppProps) {
       appendEntry(line);
     },
     [appendEntry]
+  );
+
+  useDaemonEvents(
+    useCallback((type, data) => {
+      switch (type) {
+        case "security_threat": {
+          const reason = String(data.reason ?? "Security event detected");
+          const category = data.category ? ` · ${String(data.category)}` : "";
+          push(`${reason}${category}`, "error", 0);
+          appendLine(
+            chalk.red("✗") +
+              " " +
+              chalk.redBright("Security threat") +
+              chalk.dim(category) +
+              " " +
+              chalk.white(reason)
+          );
+          break;
+        }
+        case "auth.step_up_required": {
+          const operation = String(data.operation ?? "userop.execute");
+          const reason = String(data.reason ?? "step_up_required");
+          push(`Step-up required — ${operation} · ${reason}`, "warning", 8000);
+          appendLine(
+            chalk.yellow("⚠") +
+              " " +
+              chalk.yellowBright("Step-up required") +
+              " " +
+              chalk.white(operation) +
+              chalk.dim(` · ${reason}`)
+          );
+          break;
+        }
+        case "auth.step_up_completed":
+          push("Step-up verified", "success", 4000);
+          break;
+        case "exec.simulated":
+          push(`Execution simulated — ${String(data.operation ?? "userop.execute")}`, "info", 5000);
+          break;
+        case "exec.executed":
+          push(`Execution recorded — ${String(data.operation ?? "userop.execute")}`, "success", 4000);
+          appendLine(
+            chalk.green("✓") +
+              " " +
+              chalk.greenBright("Execution recorded") +
+              " " +
+              chalk.white(String(data.operation ?? "userop.execute"))
+          );
+          break;
+        case "job_started":
+          if (data.agreementId) {
+            push(`Job started — Agreement #${String(data.agreementId)}`, "info", 5000);
+          }
+          break;
+        case "job_completed":
+          if (data.agreementId) {
+            push(`Job complete — Agreement #${String(data.agreementId)}`, "success", 4000);
+          }
+          break;
+        case "job_failed":
+          if (data.agreementId) {
+            push(`Job failed — Agreement #${String(data.agreementId)}`, "error", 0);
+          }
+          break;
+        case "handshake_received":
+          push(`Handshake received — ${String(data.from ?? "unknown")}`, "info", 5000);
+          break;
+        default:
+          break;
+      }
+    }, [appendLine, push])
   );
 
   const handleCommand = useCallback(

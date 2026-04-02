@@ -31,6 +31,7 @@ __pycache__/
 *.py[cod]
 GITHUB-LAUNCH-PREP.md
 ENGINEERING-STATE.md
+!ENGINEERING-STATE.md
 articles/
 examples/
 spec/
@@ -48,6 +49,7 @@ AUDIT-*.md
 docs/AUDIT-*.md
 report.md
 python-sdk/CHANGELOG.md
+!python-sdk/CHANGELOG.md
 E2E-TESTNET-RESULTS-*.md
 E2E-TESTNET-SUBSCRIPTION-*.md
 .vercelignore

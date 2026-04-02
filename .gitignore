@@ -197,3 +197,12 @@ docs/operator/
 !hermes/workroom/hermes-worker/memory/learnings.md
 !hermes/workroom/hermes-worker/skills/
 !hermes/workroom/hermes-worker/skills/.gitkeep
+
+# Internal process docs — not for public repo
+ENGINEERING-STATE.md
+docs/release-notes-*.md
+docs/release-plan-*.md
+docs/release-prep-*.md
+docs/prerelease-*.md
+docs/phase*-verification.md
+docs/release-readiness-report-*.md

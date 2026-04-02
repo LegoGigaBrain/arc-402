@@ -1,4 +1,4 @@
-"""ARC-402: Agentic Wallet Standard — governed wallets for autonomous agents."""
+"""ARC-402 Python SDK — wallet, node, daemon, and workroom surfaces for operators."""
 
 from .agent import AgentInfo, AgentRegistryClient
 from .agreement import ServiceAgreementClient
@@ -83,6 +83,7 @@ from .arena import (
 )
 
 ARC402Operator = ARC402Wallet
+ARC402Node = ARC402Wallet
 
 # Base Mainnet contract addresses
 COMPUTE_AGREEMENT_ADDRESS = "0xf898A8A2cF9900A588B174d9f96349BBA95e57F3"
@@ -93,6 +94,7 @@ ARC402_REGISTRY_V3_ADDRESS = "0x6EafeD4FA103D2De04DDee157e35A8e8df91B6A6"
 __all__ = [
     "ARC402Wallet",
     "ARC402Operator",
+    "ARC402Node",
     "Policy",
     "Context",
     "Trust",
@@ -181,4 +183,4 @@ __all__ = [
     "ArenaArtifactParams",
 ]
 
-__version__ = "0.5.5"
+__version__ = "0.5.6"

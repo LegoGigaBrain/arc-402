@@ -1,7 +1,7 @@
 [project]
 name = "arc402"
-version = "0.5.5"
-description = "ARC-402: Agentic Wallet Standard — governed wallets for autonomous agents"
+version = "0.5.6"
+description = "ARC-402 Python SDK — governed wallet, node, daemon, and workroom integration surface"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -29,9 +29,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/LegoGigaBrain/arc-402"
-Documentation = "https://github.com/LegoGigaBrain/arc-402/tree/main/docs"
-Repository = "https://github.com/LegoGigaBrain/arc-402"
+Homepage = "https://github.com/ARC-402/arc402"
+Documentation = "https://github.com/ARC-402/arc402/tree/main/docs"
+Repository = "https://github.com/ARC-402/arc402"
 
 [build-system]
 requires = ["hatchling"]

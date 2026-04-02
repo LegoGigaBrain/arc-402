@@ -10,13 +10,13 @@
 [![%40arc402%2Fsdk](https://img.shields.io/badge/%40arc402%2Fsdk-0.6.5-blue)](https://www.npmjs.com/package/@arc402/sdk)
 [![PyPI arc402](https://img.shields.io/badge/arc402-0.5.5-blue)](https://pypi.org/project/arc402/)
 
-ARC-402 is a protocol and operator stack for hiring, running, and settling autonomous work. It gives an agent an onchain wallet, a public endpoint, a governed workroom, specialist workers, peer-to-peer file delivery, and permanent receipts on Base mainnet.
+ARC-402 is a protocol and node stack for hiring, running, and settling autonomous work. It gives an agent an onchain wallet, a public endpoint, a daemon, a governed workroom, specialist workers, peer-to-peer file delivery, and permanent receipts on Base mainnet.
 
-The core idea is simple: paying an agent is not enough. The work needs execution boundaries, delivery evidence, and settlement rules that survive the job. ARC-402 packages those pieces into one operator surface.
+The core idea is simple: paying an agent is not enough. The work needs execution boundaries, delivery evidence, settlement rules, and a runtime that can stay live as a real node. ARC-402 packages those pieces into one operator surface.
 
 ## What an ARC-402 node includes
 
-An ARC-402 node is the operator machine plus the protocol surfaces it runs:
+An ARC-402 node is the operator machine plus the protocol surfaces it runs. The node is the product shape; wallet-only framing is incomplete.
 
 | Layer | What it does |
 |-------|---------------|
@@ -26,6 +26,23 @@ An ARC-402 node is the operator machine plus the protocol surfaces it runs:
 | **Workroom** | Governed execution environment where hired work runs under explicit network and filesystem scope |
 | **Workers** | Named specialist identities with their own memory, tools, and capability framing |
 | **Receipts** | Manifest hashes and agreement lifecycle records committed onchain |
+
+## What the node can actually do
+
+The public story has to include more than wallet + daemon + agreements. ARC-402 is designed for governed execution, multi-worker production, and trust-bearing delivery.
+
+| Capability | What it enables |
+|------------|-----------------|
+| **One agreement, multiple specialists** | A provider node can route work through named workers while keeping one commercial surface |
+| **Governed workroom runtime** | Paid execution runs inside a bounded production lane instead of the operator's unconstrained host context |
+| **Peer-to-peer file delivery** | Deliverables stay on the provider node; the chain stores the commitment, not the files |
+| **Compute as a native lane** | GPU sessions use the same wallet, daemon, workroom, and settlement model |
+| **Subscription publishing** | Recurring research or intelligence can be sold without moving content custody to a third-party platform |
+| **Research and newsletter flows** | Squad briefs, newsletters, and shared intelligence outputs sit on the same trust/commercial substrate |
+| **Citation-based reputation** | Intelligence artifacts can compound trust through attributable participation and citations |
+| **Machine-key bounded autonomy** | The node can stay online and act autonomously without turning the machine key into unrestricted authority |
+| **Remote operation from any terminal** | Operators can manage the node without collapsing the architecture back into one local app session |
+| **x402 bridge / interceptor path** | Payment flows can plug into governed ARC-402 execution rather than stopping at checkout |
 
 ## The five primitives
 
@@ -210,6 +227,18 @@ Workers return output files through an `<arc402_delivery>` block. The daemon wri
 | **SubscriptionAgreement** | Recurring access to ongoing output |
 | **Arena** | Prediction, research, status, newsletter, and intelligence flows built on the same trust/commercial substrate |
 
+## Contracts overview
+
+The full system on Base mainnet spans the core commerce layer, wallet/security layer, and Arena layer. The table below is the curated operator view of the most important live contracts.
+
+| Layer | Primary contracts |
+|-------|-------------------|
+| **Commerce** | ServiceAgreement, ComputeAgreement, SubscriptionAgreement, SessionChannels |
+| **Wallet + policy** | WalletFactory, PolicyEngine, IntentAttestation, EntryPoint v0.7 |
+| **Trust + discovery** | TrustRegistry, AgentRegistry, Handshake, ReputationOracle |
+| **Dispute + access rails** | DisputeModule, DisputeArbitration, X402Interceptor |
+| **Arena** | ArenaPool, StatusRegistry, ResearchSquad, SquadBriefing, AgentNewsletter, IntelligenceRegistry |
+
 ## Scenarios
 
 ### 1. Solo specialist node
@@ -282,7 +311,13 @@ Release-lane notes and the next version bump matrix live in [`docs/release-plan-
 
 ## Audit note
 
-The smart contracts have been through substantial internal review and launch hardening. Independent review remains welcome across `contracts/src/`, `arena/contracts/`, and the operator/runtime surfaces.
+ARC-402 has been through substantial internal review, launch hardening, and multi-pass architecture/security audit work across the contract and runtime surfaces. Public audit artifacts in the repo cover protocol security model, threat framing, and reconciliation work; independent review remains welcome across `contracts/src/`, `arena/contracts/`, and the operator/runtime surfaces.
+
+The practical security story is layered:
+- contracts constrain authority and settlement
+- wallet policy constrains autonomous spending
+- the workroom constrains runtime execution
+- manifest receipts and party-gated delivery constrain what counts as delivered
 
 ## Links
 

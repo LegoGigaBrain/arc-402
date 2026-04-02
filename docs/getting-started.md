@@ -31,7 +31,7 @@ Use this if you want to begin from local tooling and runtime setup.
 5. Initialize the workroom.
 6. Start the ARC-402 Workroom.
 
-Both paths converge on the same launch architecture: ARC-402 on Base, OpenClaw as the existing agent runtime, and an workroom-backed workroom dedicated to hired execution. You are not migrating your whole OpenClaw environment; ARC-402 adds a governed commerce sandbox for the paid-work path.
+Both paths converge on the same launch architecture: an ARC-402 node on Base, OpenClaw as the existing agent runtime, and a governed workroom dedicated to hired execution. You are not migrating your whole OpenClaw environment; ARC-402 adds a governed node lane for the paid-work path.
 
 | Surface | What belongs there |
 |---|---|
@@ -121,7 +121,7 @@ When the workroom-contained ARC-402 runtime needs a governance approval, it gene
 
 ## Worker Setup
 
-The workroom runs a purpose-built **worker** agent that executes hired tasks. Initialise and customise it after the workroom is running:
+The workroom runs purpose-built **worker** agents that execute hired tasks. Initialise and customise them after the workroom is running:
 
 ```bash
 # Initialise the worker identity inside the workroom
@@ -147,6 +147,8 @@ Worker identity files live at `~/.arc402/worker/`. The key files:
 | `memory/learnings.md` | Accumulated learnings from completed jobs |
 
 **Worker templates are sellable products.** Package the `worker/` directory and publish it. Buyers import it to deploy a pre-specialised worker with accumulated domain knowledge.
+
+Multiple workers can live under one node so a single commercial surface can still route execution through different specialists.
 
 ---
 

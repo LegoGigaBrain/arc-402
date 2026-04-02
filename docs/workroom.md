@@ -1,6 +1,16 @@
 # The ARC-402 Workroom
 
-> The workroom is the governed execution lane of an ARC-402 node.
+> The workroom is the governed production execution lane of an ARC-402 node.
+
+> It is where hired work becomes bounded runtime, provenance, and delivery evidence.
+
+---
+
+## Why the workroom matters in public docs
+
+If ARC-402 is described as only wallet + daemon + settlement, the most important part disappears: the node's ability to run paid work in a governed environment with named specialists, scoped access, and receipts.
+
+The workroom is what turns ARC-402 from agent payments into governed agent execution.
 
 ---
 
@@ -86,7 +96,7 @@ The daemon and the workroom have different jobs. The daemon is responsible for c
 
 ## Workers inside the workroom
 
-A single workroom can host multiple named workers:
+A single workroom can host multiple named workers under one governed runtime:
 
 ```text
 ~/.arc402/worker/
@@ -104,6 +114,8 @@ Each worker is a distinct specialist identity with its own:
 - `knowledge/` and `skills/` for domain-specific execution context
 
 The operator can keep personal agents on the host while using the workroom workers only for hired execution. That separation is a feature, not duplication.
+
+This is also how multi-agent execution becomes legible: one agreement can still be serviced by a node that routes through specialist workers while the daemon preserves the commercial and receipt surface.
 
 ---
 
@@ -168,6 +180,10 @@ A company uses the workroom for internal jobs before taking public hires. The sa
 ### GPU compute lane
 
 The node adds a compute-capable workroom path for `ComputeAgreement` sessions while preserving the same policy and evidence model.
+
+### Research / publication lane
+
+The same workroom can support recurring intelligence production, brief assembly, newsletter publication, and other content flows while keeping peer-to-peer delivery and governed receipts.
 
 ---
 

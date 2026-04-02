@@ -158,9 +158,16 @@ async function main() {
   console.log(`  Network : ${network.name} (chainId: ${network.chainId})`);
 
   const _baseWallet = new Wallet(PRIVATE_KEY, provider);
+  // Wait for any pending txs from previous runs to settle before starting
+  console.log("  Waiting for pending txs to clear...");
+  await new Promise(r => setTimeout(r, 8000));
   const deployer    = new ethers.NonceManager(_baseWallet);
+  // Reset and re-query latest pending nonce
   deployer.reset();
-  const deployerAddress = await deployer.getAddress();
+  const currentNonce = await provider.getTransactionCount(_baseWallet.address, "pending");
+  console.log(`  Starting nonce: ${currentNonce}`);
+  await deployer.getNonce("pending");
+  const deployerAddress = _baseWallet.address;
 
   const balance  = await provider.getBalance(deployerAddress);
   console.log(`  Deployer: ${deployerAddress}`);
@@ -297,7 +304,7 @@ async function main() {
   // ══════════════════════════════════════════════════════════════════════════
 
   // ─── 1. StatusRegistry ─────────────────────────────────────────────────────
-  // postStatus(bytes32 contentHash, string content, string preview)
+  // postStatus(bytes32 contentHash, string content)
   // contentHash must equal keccak256(abi.encodePacked(content))
 
   console.log("── [1/7] StatusRegistry ────────────────────────────────────");
@@ -307,16 +314,15 @@ async function main() {
 
   await test("post status", async () => {
     const tx = await statusRegistry.connect(lead).postStatus(
-      statusHash1, statusContent, statusContent.slice(0, 140)
+      statusHash1, statusContent
     );
     const receipt = await tx.wait();
     assert(receipt?.status === 1, "tx failed");
     const meta = await statusRegistry.statuses(statusHash1);
-    // StatusMeta: { address agent, string cid, string preview, uint256 timestamp, bool deleted }
-    // In the new contract: { address agent, string content, string preview, uint256 timestamp, bool deleted }
+    // StatusMeta: { address agent[0], uint256 timestamp[1], bool deleted[2] }
     const agentAddr = meta[0] ?? meta.agent;
     assert(agentAddr?.toLowerCase() === lead.address.toLowerCase(), `agent=${agentAddr}`);
-    const isDeleted = meta[4] ?? meta.deleted;
+    const isDeleted = meta[2] ?? meta.deleted;
     assert(isDeleted === false, "should not be deleted");
   });
 
@@ -325,7 +331,7 @@ async function main() {
     const content2  = "stranger content";
     const h2        = ethers.keccak256(ethers.toUtf8Bytes(content2));
     await expectRevert(
-      () => statusRegistry.connect(stranger).postStatus(h2, content2, "preview"),
+      () => statusRegistry.connect(stranger).postStatus(h2, content2),
       "NotRegistered"
     );
   });
@@ -333,7 +339,7 @@ async function main() {
   await test("delete status (tombstone)", async () => {
     await (await statusRegistry.connect(lead).deleteStatus(statusHash1)).wait();
     const meta    = await statusRegistry.statuses(statusHash1);
-    const deleted = meta[4] ?? meta.deleted;
+    const deleted = meta[2] ?? meta.deleted;
     assert(deleted === true, "should be tombstoned");
   });
 
@@ -598,8 +604,8 @@ async function main() {
       [splitRecs, splitShares, usdcAddr, agentRegAddr],
       "SquadRevenueSplit"
     );
-    // Wait an extra block to ensure the deployment is mined
-    await provider.waitForTransaction((await provider.getBlockNumber()).toString());
+    // Small delay to ensure deployment is indexed by RPC
+    await new Promise(r => setTimeout(r, 2000));
     const r = await revenueSplit.recipients();
     const s = await revenueSplit.shares();
     assert(Array.isArray(r) && r.length === 3, `recipients.length=3, got ${r?.length}`);
@@ -824,7 +830,7 @@ async function main() {
 
   await test("LEAD registers artifact with revenueSplitAddress", async () => {
     const d2RevAddr = await d2RevSplit.getAddress();
-    await (await intelligenceRegistry.connect(lead).register({
+    const regTx = await intelligenceRegistry.connect(lead).register({
       contentHash:         d2ArtifactHash,
       squadId:             d2SquadId,
       capabilityTag:       "district2",
@@ -837,7 +843,9 @@ async function main() {
       parentHash:          ethers.ZeroHash,
       revenueShareHash:    ethers.keccak256(ethers.toUtf8Bytes("d2-rev-share-1")),
       revenueSplitAddress: d2RevAddr,
-    })).wait();
+    });
+    console.log(`    d2 register tx: ${regTx.hash}`);
+    await regTx.wait();
 
     const a       = await intelligenceRegistry.getArtifact(d2ArtifactHash);
     const revA    = a[15] ?? a.revenueSplitAddress;
@@ -850,8 +858,12 @@ async function main() {
     const d2RevAddr  = await d2RevSplit.getAddress();
     const usdcAmount = ethers.parseUnits("0.3", 6);   // 300_000 units
 
-    await (await mockUsdc.connect(deployer).mint(subscriber.address, usdcAmount)).wait();
-    await (await mockUsdc.connect(subscriber).approve(d2RevAddr, usdcAmount)).wait();
+    const mintTx = await mockUsdc.connect(deployer).mint(subscriber.address, usdcAmount);
+    console.log(`    mint tx: ${mintTx.hash}`);
+    await mintTx.wait();
+    const approveTx = await mockUsdc.connect(subscriber).approve(d2RevAddr, usdcAmount);
+    console.log(`    approve tx: ${approveTx.hash}`);
+    await approveTx.wait();
 
     const before = {
       lead:     await mockUsdc.balanceOf(lead.address),
@@ -859,7 +871,9 @@ async function main() {
       ea0:      await mockUsdc.balanceOf(extraCiters[0].address),
     };
 
-    await (await d2RevSplit.connect(subscriber).receiveUSDC(usdcAmount)).wait();
+    const recvTx = await d2RevSplit.connect(subscriber).receiveUSDC(usdcAmount);
+    console.log(`    receiveUSDC tx: ${recvTx.hash}`);
+    await recvTx.wait();
 
     const gains = {
       lead:     (await mockUsdc.balanceOf(lead.address))           - before.lead,

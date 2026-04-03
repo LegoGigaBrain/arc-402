@@ -9,7 +9,8 @@ import { useChat } from "./useChat";
 import { useScroll } from "./useScroll";
 import { useTerminalSize } from "./useTerminalSize";
 import { getBannerLines } from "../ui/banner";
-import { executeTuiKernel, getTuiTopLevelCommands } from "./kernel";
+import { executeKernelForPayload, getTuiTopLevelCommands } from "./kernel";
+import type { ViewportEntry } from "./Viewport";
 import chalk from "chalk";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -29,7 +30,7 @@ interface AppProps {
  */
 export function App({ version, network, wallet, balance }: AppProps) {
   const { exit } = useApp();
-  const [outputBuffer, setOutputBuffer] = useState<string[]>([
+  const [outputBuffer, setOutputBuffer] = useState<ViewportEntry[]>([
     chalk.dim("  Type 'help' to see available commands"),
     "",
   ]);
@@ -54,6 +55,10 @@ export function App({ version, network, wallet, balance }: AppProps) {
 
   const appendLine = useCallback((line: string) => {
     setOutputBuffer((prev) => [...prev, line]);
+  }, []);
+
+  const appendEntry = useCallback((entry: ViewportEntry) => {
+    setOutputBuffer((prev) => [...prev, entry]);
   }, []);
 
   const handleCommand = useCallback(
@@ -128,14 +133,6 @@ export function App({ version, network, wallet, balance }: AppProps) {
         return;
       }
 
-      // ── Built-in: status ───────────────────────────────────────────────────
-      if (input === "status") {
-        await execute("status", appendLine);
-        appendLine("");
-        setIsProcessing(false);
-        return;
-      }
-
       // ── /chat prefix or unknown command → chat ─────────────────────────────
       const isExplicitChat = input.startsWith("/chat ");
       const isChatInput =
@@ -151,8 +148,10 @@ export function App({ version, network, wallet, balance }: AppProps) {
         return;
       }
 
-      // ── TUI kernel first for flagship read-only commerce routes ───────────
-      if (await executeTuiKernel(input)) {
+      // ── TUI kernel — returns typed payload → rendered as Phase 2 Ink component ──
+      const kernelPayload = await executeKernelForPayload(input);
+      if (kernelPayload !== null) {
+        appendEntry(kernelPayload);
         appendLine("");
         setIsProcessing(false);
         return;
@@ -163,7 +162,7 @@ export function App({ version, network, wallet, balance }: AppProps) {
       appendLine("");
       setIsProcessing(false);
     },
-    [appendLine, execute, send, snapToBottom, topCmds, network, wallet, balance, exit]
+    [appendLine, appendEntry, execute, send, snapToBottom, topCmds, network, wallet, balance, exit]
   );
 
   const isDisabled = isProcessing || isRunning || isSending;
@@ -183,7 +182,7 @@ export function App({ version, network, wallet, balance }: AppProps) {
         <Text dimColor>{"─".repeat(60)}</Text>
       </Box>
 
-      {/* VIEWPORT — fills remaining space */}
+      {/* VIEWPORT — fills remaining space, renders strings + Phase 2 Ink components */}
       <Viewport
         lines={outputBuffer}
         scrollOffset={scrollOffset}

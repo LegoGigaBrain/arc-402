@@ -10,6 +10,7 @@ import { useScroll } from "./useScroll";
 import { useTerminalSize } from "./useTerminalSize";
 import { getBannerLines } from "../ui/banner";
 import { executeKernelForPayload, getTuiTopLevelCommands } from "./kernel";
+import { TUI_HELP_SECTIONS } from "./command-catalog";
 import type { ViewportEntry } from "./Viewport";
 import chalk from "chalk";
 
@@ -101,31 +102,25 @@ export function App({ version, network, wallet, balance }: AppProps) {
       // ── Built-in: help ─────────────────────────────────────────────────────
       if (input === "help" || input === "/help") {
         const lines: string[] = [
-          chalk.cyanBright("ARC-402 TUI"),
+          chalk.cyanBright("◈ ARC-402 TUI"),
+          chalk.dim("  Tab to complete · ↑/↓ history · PgUp/PgDn scroll · Esc dismiss"),
           "",
-          "  status",
-          "  discover [--limit N] [--sort trust|price|jobs|stake|composite] [--online]",
-          "  agreements [--as client|provider]",
-          "  workroom status",
-          "",
-          chalk.dim("  Other commands still route through the CLI adapter path while the TUI kernel extraction is in progress."),
-          "",
-          chalk.cyanBright("Chat"),
         ];
+        for (const section of TUI_HELP_SECTIONS) {
+          lines.push(chalk.bold.white(section.label));
+          for (const { cmd, desc } of section.commands) {
+            lines.push(
+              "  " + chalk.white(cmd.padEnd(28)) + chalk.dim(desc)
+            );
+          }
+          lines.push("");
+        }
+        lines.push(chalk.cyanBright("Chat"));
         lines.push(
-          "  " +
-            chalk.white("<message>") +
-            chalk.dim("          Send message to OpenClaw gateway")
+          "  " + chalk.white("/chat <message>".padEnd(28)) + chalk.dim("Route message to OpenClaw gateway")
         );
         lines.push(
-          "  " +
-            chalk.white("/chat <message>") +
-            chalk.dim("   Explicitly route to chat")
-        );
-        lines.push(
-          chalk.dim(
-            "  Gateway: http://localhost:19000  (openclaw gateway start)"
-          )
+          "  " + chalk.white("chat".padEnd(28)) + chalk.dim("Open Commerce REPL")
         );
         lines.push("");
         for (const l of lines) appendLine(l);

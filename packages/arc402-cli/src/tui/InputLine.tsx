@@ -2,15 +2,21 @@ import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { BUILTIN_CMDS, TUI_SUBCOMMANDS, TUI_TOP_LEVEL_COMMANDS } from "./command-catalog";
+import { CompletionDropdown } from "./components/CompletionDropdown";
 
 interface InputLineProps {
   onSubmit: (value: string) => void;
   isDisabled?: boolean;
 }
 
+const ALL_TOP = [...BUILTIN_CMDS, ...TUI_TOP_LEVEL_COMMANDS];
+const SUB_MAP = new Map(Object.entries(TUI_SUBCOMMANDS));
+
 /**
- * Input line with command history navigation and tab completion.
- * Uses ink-text-input for text input with cursor.
+ * Input line with:
+ * - Command history navigation (↑/↓)
+ * - Live completion dropdown (Tab cycles, Esc dismisses)
+ * - Tab expansion on single match
  */
 export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
   const [value, setValue] = useState("");
@@ -18,15 +24,38 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [historyTemp, setHistoryTemp] = useState("");
 
-  const [topCmds] = useState<string[]>(() => [...TUI_TOP_LEVEL_COMMANDS]);
-  const [subCmds] = useState<Map<string, string[]>>(() => new Map(Object.entries(TUI_SUBCOMMANDS)));
+  // Completion state
+  const [completions, setCompletions] = useState<string[]>([]);
+  const [completionIdx, setCompletionIdx] = useState(0);
+  const [dropdownVisible, setDropdownVisible] = useState(false);
+
+  const computeCompletions = useCallback((input: string): string[] => {
+    const trimmed = input.trimStart();
+    if (!trimmed) return [];
+    const spaceIdx = trimmed.indexOf(" ");
+    if (spaceIdx === -1) {
+      return ALL_TOP.filter((cmd) => cmd.startsWith(trimmed) && cmd !== trimmed);
+    }
+    const parent = trimmed.slice(0, spaceIdx);
+    const rest = trimmed.slice(spaceIdx + 1);
+    const subs = SUB_MAP.get(parent) ?? [];
+    return subs
+      .filter((s) => s.startsWith(rest) && s !== rest)
+      .map((s) => `${parent} ${s}`);
+  }, []);
+
+  const handleChange = useCallback((newVal: string) => {
+    setValue(newVal);
+    const candidates = computeCompletions(newVal);
+    setCompletions(candidates);
+    setCompletionIdx(0);
+    setDropdownVisible(candidates.length > 0);
+  }, [computeCompletions]);
 
   const handleSubmit = useCallback(
     (val: string) => {
       const trimmed = val.trim();
       if (!trimmed) return;
-
-      // Add to history (avoid duplicate of last entry)
       setHistory((prev) => {
         if (prev[prev.length - 1] === trimmed) return prev;
         return [...prev, trimmed];
@@ -34,28 +63,45 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
       setHistoryIdx(-1);
       setHistoryTemp("");
       setValue("");
-
+      setCompletions([]);
+      setDropdownVisible(false);
       onSubmit(trimmed);
     },
     [onSubmit]
   );
 
   useInput(
-    (_input, key) => {
+    (input, key) => {
       if (isDisabled) return;
 
-      // Up arrow — history prev
+      // Escape — dismiss dropdown
+      if (key.escape) {
+        setDropdownVisible(false);
+        return;
+      }
+
+      // Up arrow — history or cycle completion up
       if (key.upArrow) {
+        if (dropdownVisible && completions.length > 0) {
+          setCompletionIdx((idx) => Math.max(0, idx - 1));
+          return;
+        }
         setHistory((hist) => {
           setHistoryIdx((idx) => {
             if (idx === -1) {
               setHistoryTemp(value);
               const newIdx = hist.length - 1;
-              if (newIdx >= 0) setValue(hist[newIdx]);
+              if (newIdx >= 0) {
+                setValue(hist[newIdx]);
+                setCompletions([]);
+                setDropdownVisible(false);
+              }
               return newIdx;
             } else if (idx > 0) {
               const newIdx = idx - 1;
               setValue(hist[newIdx]);
+              setCompletions([]);
+              setDropdownVisible(false);
               return newIdx;
             }
             return idx;
@@ -65,17 +111,25 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
         return;
       }
 
-      // Down arrow — history next
+      // Down arrow — history or cycle completion down
       if (key.downArrow) {
+        if (dropdownVisible && completions.length > 0) {
+          setCompletionIdx((idx) => Math.min(completions.length - 1, idx + 1));
+          return;
+        }
         setHistory((hist) => {
           setHistoryIdx((idx) => {
             if (idx >= 0) {
               const newIdx = idx + 1;
               if (newIdx >= hist.length) {
                 setValue(historyTemp);
+                setCompletions([]);
+                setDropdownVisible(false);
                 return -1;
               } else {
                 setValue(hist[newIdx]);
+                setCompletions([]);
+                setDropdownVisible(false);
                 return newIdx;
               }
             }
@@ -86,56 +140,57 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
         return;
       }
 
-      // Tab — completion
-      if (_input === "\t") {
-        const allTop = [...BUILTIN_CMDS, ...topCmds];
-        const trimmed = value.trimStart();
-        const spaceIdx = trimmed.indexOf(" ");
-
-        let completions: string[];
-        if (spaceIdx === -1) {
-          completions = allTop.filter((cmd) => cmd.startsWith(trimmed));
-        } else {
-          const parent = trimmed.slice(0, spaceIdx);
-          const rest = trimmed.slice(spaceIdx + 1);
-          const subs = subCmds.get(parent) ?? [];
-          completions = subs
-            .filter((s) => s.startsWith(rest))
-            .map((s) => `${parent} ${s}`);
-        }
-
+      // Tab — complete selected candidate or cycle
+      if (input === "\t") {
         if (completions.length === 0) return;
 
         if (completions.length === 1) {
-          setValue(completions[0] + " ");
+          const completed = completions[0] + " ";
+          setValue(completed);
+          setCompletions([]);
+          setDropdownVisible(false);
           return;
         }
 
-        // Find common prefix
-        const common = completions.reduce((a, b) => {
-          let i = 0;
-          while (i < a.length && i < b.length && a[i] === b[i]) i++;
-          return a.slice(0, i);
-        });
-        if (common.length > value.trimStart().length) {
-          setValue(common);
+        // Multi: apply currently selected completion
+        if (dropdownVisible) {
+          const selected = completions[completionIdx];
+          if (selected) {
+            setValue(selected + " ");
+            setCompletions([]);
+            setDropdownVisible(false);
+          }
+          return;
         }
+
+        // Reveal dropdown on first Tab
+        setDropdownVisible(true);
+        return;
       }
     },
     { isActive: !isDisabled }
   );
 
   return (
-    <Box>
-      <Text color="cyan">◈</Text>
-      <Text dimColor> arc402 </Text>
-      <Text color="white">{">"} </Text>
-      <TextInput
-        value={value}
-        onChange={setValue}
-        onSubmit={handleSubmit}
-        focus={!isDisabled}
-      />
+    <Box flexDirection="column">
+      {dropdownVisible && completions.length > 0 && (
+        <CompletionDropdown
+          candidates={completions}
+          selectedIndex={completionIdx}
+          visible={dropdownVisible}
+        />
+      )}
+      <Box>
+        <Text color="cyan">◈</Text>
+        <Text dimColor> arc402 </Text>
+        <Text color="white">{">"} </Text>
+        <TextInput
+          value={value}
+          onChange={handleChange}
+          onSubmit={handleSubmit}
+          focus={!isDisabled}
+        />
+      </Box>
     </Box>
   );
 }

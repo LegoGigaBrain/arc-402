@@ -24,8 +24,8 @@ export function ConfirmPrompt({
           ◈ {message}
         </Text>
       </Box>
-      <Box gap={2}>
-        <Button label={confirmLabel} onPress={onConfirm} variant="primary" />
+      <Box>
+        <Box marginRight={2}><Button label={confirmLabel} onPress={onConfirm} variant="primary" /></Box>
         <Button label={cancelLabel} onPress={onCancel} variant="dim" />
       </Box>
       <Box marginTop={1}>

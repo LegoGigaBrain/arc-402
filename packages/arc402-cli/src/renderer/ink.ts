@@ -60,21 +60,32 @@ export function render(node: React.ReactElement, options: RenderOptions = {}): R
   };
 }
 
-// Primitive components — translated by the reconciler
-export function Box({ style, children }: { style?: BoxStyle; children?: React.ReactNode }) {
-  return React.createElement('arc-box', { style }, children);
+// Box props — accepts both a style object and flat ink-style layout props
+export interface BoxProps extends BoxStyle {
+  style?: BoxStyle;
+  children?: React.ReactNode;
 }
 
-export function Text({ color, bold, dim, dimColor, italic, underline, children }: {
+// Primitive components — translated by the reconciler
+export function Box({ style, children, ...flatProps }: BoxProps) {
+  // Merge flat layout props into style
+  const mergedStyle: BoxStyle = { ...flatProps, ...style };
+  return React.createElement('arc-box', { style: mergedStyle }, children);
+}
+
+export interface TextProps {
   color?: Color | string;
   bold?: boolean;
   dim?: boolean;
   dimColor?: boolean;
   italic?: boolean;
   underline?: boolean;
+  inverse?: boolean;
   children?: React.ReactNode;
-}) {
+}
+
+export function Text({ color, bold, dim, dimColor, italic, underline, inverse, children }: TextProps) {
   // dimColor is an ink-compat alias for dim
   const resolvedDim = dim ?? dimColor;
-  return React.createElement('arc-text', { color, bold, dim: resolvedDim, italic, underline }, children);
+  return React.createElement('arc-text', { color, bold, dim: resolvedDim, italic, underline, inverse }, children);
 }

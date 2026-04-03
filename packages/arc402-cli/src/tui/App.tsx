@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { Box, Text, useApp } from "ink";
+import { Box, Text } from "../renderer/index.js";
+import { useApp } from "ink";
 import { Header } from "./Header";
 import { Viewport } from "./Viewport";
 import { Footer } from "./Footer";

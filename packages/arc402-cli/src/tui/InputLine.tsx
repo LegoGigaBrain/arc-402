@@ -1,8 +1,8 @@
-import React, { useState, useCallback } from "react";
-import { Box, Text, useInput } from "ink";
-import TextInput from "ink-text-input";
-import { BUILTIN_CMDS, TUI_SUBCOMMANDS, TUI_TOP_LEVEL_COMMANDS } from "./command-catalog";
-import { CompletionDropdown } from "./components/CompletionDropdown";
+import React, { useState, useCallback, useEffect } from "react";
+import { Box, Text } from "../renderer/index.js";
+import { InputSystem } from "../renderer/index.js";
+import { BUILTIN_CMDS, TUI_SUBCOMMANDS, TUI_TOP_LEVEL_COMMANDS } from "./command-catalog.js";
+import { CompletionDropdown } from "./components/CompletionDropdown.js";
 
 interface InputLineProps {
   onSubmit: (value: string) => void;
@@ -17,9 +17,11 @@ const SUB_MAP = new Map(Object.entries(TUI_SUBCOMMANDS));
  * - Command history navigation (↑/↓)
  * - Live completion dropdown (Tab cycles, Esc dismisses)
  * - Tab expansion on single match
+ * - Driven by raw InputSystem — no ink useInput, so arrow keys work reliably
  */
 export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
   const [value, setValue] = useState("");
+  const [cursorPos, setCursorPos] = useState(0);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [historyTemp, setHistoryTemp] = useState("");
@@ -46,6 +48,7 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
 
   const handleChange = useCallback((newVal: string) => {
     setValue(newVal);
+    setCursorPos(newVal.length);
     const candidates = computeCompletions(newVal);
     setCompletions(candidates);
     setCompletionIdx(0);
@@ -63,6 +66,7 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
       setHistoryIdx(-1);
       setHistoryTemp("");
       setValue("");
+      setCursorPos(0);
       setCompletions([]);
       setDropdownVisible(false);
       onSubmit(trimmed);
@@ -70,18 +74,19 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
     [onSubmit]
   );
 
-  useInput(
-    (input, key) => {
+  useEffect(() => {
+    if (isDisabled) return;
+
+    const inputSystem = new InputSystem();
+    inputSystem.on('key', (event) => {
       if (isDisabled) return;
 
-      // Escape — dismiss dropdown
-      if (key.escape) {
+      if (event.key === 'escape') {
         setDropdownVisible(false);
         return;
       }
 
-      // Up arrow — history or cycle completion up
-      if (key.upArrow) {
+      if (event.key === 'up') {
         if (dropdownVisible && completions.length > 0) {
           setCompletionIdx((idx) => Math.max(0, idx - 1));
           return;
@@ -93,6 +98,7 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
               const newIdx = hist.length - 1;
               if (newIdx >= 0) {
                 setValue(hist[newIdx]);
+                setCursorPos(hist[newIdx].length);
                 setCompletions([]);
                 setDropdownVisible(false);
               }
@@ -100,6 +106,7 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
             } else if (idx > 0) {
               const newIdx = idx - 1;
               setValue(hist[newIdx]);
+              setCursorPos(hist[newIdx].length);
               setCompletions([]);
               setDropdownVisible(false);
               return newIdx;
@@ -111,8 +118,7 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
         return;
       }
 
-      // Down arrow — history or cycle completion down
-      if (key.downArrow) {
+      if (event.key === 'down') {
         if (dropdownVisible && completions.length > 0) {
           setCompletionIdx((idx) => Math.min(completions.length - 1, idx + 1));
           return;
@@ -123,11 +129,13 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
               const newIdx = idx + 1;
               if (newIdx >= hist.length) {
                 setValue(historyTemp);
+                setCursorPos(historyTemp.length);
                 setCompletions([]);
                 setDropdownVisible(false);
                 return -1;
               } else {
                 setValue(hist[newIdx]);
+                setCursorPos(hist[newIdx].length);
                 setCompletions([]);
                 setDropdownVisible(false);
                 return newIdx;
@@ -140,36 +148,94 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
         return;
       }
 
-      // Tab — complete selected candidate or cycle
-      if (input === "\t") {
+      if (event.key === 'tab') {
         if (completions.length === 0) return;
-
         if (completions.length === 1) {
           const completed = completions[0] + " ";
-          setValue(completed);
-          setCompletions([]);
-          setDropdownVisible(false);
+          handleChange(completed);
           return;
         }
-
-        // Multi: apply currently selected completion
         if (dropdownVisible) {
           const selected = completions[completionIdx];
           if (selected) {
-            setValue(selected + " ");
-            setCompletions([]);
-            setDropdownVisible(false);
+            handleChange(selected + " ");
           }
           return;
         }
-
-        // Reveal dropdown on first Tab
         setDropdownVisible(true);
         return;
       }
-    },
-    { isActive: !isDisabled }
-  );
+
+      if (event.key === 'enter') {
+        handleSubmit(value);
+        return;
+      }
+
+      if (event.key === 'backspace') {
+        setValue((prev) => {
+          const newVal = prev.slice(0, -1);
+          setCursorPos(newVal.length);
+          const candidates = computeCompletions(newVal);
+          setCompletions(candidates);
+          setCompletionIdx(0);
+          setDropdownVisible(candidates.length > 0);
+          return newVal;
+        });
+        return;
+      }
+
+      if (event.key === 'delete') {
+        // forward delete — noop for now (cursor at end)
+        return;
+      }
+
+      if (event.key === 'ctrl-c') {
+        process.exit(0);
+        return;
+      }
+
+      if (event.key === 'ctrl-u') {
+        handleChange("");
+        return;
+      }
+
+      if (event.key === 'ctrl-w') {
+        // Delete word before cursor
+        setValue((prev) => {
+          const parts = prev.trimEnd().split(" ");
+          parts.pop();
+          const newVal = parts.join(" ") + (parts.length ? " " : "");
+          setCursorPos(newVal.length);
+          const candidates = computeCompletions(newVal);
+          setCompletions(candidates);
+          setCompletionIdx(0);
+          setDropdownVisible(candidates.length > 0);
+          return newVal;
+        });
+        return;
+      }
+
+      if (event.key === 'char' && event.char) {
+        setValue((prev) => {
+          const newVal = prev + event.char;
+          setCursorPos(newVal.length);
+          const candidates = computeCompletions(newVal);
+          setCompletions(candidates);
+          setCompletionIdx(0);
+          setDropdownVisible(candidates.length > 0);
+          return newVal;
+        });
+        return;
+      }
+    });
+
+    inputSystem.start();
+    return () => inputSystem.stop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDisabled, dropdownVisible, completions, completionIdx, value, historyTemp, handleChange, handleSubmit, computeCompletions]);
+
+  // Render cursor as block char at cursor position
+  const displayValue = value.slice(0, cursorPos) + "█" + value.slice(cursorPos);
 
   return (
     <Box flexDirection="column">
@@ -184,12 +250,7 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
         <Text color="cyan">◈</Text>
         <Text dimColor> arc402 </Text>
         <Text color="white">{">"} </Text>
-        <TextInput
-          value={value}
-          onChange={handleChange}
-          onSubmit={handleSubmit}
-          focus={!isDisabled}
-        />
+        <Text color="white">{displayValue}</Text>
       </Box>
     </Box>
   );

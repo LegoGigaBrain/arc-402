@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useStdout } from "ink";
 
 interface TerminalSize {
   rows: number;
@@ -11,7 +10,7 @@ interface TerminalSize {
  * Safe fallback: 24 rows × 80 columns if stdout is unavailable (e.g. piped).
  */
 export function useTerminalSize(): TerminalSize {
-  const { stdout } = useStdout();
+  const stdout = process.stdout;
 
   const [size, setSize] = useState<TerminalSize>({
     rows: stdout?.rows ?? 24,
@@ -32,7 +31,7 @@ export function useTerminalSize(): TerminalSize {
     return () => {
       stdout.off("resize", handleResize);
     };
-  }, [stdout]);
+  }, []);
 
   return size;
 }

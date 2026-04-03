@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text } from "../../../renderer/index.js";
 import { CommerceCard, DetailRow, Meter, Section, type StatusPillProps } from "./common";
 
 export interface ProfileCardProps {

@@ -1,5 +1,5 @@
 import React from "react";
-import { Text } from "ink";
+import { Text } from "../../../renderer/index.js";
 import { CommerceCard, DetailRow, Section, type StatusPillProps } from "./common";
 
 export interface SubscribeCardProps {

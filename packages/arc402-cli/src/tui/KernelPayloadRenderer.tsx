@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text } from "../renderer/index.js";
 import type { KernelPayload } from "./kernel-payload";
 import { StatusCard } from "./components/commerce/StatusCard";
 import { DiscoverList } from "./components/commerce/DiscoverList";

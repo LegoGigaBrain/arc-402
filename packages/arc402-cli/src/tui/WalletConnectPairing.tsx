@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Box, Text } from "ink";
+import { Box, Text } from "../renderer/index.js";
 import type { WCCallbacks } from "../walletconnect.js";
 import { renderQR } from "../ui/qr-render.js";
 

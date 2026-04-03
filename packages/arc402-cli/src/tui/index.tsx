@@ -1,5 +1,5 @@
 import React from "react";
-import { render } from "ink";
+import { render, ScreenManager } from "../renderer/index.js";
 import { App } from "./App";
 import fs from "fs";
 import path from "path";
@@ -59,6 +59,14 @@ export async function launchTUI(): Promise<void> {
     balance = await getBalance(config.rpcUrl, config.walletContractAddress);
   }
 
+  const screen = new ScreenManager();
+  screen.enter();
+
+  // Register cleanup (ScreenManager registers SIGINT/SIGTERM internally,
+  // but also wire process-level signals to be safe)
+  process.on('SIGINT', () => { screen.exit(); process.exit(0); });
+  process.on('SIGTERM', () => { screen.exit(); process.exit(0); });
+
   const { waitUntilExit } = render(
     <App
       version={pkg.version}
@@ -69,4 +77,5 @@ export async function launchTUI(): Promise<void> {
   );
 
   await waitUntilExit();
+  screen.exit();
 }

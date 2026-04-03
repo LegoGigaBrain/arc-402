@@ -1,5 +1,6 @@
 import React from "react";
-import { Box, Text, useFocus, useInput } from "ink";
+import { Box, Text } from "../../renderer/index.js";
+import { useFocus, useInput } from "ink";
 
 export interface ButtonProps {
   label: string;

@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Box, Text } from "ink";
+import { Box, Text } from "../../renderer/index.js";
 
 export type ToastVariant = "info" | "success" | "warning" | "error";
 

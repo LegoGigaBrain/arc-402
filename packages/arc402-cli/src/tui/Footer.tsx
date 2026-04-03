@@ -1,5 +1,5 @@
 import React from "react";
-import { Box } from "ink";
+import { Box } from "../renderer/index.js";
 
 interface FooterProps {
   children: React.ReactNode;

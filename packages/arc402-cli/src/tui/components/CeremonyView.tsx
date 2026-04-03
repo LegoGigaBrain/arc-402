@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text } from "../../renderer/index.js";
 import { StepSpinner } from "./StepSpinner.js";
 import type { StepStatus } from "./StepSpinner.js";
 

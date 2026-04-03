@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Text, useInput } from "ink";
+import { Text } from "../../../renderer/index.js";
+import { useInput } from "ink";
 import type { DiscoverAgent } from "./DiscoverList";
 
 export interface AgentPickerProps {

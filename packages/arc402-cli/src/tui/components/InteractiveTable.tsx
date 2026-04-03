@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "../../renderer/index.js";
+import { useInput } from "ink";
 
 export interface Column {
   header: string;

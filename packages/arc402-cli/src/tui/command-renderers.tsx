@@ -7,157 +7,206 @@ import type { SquadCardProps } from "./components/commerce/SquadCard";
 import type { StatusCardProps } from "./components/commerce/StatusCard";
 import type { SubscribeCardProps } from "./components/commerce/SubscribeCard";
 import type { WorkroomCardProps } from "./components/commerce/WorkroomCard";
+import { formatCountdown, formatPercent } from "./commerce-format";
+import { writeTuiLine } from "./render-inline";
 
-function line(label: string, value: string): string {
+function emit(lines: string[]): void {
+  for (const line of lines) writeTuiLine(line);
+}
+
+function separator(): string {
+  return "─".repeat(60);
+}
+
+function badge(label?: string): string {
+  return label ? `  ${label}` : "";
+}
+
+function detail(label: string, value: string): string {
   return `  ${label.padEnd(14)} ${value}`;
 }
 
-function printCard(eyebrow: string, title: string, subtitle?: string, status?: string, rows: string[] = [], footer?: string): void {
-  console.log(`◈ ${eyebrow}`);
-  console.log(status ? `${title}  ${status}` : title);
-  if (subtitle) console.log(subtitle);
-  console.log("─".repeat(60));
-  for (const row of rows) console.log(row);
-  if (footer) console.log(footer);
+function bullet(value: string): string {
+  return `  • ${value}`;
+}
+
+function listItem(title: string, meta?: string, detailLine?: string, status?: string): string[] {
+  return [
+    `${title}${badge(status)}`,
+    ...(meta ? [meta] : []),
+    ...(detailLine ? [detailLine] : []),
+  ];
 }
 
 export async function printStatusCard(props: StatusCardProps): Promise<void> {
-  printCard(
-    "Wallet Status",
-    props.wallet,
+  emit([
+    "◈ Wallet Status",
+    `${props.wallet}${badge(props.status?.label)}`,
     props.network,
-    props.status?.label,
-    [
-      line("balance", props.balance ?? "n/a"),
-      line("endpoint", props.endpoint ?? "n/a"),
-      ...(props.agreements ? [
-        line("active", String(props.agreements.active)),
-        line("verify", String(props.agreements.pendingVerification)),
-        line("disputed", String(props.agreements.disputed)),
-      ] : []),
-      ...(props.workroom ? [line("workroom", props.workroom.status)] : []),
-    ],
-  );
+    separator(),
+    detail("balance", props.balance ?? "n/a"),
+    detail("endpoint", props.endpoint ?? "n/a"),
+    ...(typeof props.trustScore === "number"
+      ? [detail("trust", formatPercent(Math.min(100, Math.max(0, props.trustScore / 5)), 1))]
+      : []),
+    ...(props.agreements
+      ? [
+          "",
+          "agreements",
+          detail("active", String(props.agreements.active)),
+          detail("verify", String(props.agreements.pendingVerification)),
+          detail("disputed", String(props.agreements.disputed)),
+        ]
+      : []),
+    ...(props.workroom
+      ? [
+          "",
+          "workroom",
+          detail("status", props.workroom.status),
+          detail("jobs", String(props.workroom.activeJobs ?? 0)),
+          detail("harness", props.workroom.harness ?? "n/a"),
+        ]
+      : []),
+  ]);
 }
 
 export async function printDiscoverList(props: DiscoverListProps): Promise<void> {
-  printCard(
-    "Discover",
-    props.title ?? "Discover Results",
-    props.summary,
-    props.status?.label,
-    props.agents.flatMap((agent) => [
-      `  #${agent.rank} ${agent.name} · ${agent.endpointStatus ?? "unknown"}`,
-      `    ${agent.wallet}`,
-      `    ${agent.serviceType} · trust ${agent.trustScore}${agent.priceLabel ? ` · ${agent.priceLabel}` : ""}${agent.capabilitySummary ? ` · ${agent.capabilitySummary}` : ""}`,
-    ]),
+  emit([
+    "◈ Discover",
+    `${props.title ?? "Discover Results"}${badge(props.status?.label)}`,
+    ...(props.summary ? [props.summary] : []),
+    separator(),
+    ...props.agents.flatMap((agent) =>
+      listItem(
+        `#${agent.rank} ${agent.name}`,
+        `${agent.wallet} · trust ${agent.trustScore}${agent.priceLabel ? ` · ${agent.priceLabel}` : ""}`,
+        `${agent.serviceType}${agent.capabilitySummary ? ` · ${agent.capabilitySummary}` : ""}${typeof agent.compositeScore === "number" ? ` · score ${formatPercent(agent.compositeScore * 100, 1)}` : ""}`,
+        agent.endpointStatus,
+      ).map((line) => `  ${line}`),
+    ),
     `${props.agents.length} ranked result${props.agents.length === 1 ? "" : "s"}`,
-  );
+  ]);
 }
 
 export async function printHireCard(props: HireCardProps): Promise<void> {
-  printCard(
-    "Hire",
-    props.providerName ? `${props.providerName} · ${props.providerAddress}` : props.providerAddress,
+  emit([
+    "◈ Hire",
+    `${props.providerName ? `${props.providerName} · ${props.providerAddress}` : props.providerAddress}${badge(props.status?.label)}`,
     props.capability,
-    props.status?.label,
-    [
-      line("price", props.price),
-      line("deadline", props.deadline ?? "open"),
-      line("agreement", props.agreementId ?? "pending"),
-      line("tx", props.txHash ?? "not submitted"),
-      ...(props.notes ?? []).map((note) => `  • ${note}`),
-    ],
-  );
+    separator(),
+    detail("price", props.price),
+    detail("deadline", props.deadline ?? "open"),
+    detail("agreement", props.agreementId ?? "pending"),
+    detail("tx", props.txHash ?? "not submitted"),
+    ...((props.notes ?? []).length > 0
+      ? ["", "operator notes", ...(props.notes ?? []).map(bullet)]
+      : []),
+  ]);
 }
 
 export async function printAgreementList(props: AgreementListProps): Promise<void> {
-  printCard(
-    "Agreements",
-    props.roleLabel ?? "Recent Agreements",
-    props.totalEscrowLabel,
-    props.status?.label,
-    props.agreements.flatMap((agreement) => [
-      `  #${agreement.id} ${agreement.counterparty} · ${agreement.status}`,
-      `    ${agreement.serviceType}${agreement.price ? ` · ${agreement.price}` : ""}${agreement.deadlineMinutes !== undefined ? ` · ${agreement.deadlineMinutes}m` : ""}`,
-    ]),
-  );
+  emit([
+    "◈ Agreements",
+    `${props.roleLabel ?? "Recent Agreements"}${badge(props.status?.label)}`,
+    ...(props.totalEscrowLabel ? [props.totalEscrowLabel] : []),
+    separator(),
+    ...(props.agreements.length > 0
+      ? props.agreements.flatMap((agreement) =>
+          listItem(
+            `#${agreement.id} ${agreement.counterparty}`,
+            `${agreement.serviceType}${agreement.price ? ` · ${agreement.price}` : ""}`,
+            agreement.verifyWindowMinutes !== undefined
+              ? `verify window ${formatCountdown(agreement.verifyWindowMinutes)}`
+              : agreement.deadlineMinutes !== undefined
+                ? `deadline ${formatCountdown(agreement.deadlineMinutes)}`
+                : undefined,
+            agreement.status,
+          ).map((line) => `  ${line}`),
+        )
+      : ["  No agreements found."]),
+  ]);
 }
 
 export async function printComputeCard(props: ComputeCardProps): Promise<void> {
-  printCard(
-    "Compute Session",
-    props.sessionId,
+  emit([
+    "◈ Compute Session",
+    `${props.sessionId}${badge(props.status?.label)}`,
     `${props.provider} · ${props.gpuSpec}`,
-    props.status?.label,
-    [
-      line("rate", props.rateLabel),
-      line("consumed", props.consumedLabel ?? "n/a"),
-      line("cost", props.costLabel ?? "n/a"),
-      line("remaining", props.remainingLabel ?? "n/a"),
-      ...(props.utilizationPercent !== undefined ? [line("utilization", `${props.utilizationPercent.toFixed(2)}%`)] : []),
-    ],
-  );
+    separator(),
+    detail("rate", props.rateLabel),
+    detail("consumed", props.consumedLabel ?? "n/a"),
+    detail("cost", props.costLabel ?? "n/a"),
+    detail("remaining", props.remainingLabel ?? "n/a"),
+    ...(props.utilizationPercent !== undefined
+      ? [detail("utilization", formatPercent(props.utilizationPercent, 2))]
+      : []),
+  ]);
 }
 
 export async function printSubscribeCard(props: SubscribeCardProps): Promise<void> {
-  printCard(
-    "Subscription",
-    props.provider,
+  emit([
+    "◈ Subscription",
+    `${props.provider}${badge(props.status?.label)}`,
     props.planId,
-    props.status?.label,
-    [
-      line("rate", props.rateLabel),
-      line("months", String(props.months ?? 1)),
-      line("renewal", props.nextRenewalLabel ?? "immediate access"),
-      line("payments", props.paymentOptions?.join(", ") || "subscription"),
-      ...(props.accessSummary ?? []).map((item) => `  • ${item}`),
-    ],
-  );
+    separator(),
+    detail("rate", props.rateLabel),
+    detail("months", String(props.months ?? 1)),
+    detail("renewal", props.nextRenewalLabel ?? "immediate access"),
+    detail("payments", props.paymentOptions?.length ? props.paymentOptions.join(", ") : "subscription"),
+    ...((props.accessSummary ?? []).length > 0
+      ? ["", "access", ...(props.accessSummary ?? []).map(bullet)]
+      : []),
+  ]);
 }
 
 export async function printRoundsList(props: RoundsListProps): Promise<void> {
-  printCard(
-    "Arena",
-    props.title ?? "Arena Rounds",
-    undefined,
-    props.status?.label,
-    props.rounds.flatMap((round) => [
-      `  #${round.id} ${round.question}`,
-      `    ${round.category ?? "uncategorized"} · YES ${round.yesLabel} · NO ${round.noLabel} · ${round.timingLabel}${round.resolved ? ` · ${round.outcomeLabel ?? "resolved"}` : ""}`,
-    ]),
+  emit([
+    "◈ Arena",
+    `${props.title ?? "Arena Rounds"}${badge(props.status?.label)}`,
+    separator(),
+    ...(props.rounds.length > 0
+      ? props.rounds.flatMap((round) =>
+          listItem(
+            `#${round.id} ${round.question}`,
+            `${round.category ?? "uncategorized"} · ${round.timingLabel}`,
+            `YES ${round.yesLabel} · NO ${round.noLabel}`,
+            round.resolved ? (round.outcomeLabel ?? "resolved") : "open",
+          ).map((line) => `  ${line}`),
+        )
+      : ["  No arena rounds found."]),
     "Built for round boards and live resolution views.",
-  );
+  ]);
 }
 
 export async function printSquadCard(props: SquadCardProps): Promise<void> {
-  printCard(
-    "Squad",
-    props.name,
+  emit([
+    "◈ Squad",
+    `${props.name}${badge(props.status?.label ?? props.statusLabel)}`,
     props.id,
-    props.status?.label ?? props.statusLabel,
-    [
-      line("domain", props.domainTag),
-      line("members", String(props.memberCount)),
-      line("invite", props.inviteOnly ? "yes" : "no"),
-      line("creator", props.creator ?? "n/a"),
-      ...(props.members ?? []).map((member) => `  • ${member.agent}${member.role ? ` · ${member.role}` : ""}${member.trustScore !== undefined ? ` · trust ${member.trustScore}` : ""}`),
-      ...(props.briefings ?? []).map((briefing) => `  • ${briefing.preview}${briefing.publishedLabel ? ` · ${briefing.publishedLabel}` : ""}${briefing.tags?.length ? ` · ${briefing.tags.join(", ")}` : ""}`),
-    ],
-  );
+    separator(),
+    detail("domain", props.domainTag),
+    detail("members", String(props.memberCount)),
+    detail("invite", props.inviteOnly ? "yes" : "no"),
+    detail("creator", props.creator ?? "n/a"),
+    ...((props.members ?? []).length > 0
+      ? ["", "members", ...(props.members ?? []).map((member) => bullet(`${member.agent}${member.role ? ` · ${member.role}` : ""}${member.trustScore !== undefined ? ` · trust ${member.trustScore}` : ""}`))]
+      : []),
+    ...((props.briefings ?? []).length > 0
+      ? ["", "briefings", ...(props.briefings ?? []).map((briefing) => bullet(`${briefing.preview}${briefing.publishedLabel ? ` · ${briefing.publishedLabel}` : ""}${briefing.tags?.length ? ` · ${briefing.tags.join(", ")}` : ""}`))]
+      : []),
+  ]);
 }
 
 export async function printWorkroomCard(props: WorkroomCardProps): Promise<void> {
-  printCard(
-    "Workroom",
-    props.runtime ?? "Governed execution environment",
-    undefined,
-    props.status?.label ?? props.statusLabel,
-    [
-      line("harness", props.harness ?? "n/a"),
-      line("queue", String(props.queueDepth ?? props.activeJobs?.length ?? 0)),
-      line("policy", props.policyHash ?? "n/a"),
-      ...(props.activeJobs ?? []).map((job) => `  • ${job.id} · ${job.status}${job.harness ? ` · ${job.harness}` : ""}${job.task ? ` · ${job.task}` : ""}`),
-    ],
-  );
+  emit([
+    "◈ Workroom",
+    `${props.runtime ?? "Governed execution environment"}${badge(props.status?.label ?? props.statusLabel)}`,
+    separator(),
+    detail("harness", props.harness ?? "n/a"),
+    detail("queue", String(props.queueDepth ?? props.activeJobs?.length ?? 0)),
+    detail("policy", props.policyHash ?? "n/a"),
+    ...((props.activeJobs ?? []).length > 0
+      ? ["", "jobs", ...(props.activeJobs ?? []).map((job) => bullet(`${job.id} · ${job.status}${job.harness ? ` · ${job.harness}` : ""}${job.task ? ` · ${job.task}` : ""}`))]
+      : []),
+  ]);
 }

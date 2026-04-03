@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { createProgram } from "../program";
 import chalk from "chalk";
 import { c } from "../ui/colors";
+import { withTuiRenderSink } from "./render-inline";
 
 interface UseCommandResult {
   execute: (input: string, onLine: (line: string) => void) => Promise<void>;
@@ -10,8 +11,8 @@ interface UseCommandResult {
 
 /**
  * Dispatches parsed commands to the commander program.
- * Captures stdout/stderr by monkey-patching process.stdout.write
- * and routes all output to the viewport buffer via onLine callback.
+ * Uses a first-class TUI render sink for structured command output,
+ * while still capturing stdout/stderr for legacy plain-text paths.
  */
 export function useCommand(): UseCommandResult {
   const [isRunning, setIsRunning] = useState(false);
@@ -20,7 +21,6 @@ export function useCommand(): UseCommandResult {
     async (input: string, onLine: (line: string) => void): Promise<void> => {
       setIsRunning(true);
 
-      // Capture stdout/stderr
       const originalStdoutWrite = process.stdout.write.bind(process.stdout);
       const originalStderrWrite = process.stderr.write.bind(process.stderr);
 
@@ -40,20 +40,16 @@ export function useCommand(): UseCommandResult {
         encodingOrCb?: BufferEncoding | ((err?: Error | null) => void),
         cb?: (err?: Error | null) => void
       ): boolean => {
-        const str =
-          typeof chunk === "string"
-            ? chunk
-            : Buffer.from(chunk).toString("utf8");
+        const str = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
         captureBuffer += str;
         flushBuffer();
-        // call callback if provided
-        const callback =
-          typeof encodingOrCb === "function" ? encodingOrCb : cb;
+        const callback = typeof encodingOrCb === "function" ? encodingOrCb : cb;
         if (callback) callback();
         return true;
       };
 
-      // Monkey-patch (cast through unknown to bypass strict overload checking)
+      // Keep stdout/stderr capture only as a compatibility bridge for commands
+      // that still print plain text directly instead of using the TUI render sink.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (process.stdout as any).write = capturedWrite;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -69,7 +65,9 @@ export function useCommand(): UseCommandResult {
           writeErr: (str) => process.stderr.write(str),
         });
 
-        await prog.parseAsync(["node", "arc402", ...tokens]);
+        await withTuiRenderSink({ writeLine: onLine }, async () => {
+          await prog.parseAsync(["node", "arc402", ...tokens]);
+        });
       } catch (err) {
         const e = err as { code?: string; message?: string };
         if (
@@ -80,9 +78,7 @@ export function useCommand(): UseCommandResult {
           // already written or normal exit — no-op
         } else if (e.code === "commander.unknownCommand") {
           const tokens = parseTokens(input);
-          onLine(
-            ` ${c.failure} ${chalk.red(`Unknown command: ${chalk.white(tokens[0])}`)} `
-          );
+          onLine(` ${c.failure} ${chalk.red(`Unknown command: ${chalk.white(tokens[0])}`)} `);
           onLine(chalk.dim("  Type 'help' for available commands"));
         } else if (e.code?.startsWith("commander.")) {
           onLine(` ${c.failure} ${chalk.red(e.message ?? String(err))}`);
@@ -91,13 +87,12 @@ export function useCommand(): UseCommandResult {
         }
       } finally {
         delete process.env.ARC402_TUI_MODE;
-        // Flush remaining buffer
         if (captureBuffer.trim()) {
-          onLine(captureBuffer);
+          const lines = captureBuffer.split("\n").filter((line) => line.length > 0);
+          for (const line of lines) onLine(line);
           captureBuffer = "";
         }
 
-        // Restore original write functions
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (process.stdout as any).write = originalStdoutWrite;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -112,7 +107,6 @@ export function useCommand(): UseCommandResult {
   return { execute, isRunning };
 }
 
-// Shell-style tokenizer
 function parseTokens(input: string): string[] {
   const tokens: string[] = [];
   let current = "";

@@ -9,7 +9,7 @@ import { useChat } from "./useChat";
 import { useScroll } from "./useScroll";
 import { useTerminalSize } from "./useTerminalSize";
 import { getBannerLines } from "../ui/banner";
-import { createProgram } from "../program";
+import { executeTuiKernel, getTuiTopLevelCommands } from "./kernel";
 import chalk from "chalk";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -50,15 +50,7 @@ export function App({ version, network, wallet, balance }: AppProps) {
   const { scrollOffset, isAutoScroll, scrollUp, scrollDown, snapToBottom } =
     useScroll(viewportHeight);
 
-  // Get top-level command names for dispatch detection
-  const [topCmds] = useState<string[]>(() => {
-    try {
-      const prog = createProgram();
-      return prog.commands.map((cmd) => cmd.name());
-    } catch {
-      return [];
-    }
-  });
+  const [topCmds] = useState<string[]>(() => getTuiTopLevelCommands());
 
   const appendLine = useCallback((line: string) => {
     setOutputBuffer((prev) => [...prev, line]);
@@ -103,28 +95,18 @@ export function App({ version, network, wallet, balance }: AppProps) {
 
       // ── Built-in: help ─────────────────────────────────────────────────────
       if (input === "help" || input === "/help") {
-        const lines: string[] = [];
-        try {
-          const prog = createProgram();
-          prog.exitOverride();
-          const helpText: string[] = [];
-          prog.configureOutput({
-            writeOut: (str) => helpText.push(str),
-            writeErr: (str) => helpText.push(str),
-          });
-          try {
-            await prog.parseAsync(["node", "arc402", "--help"]);
-          } catch {
-            /* commander throws after printing help */
-          }
-          for (const chunk of helpText) {
-            for (const l of chunk.split("\n")) lines.push(l);
-          }
-        } catch {
-          lines.push(chalk.red("Failed to load help"));
-        }
-        lines.push("");
-        lines.push(chalk.cyanBright("Chat"));
+        const lines: string[] = [
+          chalk.cyanBright("ARC-402 TUI"),
+          "",
+          "  status",
+          "  discover [--limit N] [--sort trust|price|jobs|stake|composite] [--online]",
+          "  agreements [--as client|provider]",
+          "  workroom status",
+          "",
+          chalk.dim("  Other commands still route through the CLI adapter path while the TUI kernel extraction is in progress."),
+          "",
+          chalk.cyanBright("Chat"),
+        ];
         lines.push(
           "  " +
             chalk.white("<message>") +
@@ -164,6 +146,13 @@ export function App({ version, network, wallet, balance }: AppProps) {
         if (msg) {
           await send(msg, appendLine);
         }
+        appendLine("");
+        setIsProcessing(false);
+        return;
+      }
+
+      // ── TUI kernel first for flagship read-only commerce routes ───────────
+      if (await executeTuiKernel(input)) {
         appendLine("");
         setIsProcessing(false);
         return;

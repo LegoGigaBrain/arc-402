@@ -1,9 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
-import { createProgram } from "../program";
-
-const BUILTIN_CMDS = ["help", "exit", "quit", "clear", "status"];
+import { BUILTIN_CMDS, TUI_SUBCOMMANDS, TUI_TOP_LEVEL_COMMANDS } from "./command-catalog";
 
 interface InputLineProps {
   onSubmit: (value: string) => void;
@@ -20,29 +18,8 @@ export function InputLine({ onSubmit, isDisabled = false }: InputLineProps) {
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [historyTemp, setHistoryTemp] = useState("");
 
-  // Lazily build command list for tab completion
-  const [topCmds] = useState<string[]>(() => {
-    try {
-      const prog = createProgram();
-      return prog.commands.map((cmd) => cmd.name());
-    } catch {
-      return [];
-    }
-  });
-  const [subCmds] = useState<Map<string, string[]>>(() => {
-    try {
-      const prog = createProgram();
-      const map = new Map<string, string[]>();
-      for (const cmd of prog.commands) {
-        if (cmd.commands.length > 0) {
-          map.set(cmd.name(), cmd.commands.map((s) => s.name()));
-        }
-      }
-      return map;
-    } catch {
-      return new Map();
-    }
-  });
+  const [topCmds] = useState<string[]>(() => [...TUI_TOP_LEVEL_COMMANDS]);
+  const [subCmds] = useState<Map<string, string[]>>(() => new Map(Object.entries(TUI_SUBCOMMANDS)));
 
   const handleSubmit = useCallback(
     (val: string) => {

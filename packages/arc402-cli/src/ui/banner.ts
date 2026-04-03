@@ -1,7 +1,18 @@
 import chalk from "chalk";
+import * as fs from "fs";
+import * as path from "path";
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const _pkg = require("../../package.json") as { version: string };
+function readVersion(): string {
+  try {
+    // Works in both CJS and ESM contexts
+    const pkgPath = path.resolve(__dirname ?? "", "../../package.json");
+    return (JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { version: string }).version;
+  } catch {
+    return "0.0.0";
+  }
+}
+
+const _pkg = { version: readVersion() };
 
 const ART = `
  ██████╗ ██████╗  ██████╗      ██╗  ██╗ ██████╗ ██████╗

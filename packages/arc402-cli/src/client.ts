@@ -8,7 +8,11 @@ export interface Arc402Client {
 }
 
 export async function getClient(config: Arc402Config): Promise<Arc402Client> {
-  const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+  // staticNetwork prevents ethers from auto-detecting the network on init,
+  // which eliminates the "JsonRpcProvider failed to detect network" retry flood.
+  const chainId = config.network === "base-sepolia" ? 84532 : 8453;
+  const network = new ethers.Network(config.network ?? "base-mainnet", chainId);
+  const provider = new ethers.JsonRpcProvider(config.rpcUrl, network, { staticNetwork: network });
 
   if (config.privateKey) {
     const signer = new ethers.Wallet(config.privateKey, provider);

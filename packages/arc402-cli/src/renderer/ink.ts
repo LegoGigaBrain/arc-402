@@ -1,4 +1,5 @@
 import React from 'react';
+import * as inkPkg from 'ink';
 import { reconciler, setOnCommit } from './reconciler.js';
 import { DOMNode, createNode } from './dom.js';
 import { Frame, createFrame } from './cell.js';
@@ -7,6 +8,12 @@ import { writePatches } from './terminal.js';
 import { createRenderLoop } from './loop.js';
 import type { BoxStyle } from './layout.js';
 import type { Color } from './cell.js';
+
+// useApp is safe to re-export (no problematic internal types)
+export const useApp = inkPkg.useApp;
+// Note: useInput, useFocus, useFocusManager, useStdout must be imported
+// directly from 'ink' in components that need them — ink@3 type exports
+// are incomplete and cause TS4023 errors when re-exported.
 
 export interface RenderOptions {
   stdout?: NodeJS.WriteStream;
@@ -66,11 +73,14 @@ export interface BoxProps extends BoxStyle {
   children?: React.ReactNode;
 }
 
-// Primitive components — translated by the reconciler
+// Box and Text delegate directly to ink's real components.
+// This makes components imported from renderer/index.ts work correctly
+// when ink's render() is used (which is the current state while the
+// custom cell-buffer renderer is being completed).
 export function Box({ style, children, ...flatProps }: BoxProps) {
-  // Merge flat layout props into style
-  const mergedStyle: BoxStyle = { ...flatProps, ...style };
-  return React.createElement('arc-box', { style: mergedStyle }, children);
+  // Merge flat layout props with style object, pass as ink-compatible props
+  const merged = { ...flatProps, ...style };
+  return React.createElement(inkPkg.Box, merged as React.ComponentProps<typeof inkPkg.Box>, children);
 }
 
 export interface TextProps {
@@ -85,7 +95,11 @@ export interface TextProps {
 }
 
 export function Text({ color, bold, dim, dimColor, italic, underline, inverse, children }: TextProps) {
-  // dimColor is an ink-compat alias for dim
+  const resolvedColor = color && typeof color === 'object'
+    ? `rgb(${(color as Color).r},${(color as Color).g},${(color as Color).b})`
+    : color as string | undefined;
   const resolvedDim = dim ?? dimColor;
-  return React.createElement('arc-text', { color, bold, dim: resolvedDim, italic, underline, inverse }, children);
+  return React.createElement(inkPkg.Text, {
+    color: resolvedColor, bold, dimColor: resolvedDim, italic, underline, inverse
+  } as React.ComponentProps<typeof inkPkg.Text>, children);
 }

@@ -10,7 +10,8 @@ import { AGENT_REGISTRY_ABI, TRUST_REGISTRY_ABI } from "../abis";
 import { startSpinner } from "../ui/spinner";
 import { c } from "../ui/colors";
 import { isTuiRenderMode } from "../tui/render-inline";
-import { printRoundsList, printSquadCard } from "../tui/command-renderers";
+import { printRoundsList, printSquadCard, printProfileCard, printStandings } from "../tui/command-renderers";
+import { writeTuiLine } from "../tui/render-inline";
 
 // ─── Arena v2 contract addresses ───────────────────────────────────────────
 // Resolved dynamically from ARC402RegistryV3.extensions() at runtime.
@@ -297,6 +298,25 @@ export function registerArenaV2Commands(arena: Command, gql: GqlFn): void {
           trustScore = score.toString();
         } catch { /* ignore */ }
 
+        if (isTuiRenderMode()) {
+          const latestStatusContent = statuses.length > 0
+            ? String((statuses[0] as Record<string, unknown>)["content"] ?? "")
+            : undefined;
+          await printProfileCard({
+            address: target,
+            name: agent ? String(agent["name"] ?? "") || undefined : undefined,
+            serviceType: agent ? String(agent["serviceType"] ?? "") || undefined : undefined,
+            endpoint: agent ? String(agent["endpoint"] ?? "") || undefined : undefined,
+            isActive: agent ? Boolean(agent["active"]) : false,
+            trustScore: trustScore !== null ? Number(trustScore) : undefined,
+            wins,
+            losses,
+            netUsdc: netUsdc >= 0n ? formatUsdc(netUsdc) : "-" + formatUsdc(-netUsdc),
+            latestStatus: latestStatusContent,
+          });
+          return;
+        }
+
         console.log();
         console.log(chalk.bold("╔══════════════════════════════════════════════╗"));
         console.log(chalk.bold("║           Arena Agent Profile                ║"));
@@ -508,13 +528,45 @@ export function registerArenaV2Commands(arena: Command, gql: GqlFn): void {
           handshake:   "🤝",
         };
 
+        const tuiLabels: Record<string, string> = {
+          status:     "Status posted",
+          squad:      "Squad activity",
+          briefing:   "Briefing pub",
+          newsletter: "Newsletter",
+          round:      "Round created",
+          entry:      "Round entered",
+          claim:      "Claim",
+          handshake:  "Handshake",
+        };
+
+        const tuiIcons: Record<string, string> = {
+          status:     "✓",
+          squad:      "◈",
+          briefing:   "◈",
+          newsletter: "◈",
+          round:      "◈",
+          entry:      "◈",
+          claim:      "✓",
+          handshake:  "◈",
+        };
+
         for (const ev of events) {
           const e = ev as Record<string, unknown>;
-          const icon = icons[e["eventType"] as string] ?? "•";
-          const ts = chalk.dim(formatElapsed(Number(e["timestamp"])));
-          const agent = truncateAddr(String(e["agent"] ?? ""));
+          const eventType = e["eventType"] as string;
           const dataStr = String(e["data"] ?? "");
-          console.log(`  ${icon}  ${ts}  ${chalk.dim(agent)}  ${dataStr.slice(0, 80)}`);
+
+          if (isTuiRenderMode()) {
+            const ts = formatElapsed(Number(e["timestamp"]));
+            const icon = tuiIcons[eventType] ?? "◈";
+            const label = (tuiLabels[eventType] ?? eventType).padEnd(16);
+            const agent = truncateAddr(String(e["agent"] ?? ""));
+            writeTuiLine(`  ${ts.padStart(5)}  ${icon}  ${label}  ${agent}  ${dataStr.slice(0, 60)}`);
+          } else {
+            const icon = icons[eventType] ?? "•";
+            const ts = chalk.dim(formatElapsed(Number(e["timestamp"])));
+            const agent = truncateAddr(String(e["agent"] ?? ""));
+            console.log(`  ${icon}  ${ts}  ${chalk.dim(agent)}  ${dataStr.slice(0, 80)}`);
+          }
         }
 
         if (events.length === 0) {
@@ -952,6 +1004,25 @@ export function registerArenaV2Commands(arena: Command, gql: GqlFn): void {
 
         if (opts.json) {
           console.log(JSON.stringify(standings, null, 2));
+          return;
+        }
+
+        if (isTuiRenderMode()) {
+          await printStandings({
+            title: opts.category ? `Standings — ${opts.category}` : "Global Leaderboard",
+            entries: standings.map((s, i) => {
+              const st = s as Record<string, unknown>;
+              const net = BigInt(String(st["netUsdc"] ?? "0"));
+              const netStr = net >= 0n ? "+" + formatUsdc(net) : "-" + formatUsdc(-net);
+              return {
+                rank: i + 1,
+                agent: truncateAddr(String(st["agent"])),
+                wins: Number(st["wins"]),
+                losses: Number(st["losses"]),
+                netUsdc: netStr,
+              };
+            }),
+          });
           return;
         }
 

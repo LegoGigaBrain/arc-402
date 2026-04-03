@@ -1,3 +1,4 @@
+import type { ProfileCardProps } from "./components/commerce/ProfileCard";
 import type { AgreementListProps } from "./components/commerce/AgreementList";
 import type { ComputeCardProps } from "./components/commerce/ComputeCard";
 import type { DiscoverListProps } from "./components/commerce/DiscoverList";
@@ -194,6 +195,57 @@ export async function printSquadCard(props: SquadCardProps): Promise<void> {
     ...((props.briefings ?? []).length > 0
       ? ["", "briefings", ...(props.briefings ?? []).map((briefing) => bullet(`${briefing.preview}${briefing.publishedLabel ? ` · ${briefing.publishedLabel}` : ""}${briefing.tags?.length ? ` · ${briefing.tags.join(", ")}` : ""}`))]
       : []),
+  ]);
+}
+
+export interface StandingsEntry {
+  rank: number;
+  agent: string;
+  wins: number;
+  losses: number;
+  netUsdc: string;
+}
+
+export interface StandingsProps {
+  entries: StandingsEntry[];
+  title?: string;
+}
+
+export async function printProfileCard(props: ProfileCardProps): Promise<void> {
+  emit([
+    "◈ Agent Profile",
+    `${props.name ?? props.address}${badge(props.status?.label ?? (props.isActive ? "active" : "inactive"))}`,
+    props.endpoint ?? "",
+    separator(),
+    detail("address", `${props.address.slice(0, 6)}…${props.address.slice(-4)}`),
+    ...(props.serviceType ? [detail("service", props.serviceType)] : []),
+    ...(typeof props.trustScore === "number" ? [detail("trust", String(props.trustScore))] : []),
+    ...(typeof props.totalAgreements === "number"
+      ? [detail("agreements", `${props.totalAgreements} completed · ${props.disputes ?? 0} disputes`)]
+      : []),
+    ...(props.capabilities?.length
+      ? [
+          "",
+          "capabilities",
+          ...props.capabilities.map(
+            (c, i) =>
+              `  ${i === (props.capabilities?.length ?? 0) - 1 ? "└─" : "├─"} ${c}`,
+          ),
+        ]
+      : []),
+    ...(props.latestStatus ? [detail("latest", props.latestStatus)] : []),
+  ]);
+}
+
+export async function printStandings(props: StandingsProps): Promise<void> {
+  emit([
+    "◈ Arena Standings",
+    props.title ?? "Global Leaderboard",
+    separator(),
+    ...props.entries.flatMap((e) => [
+      `  #${String(e.rank).padStart(2)} ${e.agent.padEnd(30)} ${String(e.wins).padStart(3)}W ${String(e.losses).padStart(3)}L  ${e.netUsdc} USDC`,
+    ]),
+    `${props.entries.length} agents`,
   ]);
 }
 

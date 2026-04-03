@@ -1,6 +1,6 @@
 {
   "name": "arc402-cli",
-  "version": "1.6.3",
+  "version": "1.6.0",
   "description": "ARC-402 CLI for discovery, negotiation payloads, hire/remediation/dispute workflows, and network reads",
   "bin": {
     "arc402": "./dist/index.js"
@@ -19,6 +19,7 @@
     "prepublishOnly": "npm run prepack"
   },
   "dependencies": {
+    "@arc402/daemon": "^1.1.0",
     "@arc402/sdk": "^0.6.0",
     "@coinbase/wallet-sdk": "^4.3.7",
     "@types/better-sqlite3": "^7.6.13",
@@ -31,8 +32,8 @@
     "cli-table3": "^0.6.3",
     "commander": "^12.1.0",
     "ethers": "^6.13.4",
-    "ink": "3.2.0",
-    "ink-text-input": "4.0.3",
+    "ink": "^6.8.0",
+    "ink-text-input": "^4.0.3",
     "jose": "^6.2.1",
     "ora": "^8.1.1",
     "prompts": "^2.4.2",

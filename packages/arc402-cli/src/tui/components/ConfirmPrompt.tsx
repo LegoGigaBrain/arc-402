@@ -24,9 +24,11 @@ export function ConfirmPrompt({
           ◈ {message}
         </Text>
       </Box>
-      <Box gap={2}>
+      <Box>
         <Button label={confirmLabel} onPress={onConfirm} variant="primary" />
-        <Button label={cancelLabel} onPress={onCancel} variant="dim" />
+        <Box marginLeft={2}>
+          <Button label={cancelLabel} onPress={onCancel} variant="dim" />
+        </Box>
       </Box>
       <Box marginTop={1}>
         <Text dimColor>Tab to switch · Enter to select</Text>

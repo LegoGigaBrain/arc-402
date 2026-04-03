@@ -29,10 +29,12 @@ async function getBalance(
   rpcUrl: string,
   address: string
 ): Promise<string | undefined> {
+  let provider: import("ethers").JsonRpcProvider | undefined;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const ethersLib = require("ethers") as typeof import("ethers");
-    const provider = new ethersLib.ethers.JsonRpcProvider(rpcUrl);
+    // Silence ethers' internal polling noise during TUI launch
+    provider = new ethersLib.ethers.JsonRpcProvider(rpcUrl);
     const bal = await Promise.race([
       provider.getBalance(address),
       new Promise<never>((_, r) =>
@@ -42,6 +44,9 @@ async function getBalance(
     return `${parseFloat(ethersLib.ethers.formatEther(bal)).toFixed(4)} ETH`;
   } catch {
     return undefined;
+  } finally {
+    // Destroy provider to stop internal polling — prevents output flood in TUI
+    try { provider?.destroy(); } catch { /* ignore */ }
   }
 }
 
@@ -56,7 +61,15 @@ export async function launchTUI(): Promise<void> {
 
   let balance: string | undefined;
   if (config.rpcUrl && config.walletContractAddress) {
+    // Suppress stderr during balance fetch — ethers retries flood the terminal
+    const origStderr = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (chunk: string | Uint8Array, ...args: unknown[]) => {
+      const str = typeof chunk === 'string' ? chunk : chunk.toString();
+      if (str.includes('JsonRpcProvider') || str.includes('retry in')) return true;
+      return (origStderr as (...a: unknown[]) => boolean)(chunk, ...args);
+    };
     balance = await getBalance(config.rpcUrl, config.walletContractAddress);
+    process.stderr.write = origStderr; // restore
   }
 
   const screen = new ScreenManager();
